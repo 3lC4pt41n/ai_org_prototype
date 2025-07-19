@@ -1,0 +1,10 @@
+{
+    "dev::Implement succinctly: Build scraper":
+      "# pseudo-code\nimport requests, bs4 …",
+    "analyst::As a senior data-analyst":
+      "Q2 sales up 12 %, main driver EU market.",
+    "marketing::Write energetic, brand-consistent copy":
+      "Spatula Empire – Flip perfection, every meal!",
+    "critic::QA task":
+      "{\"score\":5,\"feedback\":\"Meets all acceptance criteria.\"}"
+  }

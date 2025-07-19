@@ -1,0 +1,22 @@
+\[
+{ "description": "Build scraper for top 50 AI blogs", "value": 80 },
+{ "description": "Analyze Q2 Shopify sales data for trends", "value": 60 },
+{ "description": "Write SEO article: 'Best Spatulas 2025'", "value": 40 },
+{ "description": "Generate landing‑page copy for spatula empire", "value": 50 },
+{ "description": "Optimize Dockerfile size for Node app", "value": 30 },
+{ "description": "Forecast churn impact on LTV (Growth tier)", "value": 75 },
+{ "description": "Design email drip campaign (3 mails)", "value": 45 },
+{ "description": "calc: 2500 \* 1.07^3", "value": 0 },
+{ "description": "Build KPI dashboard outline (React)", "value": 90 },
+{ "description": "Parse Product Hunt comments for feature ideas", "value": 55 },
+{ "description": "Draft Upwork brief: logo redesign", "value": 25 },
+{ "description": "Critic review: landing‑page copy quality", "value": 20 },
+{ "description": "Generate privacy‑policy template (GDPR)", "value": 35 },
+{ "description": "Explain why build failed on CI", "value": 30 },
+{ "description": "Suggest 5 TikTok hooks for product demo", "value": 30 },
+{ "description": "Estimate AWS cost at 10× load", "value": 70 },
+{ "description": "Create SQL schema diagram PNG", "value": 60 },
+{ "description": "Prepare investor KPI narrative (one‑pager)", "value": 85 },
+{ "description": "Benchmark Redis vs. NATS for messaging", "value": 65 },
+{ "description": "Research Shopify app SEO keywords", "value": 40 }
+]

@@ -1,0 +1,40 @@
+# Core
+# openai~=1.14
+httpx~=0.27
+stripe~=9.2
+python-dotenv~=1.0
+rich~=13.7
+sympy~=1.12
+jinja2~=3.1
+prometheus-client~=0.20
+
+# FastAPI stack
+fastapi~=0.111
+uvicorn[standard]~=0.29
+starlette~=0.36
+
+# Data / ORM
+sqlmodel~=0.0.16
+SQLAlchemy~=2.0
+alembic~=1.13
+psycopg2-binary~=2.9
+
+# Queue & cache
+celery[redis]~=5.3
+redis~=5.0
+
+# Vector / RAG (optional)
+qdrant-client~=1.9
+sentence-transformers~=2.5
+
+# Testing
+pytest~=8.2
+pytest-asyncio~=0.23
+pytest-recording~=0.13
+
+# Dev / Lint (optional)
+black~=24.4
+isort~=5.13
+
+# Graph
+neo4j-driver~=5.19
