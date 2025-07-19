@@ -1,0 +1,36 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "pluginVersion": "10.4.2",
+      "targets": [{"expr": "ai_tenant_budget{tenant=\"demo\"}", "legendFormat": "budget left"}],
+      "title": "Budget Left (demo)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "id": 2,
+      "targets": [{"expr": "sum by(role,status)(ai_tasks_total)", "legendFormat": "{{role}} - {{status}}"}],
+      "title": "Tasks total by Role", "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["ai_org"],
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "AI‑Org Overview",
+  "version": 1
+}

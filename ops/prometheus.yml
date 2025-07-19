@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: ai_org
+    static_configs:
+      # 1) Wenn die FastAPI **auf dem Host-Rechner** läuft:
+      - targets: ['host.docker.internal:9102']
+
+      # 2) Falls du die App später selbst per Docker startest:
+      # - targets: ['ai-app:9102']          # <- Container-Name im selben Compose-Netz
