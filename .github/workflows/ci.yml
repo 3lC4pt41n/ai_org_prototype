@@ -1,0 +1,6 @@
+# TODO GitHub Actions
+# matrix:
+#   lint (root + packages)
+#   test (coming soon)
+#   build web app
+#   build Storybook static
