@@ -1,0 +1,23 @@
+[project]
+name = "ai_org_backend"
+version = "0.1.0"
+description = "AI‑Org backend"
+authors = [{ name = "Your Org" }]
+dependencies = [
+  "fastapi",
+  "sqlmodel",
+  "celery",
+  "redis",
+  "neo4j",
+  "prometheus-client",
+  "pydantic-settings",
+  "python-dotenv",
+  "jinja2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "alembic"]
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
