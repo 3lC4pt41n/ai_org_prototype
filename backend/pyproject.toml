@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "alembic"]
+dev = ["pytest", "ruff", "black", "alembic"]
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]

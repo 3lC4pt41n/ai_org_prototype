@@ -2,17 +2,18 @@
 # ---------------------------------------------------------------
 from __future__ import annotations
 
-import os, sys, uuid, hashlib, json
-from datetime import datetime as dt
-from pathlib import Path
-from typing import Optional, Dict
+import os
+from typing import Dict
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from sqlmodel import Field, SQLModel, create_engine, Session, select
-from celery import Celery, signals
+from sqlmodel import Session, select
+from celery import Celery
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from ai_org_backend.db import engine
+from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.models import Task
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 from neo4j import GraphDatabase
 import redis
@@ -37,37 +38,7 @@ TASK_CNT   = Counter  ("ai_tasks_total",      "Tasks done",   ["role", "status"]
 BUDGET_GA  = Gauge     ("ai_budget_left_usd", "Budget left",  ["tenant"])
 
 # ──────────────── SQLModel tables ─────────────────────────────
-engine = create_engine(DB_URL, echo=False)
 
-class Tenant(SQLModel, table=True):
-    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    balance: float = DEFAULT_BUDGET
-
-class Task(SQLModel, table=True):
-    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4())[:8])
-    tenant_id: str = Field(foreign_key="tenant.id")
-    description: str
-    business_value: float = 1.0
-    tokens_plan: int = 0
-    tokens_actual: int = 0
-    purpose_relevance: float = 0.0
-    status: str = "todo"
-    owner: Optional[str] = None
-    notes: str = ""
-    depends_on: Optional[str] = None
-    created_at: dt = Field(default_factory=dt.utcnow)
-
-class Artifact(SQLModel, table=True):
-    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4())[:10])
-    task_id: str = Field(foreign_key="task.id")
-    repo_path: str           # relative to ./workspace
-    media_type: str
-    size: int
-    sha256: str
-    created_at: dt = Field(default_factory=dt.utcnow)
-
-SQLModel.metadata.create_all(engine)
 
 # ──────────────── Repo helper (mirrors Neo4j) ─────────────────
 class Repo:
@@ -139,7 +110,6 @@ celery = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.task_acks_late = True
 
 # import artefact helper
-from storage import save_artefact
 
 
 # ──────────────── Agent stubs (patched) ──────────────────────
