@@ -1,11 +1,11 @@
 {
-  "name": "project",
-  "version": "1.0.0",
-  "type": "module",         
+  "name": "ai_org_prototype",
+  "private": true,
+  "workspaces": ["frontend/apps/*", "frontend/packages/*"],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "storybook": "pnpm --filter ui storybook"
   },
   "dependencies": {
     "react": "^18.3.1",
