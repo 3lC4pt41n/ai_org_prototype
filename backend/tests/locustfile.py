@@ -5,7 +5,9 @@
 """
 
 from locust import HttpUser, task, between
-import json, random, uuid
+import json
+import random
+import uuid
 
 class AIOrgDemo(HttpUser):
     wait_time = between(0.1, 0.5)  # ~ 2–10 RPS pro User

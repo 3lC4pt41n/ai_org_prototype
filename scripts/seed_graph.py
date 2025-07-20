@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 """
-Seed Neo4j with TaskDB rows (incl. KPI columns).
+Seed Neo4j with Task rows (incl. KPI columns).
 
 Usage:
     python scripts/seed_graph.py --tenant demo
 """
 from __future__ import annotations
-import argparse, os, sys, pathlib
+import argparse
+import os
+import sys
+import pathlib
 from typing import Dict
 
 # ── dynamic repo-root import ─────────────────────────────────────────
@@ -14,9 +17,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if ROOT.as_posix() not in sys.path:
     sys.path.insert(0, ROOT.as_posix())
 
-from sqlmodel import Session, select
-from ai_org_prototype import engine, TaskDB            # pylint: disable=import-error
-from neo4j import GraphDatabase
+from sqlmodel import Session, select  # noqa: E402
+from ai_org_backend.main import engine, Task  # noqa: E402
+from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
 NEO4J_URL  = os.getenv("NEO4J_URL",  "bolt://localhost:7687")
@@ -46,7 +49,7 @@ def ingest(tenant: str) -> Dict[str, int]:
     """Copy one tenant's tasks into Neo4j; return stats."""
     with driver.session() as g, Session(engine) as db:
         g.run(CLEAN)
-        rows = db.exec(select(TaskDB).where(TaskDB.tenant_id == tenant)).all()
+        rows = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
         for row in rows:
             g.run(
                 MERGE_TASK,
@@ -65,7 +68,7 @@ def ingest(tenant: str) -> Dict[str, int]:
 
 # ── CLI ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Seed Neo4j graph from TaskDB")
+    ap = argparse.ArgumentParser(description="Seed Neo4j graph from Task")
     ap.add_argument("--tenant", default="demo", help="tenant_id to migrate")
     ns = ap.parse_args()
     stats = ingest(ns.tenant)

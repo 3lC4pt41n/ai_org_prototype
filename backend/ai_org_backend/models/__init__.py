@@ -1,2 +1,5 @@
-"""temporary re-export during phase A"""
-from .__legacy_models import *  # noqa
+from .tenant import Tenant
+from .task import Task
+from .artifact import Artifact
+
+__all__ = ["Tenant", "Task", "Artifact"]

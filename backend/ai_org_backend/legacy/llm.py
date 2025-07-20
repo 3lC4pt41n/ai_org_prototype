@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv()                               # adds OPENAI_API_KEY if in `.env`
 
-import openai                               # import *after* dotenv
+import openai  # noqa: E402                               # import *after* dotenv
 
 # ─────────────────── Detect SDK major version ────────────────────
 _IS_V2 = hasattr(openai, "OpenAI")          # True for openai-python ≥ 1.0
