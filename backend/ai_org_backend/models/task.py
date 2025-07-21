@@ -16,7 +16,7 @@ class Task(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id")
-    tenant: Optional["Tenant"] = Relationship(back_populates="tasks")
+    tenant: "Tenant" = Relationship(back_populates="tasks")
 
     description: str
     business_value: float = 1.0
