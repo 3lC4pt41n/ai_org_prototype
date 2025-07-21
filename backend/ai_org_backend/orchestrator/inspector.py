@@ -8,8 +8,16 @@ from ai_org_backend.main import DEFAULT_BUDGET, pool
 from ai_org_backend.models import Task
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
-PROM_TASK_BLOCKED = Gauge("ai_tasks_blocked", "Number of blocked tasks")
-PROM_CRIT_PATH_LEN = Gauge("ai_critical_path", "Length of critical path")
+PROM_TASK_BLOCKED = Gauge(
+    "ai_tasks_blocked",
+    "Number of blocked tasks",
+    ["tenant"],
+)
+PROM_CRIT_PATH_LEN = Gauge(
+    "ai_critical_path",
+    "Length of critical path",
+    ["tenant"],
+)
 
 
 def todo_count(tenant: str) -> int:

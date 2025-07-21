@@ -9,6 +9,8 @@ AGENT_ROLES = list(AGENTS.keys())
 
 def classify_role(desc: str) -> str:
     d = desc.lower()
+    if not d.strip():
+        return "dev"
     if any(k in d for k in ("ui", "ux", "design")):
         return "ux_ui"
     if any(k in d for k in ("qa", "test", "review")):
