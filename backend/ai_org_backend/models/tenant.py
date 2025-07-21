@@ -4,8 +4,9 @@ import uuid
 from typing import TYPE_CHECKING, List
 
 from sqlmodel import SQLModel, Field, Relationship
+from ..settings import settings
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # nur für Typprüfung
     from .task import Task
 
 class Tenant(SQLModel, table=True):
@@ -13,6 +14,7 @@ class Tenant(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     name: str
-    balance: float = 0.0
+    balance: float = settings.default_budget
+    # ⇣ richtige Relationship-Syntax
 
     tasks: List["Task"] = Relationship(back_populates="tenant")
