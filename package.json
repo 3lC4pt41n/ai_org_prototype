@@ -1,11 +1,24 @@
 {
   "name": "ai_org_prototype",
   "private": true,
-  "workspaces": ["frontend/apps/*", "frontend/packages/*"],
+  "workspaces": [
+    "frontend/apps/*",
+    "frontend/packages/*"
+  ],
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "build:web": "pnpm --filter web build",
-    "storybook": "pnpm --filter ui storybook"
+    "storybook": "pnpm --filter ui storybook",
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md,yml}\"",
+    "test": "jest",
+    "test:unit": "jest --runTestsByPath \"**/*.unit.(ts|tsx)\"",
+    "test:e2e": "playwright test",
+    "cz": "cz",
+    "release": "semantic-release",
+    "prepare": "husky install"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,5 +31,19 @@
     "tailwindcss": "^3.4.4",
     "postcss": "^8.4.38",
     "autoprefixer": "^10.4.19"
-  }
+  },
+  "type": "module",
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,yml}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{ts,tsx,js,jsx}": "jest --bail --findRelatedTests"
+  },
+  "version": "0.0.0"
 }
