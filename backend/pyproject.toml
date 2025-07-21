@@ -3,6 +3,7 @@ name = "ai_org_backend"
 version = "0.1.0"
 description = "AI‑Org backend"
 authors = [{ name = "Your Org" }]
+requires-python = ">=3.10"
 dependencies = [
   "fastapi",
   "sqlmodel",

@@ -8,6 +8,8 @@
 >
 > Built & tested on Python 3.11 / Node 20 / Neo4j 5 / Redis 7.
 
+## ✅ Refactor completed – new backend path: ai_org_backend
+
 ---
 
 ## 1  Quick Start
