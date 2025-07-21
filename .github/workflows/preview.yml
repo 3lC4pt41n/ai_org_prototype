@@ -1,0 +1,14 @@
+name: Preview Deploy
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  vercel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx vercel pull --yes --environment=preview
+      - run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
