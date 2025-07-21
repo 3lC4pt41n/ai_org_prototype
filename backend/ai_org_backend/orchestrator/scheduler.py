@@ -34,9 +34,9 @@ async def orchestrator() -> None:
         if time.time() - last > 10:
             blocked = cypher(BLOCKED_Q)[0]["blocked"]
             crit = cypher(CRIT_Q)
-            PROM_TASK_BLOCKED.set(blocked)
+            PROM_TASK_BLOCKED.labels(TENANT).set(blocked)
             if crit:
-                PROM_CRIT_PATH_LEN.set(crit[0]["l"])
+                PROM_CRIT_PATH_LEN.labels(TENANT).set(crit[0]["l"])
             print(
                 f"ℹ️ todo:{todo_count(TENANT):>3} "
                 f"blocked:{blocked:<2} "
