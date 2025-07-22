@@ -43,7 +43,8 @@ def insight_agent(tenant: str, task_id: str) -> None:
             return
     prompt = TMPL_ANALYST.render(purpose="analysis", task=task.description)
 
-    import backoff, openai
+    import backoff
+    import openai
 
     @backoff.on_exception(backoff.expo, openai.OpenAIError, max_tries=3)
     def _ask_llm(p: str):
