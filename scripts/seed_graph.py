@@ -56,10 +56,6 @@ def ingest(tenant: str) -> Dict[str, int]:
                 MERGE_TASK,
                 id=row.id,
                 status=row.status,
-<<<<<<< HEAD
-=======
-                val=row.business_value,
->>>>>>> ed9b63776adb94a0f28bb1b16f1ae1e68da7063a
                 desc=row.description,
                 bv=row.business_value,
                 tok_plan=row.tokens_plan,
