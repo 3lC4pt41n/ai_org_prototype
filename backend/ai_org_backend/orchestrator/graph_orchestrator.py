@@ -76,7 +76,7 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
             dict(
                 id=re.sub(r"\s+", "_", cols[0].lower())[:8] or f"task{len(tasks)+1}",
                 description=cols[0],
-                depends_on=cols[1] or None,
+                depends_on_id=cols[1] or None,
                 business_value=1.0,
                 tokens_plan=1_000,
                 purpose_relevance=50,
@@ -106,8 +106,8 @@ def seed_if_empty() -> None:
         )
         id_map[t["id"]] = node.id
     for t in tasks:
-        dep = t.get("depends_on")
+        dep = t.get("depends_on_id")
         if dep and dep in id_map:
-            repo.update(id_map[t["id"]], depends_on=id_map[dep])
+            repo.update(id_map[t["id"]], depends_on_id=id_map[dep])
     print(f"📥  Auto-seeded {len(tasks)} tasks.")
 

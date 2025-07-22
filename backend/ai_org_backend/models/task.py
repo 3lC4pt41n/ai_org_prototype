@@ -28,10 +28,19 @@ class Task(SQLModel, table=True):
     owner: Optional[str] = None
     notes: str = ""
 
-    depends_on: Optional[str] = Field(
+    depends_on_id: Optional[str] = Field(
         default=None,
         foreign_key="task.id",
         description="predecessor task id",
+    )
+    # Self-referential 1-n: this task -> predecessor task
+    depends_on: Optional["Task"] = Relationship(
+        sa_relationship_kwargs={"remote_side": "Task.id"},
+        back_populates="blocked_by",
+    )
+    # Reverse side: which tasks are blocked by me?
+    blocked_by: List["Task"] = Relationship(
+        back_populates="depends_on",
     )
 
     created_at: dt = Field(default_factory=dt.utcnow)
