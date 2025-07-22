@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime as dt
 from typing import Optional, TYPE_CHECKING, List
+from sqlalchemy.orm import Mapped
 
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -10,13 +11,14 @@ if TYPE_CHECKING:
     from .tenant import Tenant
     from .artifact import Artifact
 
+
 class Task(SQLModel, table=True):
     """Core work item tracked in Neo4j + SQL."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id")
-    tenant: "Tenant" = Relationship(back_populates="tasks")
+    tenant: Mapped["Tenant"] = Relationship(back_populates="tasks")
 
     description: str
     business_value: float = 1.0
@@ -35,4 +37,4 @@ class Task(SQLModel, table=True):
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
-    artefacts: List["Artifact"] = Relationship(back_populates="task")
+    artefacts: Mapped[List["Artifact"]] = Relationship(back_populates="task")
