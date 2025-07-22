@@ -28,5 +28,12 @@ services:
       timeout: 5s
       retries: 5
 
+  celery-architect:
+    image: yourorg/ai_backend:latest
+    command: celery -A ai_org_prototype.celery worker -Q demo:architect -l INFO -P solo
+    depends_on:
+      - redis
+      - neo4j
+
 volumes:
   pgdata:
