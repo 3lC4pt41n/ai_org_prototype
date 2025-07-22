@@ -11,6 +11,8 @@ from sqlmodel import Session, select
 from celery import Celery
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from ai_org_backend.api.templates import router as tmpl_router
+from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.db import engine
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.models import Task
@@ -169,6 +171,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(tmpl_router)
+app.include_router(agent_router)
 
 
 # CRUD endpoints (minimal)
