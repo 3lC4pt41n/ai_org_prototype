@@ -1,99 +1,34 @@
-services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ai
-      POSTGRES_DB: ai_org
-    ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7
-    command: redis-server --save 60 1 --loglevel warning --requirepass ai_redis_pw
-    ports: ["6379:6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "ai_redis_pw", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  neo4j:
-    image: neo4j:5
-    environment:
-      - NEO4J_AUTH=neo4j/s3cr3tP@ss
-    ports:
-      - "7687:7687"
-      - "7474:7474"
-    volumes: [neo4j_data:/data]
-    healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p s3cr3tP@ss 'RETURN 1'"]
-      interval: 10s
-      timeout: 10s
-      retries: 6
-
   celery-architect:
     build:
-      context: ./backend          # Pfad mit Dockerfile
-      dockerfile: Dockerfile
+      context: ./backend      # <─ Ordner, in dem Dockerfile liegt
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
              -Q demo:architect
-             -l INFO
-             -P solo
+             -l INFO -P solo
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASS=s3cr3tP@ss
-    depends_on:
-      - redis
-      - neo4j
+    depends_on: [redis, neo4j]
 
   celery-insight:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: { context: ./backend }
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
              -Q demo:insight
-             -l INFO
-             -P solo
-    environment:
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
-    depends_on:
-      - redis
-      - neo4j
+             -l INFO -P solo
+    environment: *environment         # YAML-Alias, falls du willst
+    depends_on: [redis, neo4j]
 
   celery-dev:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: { context: ./backend }
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
              -Q demo:dev,demo:qa,demo:ux_ui,demo:telemetry
-             -l INFO
-             -P solo
-    environment:
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
-    depends_on:
-      - redis
-      - neo4j
-
-volumes:
-  pgdata:
-  neo4j_data:
+             -l INFO -P solo
+    environment: *environment
+    depends_on: [redis, neo4j]
