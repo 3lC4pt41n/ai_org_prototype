@@ -19,7 +19,8 @@ if ROOT.as_posix() not in sys.path:
 
 from sqlmodel import Session, select  # noqa: E402
 from ai_org_backend.db import engine  # noqa: E402
-from ai_org_backend.main import Task  # noqa: E402
+from ai_org_backend.models import Task, TaskDependency  # noqa: E402
+from sqlalchemy.orm import aliased  # noqa: E402
 from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
@@ -39,9 +40,11 @@ SET   t.status            = $status,
       t.tokens_actual     = $tok_act,
       t.purpose_relevance = $purp_rel
 """
-MERGE_EDGE = """
+DEPENDS_CYPHER = """
 MATCH (a:Task {id:$from_id}), (b:Task {id:$to_id})
-MERGE (a)-[:DEPENDS_ON]->(b)
+MERGE (a)-[r:DEPENDS_ON {kind:$kind}]->(b)
+SET   r.source=$source,
+      r.note=$note
 """
 
 
@@ -50,29 +53,43 @@ def ingest(tenant: str) -> Dict[str, int]:
     """Copy one tenant's tasks into Neo4j; return stats."""
     with driver.session() as g, Session(engine) as db:
         g.run(CLEAN)
-        rows = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
 
+        t_from = aliased(Task)
+        t_to = aliased(Task)
+        deps = db.exec(
+            select(TaskDependency, t_from, t_to)
+            .join(t_from, t_from.id == TaskDependency.from_id)
+            .join(t_to, t_to.id == TaskDependency.to_id)
+            .where(t_from.tenant_id == tenant)
+        ).all()
+
+        merged: set[str] = set()
         with g.begin_transaction() as tx:
-            for row in rows:
+            for dep, a, b in deps:
+                for t in (a, b):
+                    if t.id not in merged:
+                        tx.run(
+                            MERGE_TASK,
+                            id=t.id,
+                            status=t.status,
+                            desc=t.description,
+                            bv=t.business_value,
+                            tok_plan=t.tokens_plan,
+                            tok_act=t.tokens_actual,
+                            purp_rel=t.purpose_relevance,
+                        )
+                        merged.add(t.id)
                 tx.run(
-                    MERGE_TASK,
-                    id=row.id,
-                    status=row.status,
-                    desc=row.description,
-                    bv=row.business_value,
-                    tok_plan=row.tokens_plan,
-                    tok_act=row.tokens_actual,
-                    purp_rel=row.purpose_relevance,
+                    DEPENDS_CYPHER,
+                    from_id=dep.from_id,
+                    to_id=dep.to_id,
+                    kind=dep.kind.value,
+                    source=dep.source,
+                    note=dep.note,
                 )
-                if row.depends_on_id:
-                    tx.run(
-                        MERGE_EDGE,
-                        from_id=row.id,
-                        to_id=row.depends_on_id,
-                    )
             tx.commit()
     driver.close()
-    return {"tasks": len(rows)}
+    return {"tasks": len(merged), "deps": len(deps)}
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
@@ -81,4 +98,6 @@ if __name__ == "__main__":
     ap.add_argument("--tenant", default="demo", help="tenant_id to migrate")
     ns = ap.parse_args()
     stats = ingest(ns.tenant)
-    print(f"✅  Seeded {stats['tasks']} tasks for tenant '{ns.tenant}' into Neo4j")
+    print(
+        f"✅  Seeded {stats['tasks']} tasks and {stats['deps']} dependencies for tenant '{ns.tenant}' into Neo4j"
+    )
