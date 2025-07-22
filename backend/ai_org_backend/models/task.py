@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from enum import Enum
 from datetime import datetime as dt
 from typing import Optional, TYPE_CHECKING, List
 
@@ -9,6 +10,16 @@ from sqlmodel import SQLModel, Field, Relationship
 if TYPE_CHECKING:
     from .tenant import Tenant
     from .artifact import Artifact
+    from .task_dependency import TaskDependency
+
+
+class DepKind(str, Enum):
+    """Dependency type for tasks."""
+
+    FINISH_START = "FS"
+    START_START = "SS"
+    FINISH_FINISH = "FF"
+    START_FINISH = "SF"
 
 
 class Task(SQLModel, table=True):
@@ -36,12 +47,16 @@ class Task(SQLModel, table=True):
     # Self-referential 1-n: this task -> predecessor task
     depends_on: Optional["Task"] = Relationship(
         sa_relationship_kwargs={"remote_side": "Task.id"},
-        back_populates="blocked_by",
+        back_populates="blocked_by_tasks",
     )
     # Reverse side: which tasks are blocked by me?
-    blocked_by: List["Task"] = Relationship(
+    blocked_by_tasks: List["Task"] = Relationship(
         back_populates="depends_on",
     )
+
+    # Many-to-many dependencies
+    prerequisites: List["TaskDependency"] = Relationship(back_populates="from_task")
+    blocked_by: List["TaskDependency"] = Relationship(back_populates="to_task")
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
