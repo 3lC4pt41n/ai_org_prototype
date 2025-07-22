@@ -43,7 +43,7 @@ services:
   # ───────────── Celery-Worker ───────────
   celery-architect:
     build:
-      context: ./backend/ai_org_backend   # Ordner mit Dockerfile & requirements.txt
+      context: ../backend/ai_org_backend   # Ordner mit Dockerfile & requirements.txt
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
@@ -59,7 +59,7 @@ services:
       - neo4j
 
   celery-insight:
-    build: { context: ./backend/ai_org_backend }
+    build: { context: ../backend/ai_org_backend }
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
@@ -75,7 +75,7 @@ services:
       - neo4j
 
   celery-dev:
-    build: { context: ./backend/ai_org_backend }
+    build: { context: ../backend/ai_org_backend }
     image: local/ai_backend:latest
     command: >
       celery -A ai_org_prototype.celery worker
