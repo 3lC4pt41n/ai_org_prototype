@@ -18,11 +18,12 @@ if ROOT.as_posix() not in sys.path:
     sys.path.insert(0, ROOT.as_posix())
 
 from sqlmodel import Session, select  # noqa: E402
-from ai_org_backend.main import engine, Task  # noqa: E402
+from ai_org_backend.db import engine
+from ai_org_backend.main import Task
 from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
-NEO4J_URL  = os.getenv("NEO4J_URL",  "bolt://localhost:7687")
+NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
 
@@ -32,7 +33,6 @@ CLEAN = "MATCH (t:Task) DETACH DELETE t"
 MERGE_TASK = """
 MERGE (t:Task {id:$id})
 SET   t.status            = $status,
-      t.value             = $val,
       t.desc              = $desc,
       t.business_value    = $bv,
       t.tokens_plan       = $tok_plan,
@@ -43,6 +43,7 @@ MERGE_EDGE = """
 MATCH (a:Task {id:$from_id}), (b:Task {id:$to_id})
 MERGE (a)-[:DEPENDS_ON]->(b)
 """
+
 
 # ── main logic ───────────────────────────────────────────────────────
 def ingest(tenant: str) -> Dict[str, int]:
@@ -55,7 +56,6 @@ def ingest(tenant: str) -> Dict[str, int]:
                 MERGE_TASK,
                 id=row.id,
                 status=row.status,
-                val=row.est_value,
                 desc=row.description,
                 bv=row.business_value,
                 tok_plan=row.tokens_plan,
@@ -65,6 +65,7 @@ def ingest(tenant: str) -> Dict[str, int]:
             if row.depends_on:
                 g.run(MERGE_EDGE, from_id=row.id, to_id=row.depends_on)
     return {"tasks": len(rows)}
+
 
 # ── CLI ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
