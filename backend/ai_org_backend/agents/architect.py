@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from jinja2 import Template
-from openai import OpenAI
+from ai_org_backend.utils.llm import chat
 from celery import shared_task
 
 from ai_org_backend.db import SessionLocal
@@ -22,10 +22,9 @@ PROMPT_TMPL = Template(Path("prompts/architect.j2").read_text())
 def run_architect(purpose: Purpose, task: str | None = None) -> dict:
     """Render template prompt and call OpenAI."""
     prompt = PROMPT_TMPL.render(purpose=purpose.name, task=task or "n/a")
-    client = OpenAI()
     start = time.time()
     try:
-        resp = client.chat.completions.create(
+        resp = chat(
             model="o3",
             messages=[{"role": "user", "content": prompt}],
         )
