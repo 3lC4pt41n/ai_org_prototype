@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from typing import TYPE_CHECKING, List
-from sqlalchemy.orm import Mapped
 
 from sqlmodel import SQLModel, Field, Relationship
 from ..settings import settings
@@ -19,4 +18,4 @@ class Tenant(SQLModel, table=True):
     balance: float = settings.default_budget
     # ⇣ richtige Relationship-Syntax
 
-    tasks: Mapped[List["Task"]] = Relationship(back_populates="tenant")
+    tasks: List["Task"] = Relationship(back_populates="tenant")

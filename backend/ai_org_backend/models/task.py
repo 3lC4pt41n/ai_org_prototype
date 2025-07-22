@@ -3,7 +3,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime as dt
 from typing import Optional, TYPE_CHECKING, List
-from sqlalchemy.orm import Mapped
 
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -18,7 +17,7 @@ class Task(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id")
-    tenant: Mapped["Tenant"] = Relationship(back_populates="tasks")
+    tenant: "Tenant" = Relationship(back_populates="tasks")
 
     description: str
     business_value: float = 1.0
@@ -37,4 +36,4 @@ class Task(SQLModel, table=True):
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
-    artefacts: Mapped[List["Artifact"]] = Relationship(back_populates="task")
+    artefacts: List["Artifact"] = Relationship(back_populates="task")
