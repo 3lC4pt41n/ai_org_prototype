@@ -12,4 +12,7 @@ router = APIRouter(prefix='/api/agent', tags=['agents'])
 def ping(queue: str):
     insp = celery_app.control.inspect()
     active = insp.active_queues() or {}
-    return {'alive': queue in (active.keys())}
+    return {
+        'alive': queue in active.keys(),
+        'tasks': active.get(queue, [])
+    }
