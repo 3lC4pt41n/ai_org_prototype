@@ -49,10 +49,11 @@ MERGE (a)-[:DEPENDS_ON]->(b)
 def ingest(tenant: str) -> Dict[str, int]:
     """Copy one tenant's tasks into Neo4j; return stats."""
     with driver.session() as g, Session(engine) as db:
-        g.run(CLEAN)
+        tx = g.begin_transaction()
+        tx.run(CLEAN)
         rows = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
         for row in rows:
-            g.run(
+            tx.run(
                 MERGE_TASK,
                 id=row.id,
                 status=row.status,
@@ -62,8 +63,16 @@ def ingest(tenant: str) -> Dict[str, int]:
                 tok_act=row.tokens_actual,
                 purp_rel=row.purpose_relevance,
             )
-            if row.depends_on:
-                g.run(MERGE_EDGE, from_id=row.id, to_id=row.depends_on)
+            dep_id = None
+            if getattr(row, "depends_on_id", None):
+                dep_id = row.depends_on_id
+            elif getattr(row, "depends_on", None):
+                dep = row.depends_on
+                dep_id = getattr(dep, "id", dep) if dep else None
+            if dep_id:
+                tx.run(MERGE_EDGE, from_id=row.id, to_id=dep_id)
+        tx.commit()
+    driver.close()
     return {"tasks": len(rows)}
 
 
