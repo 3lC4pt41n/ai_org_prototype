@@ -1,34 +1,14 @@
-  celery-architect:
-    build:
-      context: ./backend      # <─ Ordner, in dem Dockerfile liegt
-    image: local/ai_backend:latest
-    command: >
-      celery -A ai_org_prototype.celery worker
-             -Q demo:architect
-             -l INFO -P solo
-    environment:
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
-    depends_on: [redis, neo4j]
-
-  celery-insight:
-    build: { context: ./backend }
-    image: local/ai_backend:latest
-    command: >
-      celery -A ai_org_prototype.celery worker
-             -Q demo:insight
-             -l INFO -P solo
-    environment: *environment         # YAML-Alias, falls du willst
-    depends_on: [redis, neo4j]
-
-  celery-dev:
-    build: { context: ./backend }
-    image: local/ai_backend:latest
-    command: >
-      celery -A ai_org_prototype.celery worker
-             -Q demo:dev,demo:qa,demo:ux_ui,demo:telemetry
-             -l INFO -P solo
-    environment: *environment
-    depends_on: [redis, neo4j]
+celery-architect:
+  build:
+    context: ./backend/ai_org_backend   # <─ genau der Ordner mit Dockerfile
+  image: local/ai_backend:latest
+  command: >
+    celery -A ai_org_prototype.celery worker
+           -Q demo:architect
+           -l INFO -P solo
+  environment:
+    - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+    - NEO4J_URL=bolt://neo4j:7687
+    - NEO4J_USER=neo4j
+    - NEO4J_PASS=s3cr3tP@ss
+  depends_on: [redis, neo4j]
