@@ -51,7 +51,7 @@ class Repo:
         business_value: float = 1.0,
         tokens_plan: int = 0,
         purpose_relevance: float = 0.0,
-        depends_on: str | None = None,
+        depends_on_id: str | None = None,
     ) -> Task:
         with Session(engine) as s:
             t = Task(
@@ -60,7 +60,7 @@ class Repo:
                 business_value=business_value,
                 tokens_plan=tokens_plan,
                 purpose_relevance=purpose_relevance,
-                depends_on=depends_on,
+                depends_on_id=depends_on_id,
             )
             s.add(t)
             s.commit()
@@ -73,12 +73,12 @@ class Repo:
                 id=t.id,
                 d=description,
             )
-            if depends_on:
+            if depends_on_id:
                 g.run(
                     """MATCH (a:Task {id:$a}),(b:Task {id:$b})
                        MERGE (a)-[:DEPENDS_ON]->(b)""",
                     a=t.id,
-                    b=depends_on,
+                    b=depends_on_id,
                 )
         return t
 
@@ -88,13 +88,21 @@ class Repo:
             for k, v in kw.items():
                 setattr(task, k, v)
             s.commit()
-        if "status" in kw:
+        if "status" in kw or "depends_on_id" in kw:
             with driver.session() as g:
-                g.run(
-                    "MATCH (t:Task {id:$id}) SET t.status=$st",
-                    id=task_id,
-                    st=kw["status"],
-                )
+                if "status" in kw:
+                    g.run(
+                        "MATCH (t:Task {id:$id}) SET t.status=$st",
+                        id=task_id,
+                        st=kw["status"],
+                    )
+                if kw.get("depends_on_id"):
+                    g.run(
+                        """MATCH (a:Task {id:$a}),(b:Task {id:$b})
+                           MERGE (a)-[:DEPENDS_ON]->(b)""",
+                        a=task_id,
+                        b=kw["depends_on_id"],
+                    )
 
 # ──────────────── Budget utils ───────────────────────────────
 def budget_left(tenant: str = "demo") -> float:
