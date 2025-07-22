@@ -11,7 +11,7 @@ from jinja2 import Template
 from neo4j import GraphDatabase
 
 from ai_org_backend.orchestrator.inspector import alert, todo_count
-from llm import chat_completion
+from ai_org_backend.utils.llm import chat_completion
 
 load_dotenv()
 
