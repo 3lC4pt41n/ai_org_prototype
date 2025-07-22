@@ -18,6 +18,11 @@ PROM_CRIT_PATH_LEN = Gauge(
     "Length of critical path",
     ["tenant"],
 )
+insights_generated_total = Counter(
+    "ai_insights_generated_total",
+    "Number of insights generated",
+    ["tenant"],
+)
 
 
 def todo_count(tenant: str) -> int:
