@@ -5,11 +5,13 @@ import hashlib
 from datetime import datetime as dt
 from pathlib import Path
 from typing import TYPE_CHECKING
+from sqlalchemy.orm import Mapped
 
 from sqlmodel import SQLModel, Field, Relationship
 
 if TYPE_CHECKING:
     from .task import Task
+
 
 class Artifact(SQLModel, table=True):
     """Binary or text output of a task stored on disk."""
@@ -17,7 +19,7 @@ class Artifact(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
 
     task_id: str = Field(foreign_key="task.id")
-    task: "Task" = Relationship(back_populates="artefacts")
+    task: Mapped["Task"] = Relationship(back_populates="artefacts")
 
     repo_path: str
     media_type: str
@@ -44,6 +46,7 @@ class Artifact(SQLModel, table=True):
             size=tgt.stat().st_size,
             sha256=sha,
         )
+
 
 def _guess_media_type(p: Path) -> str:
     if p.suffix in {".md", ".txt"}:
