@@ -18,7 +18,8 @@ if ROOT.as_posix() not in sys.path:
     sys.path.insert(0, ROOT.as_posix())
 
 from sqlmodel import Session, select  # noqa: E402
-from ai_org_backend.main import engine, Task  # noqa: E402
+from ai_org_backend.db import engine
+from ai_org_backend.main import Task
 from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
