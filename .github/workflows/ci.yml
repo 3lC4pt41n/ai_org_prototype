@@ -28,6 +28,18 @@ jobs:
       - run: npm run lint
       - run: npm run test -- --ci --coverage
       - run: npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install -e backend -r requirements.txt
+
+      - run: pytest -q ai_org_backend/tests
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

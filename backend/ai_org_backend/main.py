@@ -101,6 +101,12 @@ def debit(tenant: str, amount: float):
 # ──────────────── Celery setup ───────────────────────────────
 celery = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.task_acks_late = True
+try:  # optional config module
+    from . import celeryconfig
+
+    celery.config_from_object(celeryconfig)
+except Exception:
+    pass
 
 # import artefact helper
 
