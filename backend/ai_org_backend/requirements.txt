@@ -98,3 +98,5 @@ vine==5.1.0
     #   kombu
 wcwidth==0.2.13
     # via prompt-toolkit
+networkx==3.3
+    # via ai_org_backend (backend/pyproject.toml)

@@ -6,11 +6,15 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+from networkx import DiGraph
+
 from dotenv import load_dotenv
 from jinja2 import Template
 from neo4j import GraphDatabase
 
 from ai_org_backend.orchestrator.inspector import alert, todo_count
+from ai_org_backend.models import Task, TaskDependency
+from sqlmodel import select
 from ai_org_backend.utils.llm import chat_completion
 
 load_dotenv()
@@ -110,4 +114,22 @@ def seed_if_empty() -> None:
         if dep and dep in id_map:
             repo.update(id_map[t["id"]], depends_on_id=id_map[dep])
     print(f"📥  Auto-seeded {len(tasks)} tasks.")
+
+
+def _build_graph(session, tenant_id: str) -> DiGraph:
+    """Return dependency graph for tenant."""
+    g = DiGraph()
+    tasks = session.exec(select(Task).where(Task.tenant_id == tenant_id)).all()
+    for t in tasks:
+        g.add_node(t.id, obj=t)
+
+    deps = session.exec(
+        select(TaskDependency)
+        .join(Task, Task.id == TaskDependency.from_id)
+        .where(Task.tenant_id == tenant_id)
+    ).all()
+    for dep in deps:
+        g.add_edge(dep.from_id, dep.to_id, kind=dep.kind)
+
+    return g
 
