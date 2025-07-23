@@ -14,7 +14,8 @@ from neo4j import GraphDatabase
 
 from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.models import Task, TaskDependency
-from sqlmodel import select
+from sqlmodel import select, Session
+from ai_org_backend.db import engine
 from ai_org_backend.utils.llm import chat_completion
 
 load_dotenv()
@@ -109,10 +110,12 @@ def seed_if_empty() -> None:
             purpose_relevance=t.get("purpose_relevance", 0),
         )
         id_map[t["id"]] = node.id
-    for t in tasks:
-        dep = t.get("depends_on_id")
-        if dep and dep in id_map:
-            repo.update(id_map[t["id"]], depends_on_id=id_map[dep])
+    with Session(engine) as s:
+        for t in tasks:
+            dep = t.get("depends_on_id")
+            if dep and dep in id_map:
+                s.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
+        s.commit()
     print(f"📥  Auto-seeded {len(tasks)} tasks.")
 
 
@@ -124,9 +127,9 @@ def _build_graph(session, tenant_id: str) -> DiGraph:
         g.add_node(t.id, obj=t)
 
     deps = session.exec(
-        select(TaskDependency)
-        .join(Task, Task.id == TaskDependency.from_id)
-        .where(Task.tenant_id == tenant_id)
+        select(TaskDependency).where(
+            TaskDependency.from_task.has(tenant_id=tenant_id)
+        )
     ).all()
     for dep in deps:
         g.add_edge(dep.from_id, dep.to_id, kind=dep.kind)

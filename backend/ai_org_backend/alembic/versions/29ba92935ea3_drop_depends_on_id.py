@@ -20,9 +20,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    pass
+    op.execute(
+        """
+        INSERT INTO task_dependency(from_id, to_id)
+        SELECT id, depends_on_id FROM task WHERE depends_on_id IS NOT NULL
+        """
+    )
+    op.drop_column("task", "depends_on_id")
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    pass
+    op.add_column("task", sa.Column("depends_on_id", sa.String(), nullable=True))

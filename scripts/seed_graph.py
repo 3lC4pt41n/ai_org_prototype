@@ -20,7 +20,7 @@ if ROOT.as_posix() not in sys.path:
 from sqlmodel import Session, select  # noqa: E402
 from ai_org_backend.db import engine  # noqa: E402
 from ai_org_backend.models import Task, TaskDependency  # noqa: E402
-from sqlalchemy.orm import aliased, selectinload  # noqa: E402
+from sqlalchemy.orm import selectinload  # noqa: E402
 from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
@@ -54,13 +54,11 @@ def ingest(tenant: str) -> Dict[str, int]:
     with driver.session() as g, Session(engine) as db:
         g.run(CLEAN)
 
-        t_from = aliased(Task)
-        t_to = aliased(Task)
+        # now only TaskDependency pivot
         deps = db.exec(
             select(TaskDependency)
-            .join(t_from, t_from.id == TaskDependency.from_id)
-            .join(t_to, t_to.id == TaskDependency.to_id)
-            .where(t_from.tenant_id == tenant)
+            .join(Task, Task.id == TaskDependency.from_id)
+            .where(Task.tenant_id == tenant)
             .options(
                 selectinload(TaskDependency.from_task),
                 selectinload(TaskDependency.to_task),
