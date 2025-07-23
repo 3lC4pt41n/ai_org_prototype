@@ -44,22 +44,15 @@ class Task(SQLModel, table=True):
     owner: Optional[str] = None
     notes: str = ""
 
-    depends_on_id: Optional[str] = Field(
-        default=None,
-        foreign_key="task.id",
-        description="predecessor task id",
+    # dynamic N:M edges handled by TaskDependency pivot
+    outgoing: Mapped[List["TaskDependency"]] = Relationship(
+        back_populates="from_task",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    # Self-referential 1-n: this task -> predecessor task
-    depends_on: Optional["Task"] = Relationship(
-        sa_relationship_kwargs={"remote_side": "Task.id"},
-        back_populates="blocked_by_tasks",
+    incoming: Mapped[List["TaskDependency"]] = Relationship(
+        back_populates="to_task",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    # Reverse side: which tasks are blocked by me?
-    blocked_by_tasks: Mapped[List["Task"]] = Relationship(back_populates="depends_on")
-
-    # Many-to-many dependencies
-    prerequisites: Mapped[List["TaskDependency"]] = Relationship(back_populates="from_task")
-    blocked_by: Mapped[List["TaskDependency"]] = Relationship(back_populates="to_task")
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
