@@ -20,7 +20,7 @@ if ROOT.as_posix() not in sys.path:
 from sqlmodel import Session, select  # noqa: E402
 from ai_org_backend.db import engine  # noqa: E402
 from ai_org_backend.models import Task, TaskDependency  # noqa: E402
-from sqlalchemy.orm import aliased  # noqa: E402
+from sqlalchemy.orm import aliased, selectinload  # noqa: E402
 from neo4j import GraphDatabase  # noqa: E402
 
 # ── config ───────────────────────────────────────────────────────────
@@ -57,16 +57,20 @@ def ingest(tenant: str) -> Dict[str, int]:
         t_from = aliased(Task)
         t_to = aliased(Task)
         deps = db.exec(
-            select(TaskDependency, t_from, t_to)
+            select(TaskDependency)
             .join(t_from, t_from.id == TaskDependency.from_id)
             .join(t_to, t_to.id == TaskDependency.to_id)
             .where(t_from.tenant_id == tenant)
+            .options(
+                selectinload(TaskDependency.from_task),
+                selectinload(TaskDependency.to_task),
+            )
         ).all()
 
         merged: set[str] = set()
         with g.begin_transaction() as tx:
-            for dep, a, b in deps:
-                for t in (a, b):
+            for dep in deps:
+                for t in (dep.from_task, dep.to_task):
                     if t.id not in merged:
                         tx.run(
                             MERGE_TASK,
