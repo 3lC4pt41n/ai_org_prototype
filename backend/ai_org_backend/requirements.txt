@@ -75,6 +75,7 @@ sqlmodel==0.0.24
     # via ai_org_backend (backend/pyproject.toml)
 starlette==0.47.2
     # via fastapi
+tomli>=2.0.1
 typing-extensions==4.14.1
     # via
     #   anyio
