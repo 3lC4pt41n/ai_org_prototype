@@ -44,7 +44,7 @@ class Task(SQLModel, table=True):
     owner: Optional[str] = None
     notes: str = ""
 
-    # dynamic N:M edges handled by TaskDependency pivot
+    # N:M edges only (see task_dependency.py)
     outgoing: Mapped[List["TaskDependency"]] = Relationship(
         back_populates="from_task",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
