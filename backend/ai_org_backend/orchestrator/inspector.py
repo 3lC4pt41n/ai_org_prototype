@@ -22,6 +22,8 @@ insights_generated_total = Counter(
     "ai_insights_generated_total",
     "Number of insights generated",
     ["tenant"],
+    "ai_insights_total",
+    "Insights generated",
 )
 
 

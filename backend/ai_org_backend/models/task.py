@@ -4,11 +4,14 @@ import uuid
 from enum import Enum
 from datetime import datetime as dt
 from typing import Optional, TYPE_CHECKING, List
+from sqlalchemy.orm import Mapped
+
 
 from sqlmodel import SQLModel, Field, Relationship
 
 if TYPE_CHECKING:
     from .tenant import Tenant
+    from .purpose import Purpose
     from .artifact import Artifact
     from .task_dependency import TaskDependency
 
@@ -29,6 +32,8 @@ class Task(SQLModel, table=True):
 
     tenant_id: str = Field(foreign_key="tenant.id")
     tenant: "Tenant" = Relationship(back_populates="tasks")
+    purpose_id: str | None = Field(default=None, foreign_key="purpose.id")
+    purpose: "Purpose" = Relationship(back_populates="tasks")
 
     description: str
     business_value: float = 1.0
@@ -39,25 +44,16 @@ class Task(SQLModel, table=True):
     owner: Optional[str] = None
     notes: str = ""
 
-    depends_on_id: Optional[str] = Field(
-        default=None,
-        foreign_key="task.id",
-        description="predecessor task id",
+    # N:M edges only (see task_dependency.py)
+    outgoing: Mapped[List["TaskDependency"]] = Relationship(
+        back_populates="from_task",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    # Self-referential 1-n: this task -> predecessor task
-    depends_on: Optional["Task"] = Relationship(
-        sa_relationship_kwargs={"remote_side": "Task.id"},
-        back_populates="blocked_by_tasks",
+    incoming: Mapped[List["TaskDependency"]] = Relationship(
+        back_populates="to_task",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    # Reverse side: which tasks are blocked by me?
-    blocked_by_tasks: List["Task"] = Relationship(
-        back_populates="depends_on",
-    )
-
-    # Many-to-many dependencies
-    prerequisites: List["TaskDependency"] = Relationship(back_populates="from_task")
-    blocked_by: List["TaskDependency"] = Relationship(back_populates="to_task")
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
-    artefacts: List["Artifact"] = Relationship(back_populates="task")
+    artefacts: Mapped[List["Artifact"]] = Relationship(back_populates="task")

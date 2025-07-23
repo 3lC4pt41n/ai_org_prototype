@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from llm import chat_completion
+from ai_org_backend.utils.llm import chat_completion
 
 from ai_org_backend.main import AGENTS
 
