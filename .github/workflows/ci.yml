@@ -1,28 +1,30 @@
 name: CI
-
-on:
+'on':
   pull_request:
-    types: [opened, synchronize, reopened]
+    types:
+      - opened
+      - synchronize
+      - reopened
   push:
-    branches: [main, release/*]
-
+    branches:
+      - main
+      - release/*
 jobs:
   build-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version:
+          - 18
+          - 20
     steps:
       - uses: actions/checkout@v4
-
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-
+          cache: npm
       - run: npm ci
-
       - run: npm run lint
       - run: npm run test -- --ci --coverage
       - run: npm run build
@@ -42,7 +44,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-
+      - name: No raw OpenAI calls
+        run: ./.github/scripts/no_raw_openai.sh
   release:
     if: github.ref == 'refs/heads/main'
     needs: build-test
@@ -52,8 +55,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npx semantic-release
         env:

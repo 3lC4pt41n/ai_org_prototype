@@ -1,0 +1,11 @@
+groups:
+- name: budget
+  rules:
+  - alert: TenantBudgetExhausted
+    expr: ai_tenant_budget{} < 0.05
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Tenant budget <5\u202F% remaining"
+      description: "Top\u2011up or throttle LLM calls."

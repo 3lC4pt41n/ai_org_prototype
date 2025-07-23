@@ -11,6 +11,8 @@ from sqlmodel import Session, select
 from celery import Celery
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from ai_org_backend.api.templates import router as tmpl_router
+from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.db import engine
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.models import Task
@@ -51,7 +53,6 @@ class Repo:
         business_value: float = 1.0,
         tokens_plan: int = 0,
         purpose_relevance: float = 0.0,
-        depends_on_id: str | None = None,
     ) -> Task:
         with Session(engine) as s:
             t = Task(
@@ -60,7 +61,6 @@ class Repo:
                 business_value=business_value,
                 tokens_plan=tokens_plan,
                 purpose_relevance=purpose_relevance,
-                depends_on_id=depends_on_id,
             )
             s.add(t)
             s.commit()
@@ -73,13 +73,6 @@ class Repo:
                 id=t.id,
                 d=description,
             )
-            if depends_on_id:
-                g.run(
-                    """MATCH (a:Task {id:$a}),(b:Task {id:$b})
-                       MERGE (a)-[:DEPENDS_ON]->(b)""",
-                    a=t.id,
-                    b=depends_on_id,
-                )
         return t
 
     def update(self, task_id: str, **kw):
@@ -88,21 +81,13 @@ class Repo:
             for k, v in kw.items():
                 setattr(task, k, v)
             s.commit()
-        if "status" in kw or "depends_on_id" in kw:
+        if "status" in kw:
             with driver.session() as g:
-                if "status" in kw:
-                    g.run(
-                        "MATCH (t:Task {id:$id}) SET t.status=$st",
-                        id=task_id,
-                        st=kw["status"],
-                    )
-                if kw.get("depends_on_id"):
-                    g.run(
-                        """MATCH (a:Task {id:$a}),(b:Task {id:$b})
-                           MERGE (a)-[:DEPENDS_ON]->(b)""",
-                        a=task_id,
-                        b=kw["depends_on_id"],
-                    )
+                g.run(
+                    "MATCH (t:Task {id:$id}) SET t.status=$st",
+                    id=task_id,
+                    st=kw["status"],
+                )
 
 # ──────────────── Budget utils ───────────────────────────────
 def budget_left(tenant: str = "demo") -> float:
@@ -175,6 +160,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(tmpl_router)
+app.include_router(agent_router)
 
 
 # CRUD endpoints (minimal)
