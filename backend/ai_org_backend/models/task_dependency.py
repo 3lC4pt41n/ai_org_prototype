@@ -23,9 +23,9 @@ class TaskDependency(SQLModel, table=True):
 
     from_task: "Task" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "TaskDependency.from_id"},
-        back_populates="prerequisites",
+        back_populates="outgoing",
     )
     to_task: "Task" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "TaskDependency.to_id"},
-        back_populates="blocked_by",
+        back_populates="incoming",
     )
