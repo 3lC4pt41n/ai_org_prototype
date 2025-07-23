@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import time
 
+from sqlmodel import Session, select
+
 from ai_org_backend.main import celery
 from ai_org_backend.orchestrator.graph_orchestrator import (
     TENANT,
@@ -12,6 +14,7 @@ from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
     CRIT_Q,
 )
+from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.orchestrator.router import classify_role
 from ai_org_backend.orchestrator.inspector import (
     alert,
@@ -20,6 +23,19 @@ from ai_org_backend.orchestrator.inspector import (
     PROM_TASK_BLOCKED,
     PROM_CRIT_PATH_LEN,
 )
+
+
+def _ready_for_execution(task: Task, session: Session) -> bool:
+    """Return True if a task has no unresolved prerequisites."""
+    unresolved = (
+        session.exec(
+            select(TaskDependency)
+            .where(TaskDependency.to_id == task.id)
+            .join(Task, Task.id == TaskDependency.from_id)
+            .where(Task.status != "done")
+        ).first()
+    )
+    return unresolved is None
 
 
 async def orchestrator() -> None:
