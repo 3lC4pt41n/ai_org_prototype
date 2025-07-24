@@ -20,7 +20,7 @@ class Artifact(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
 
     task_id: str = Field(foreign_key="task.id")
-    task: Mapped["Task"] = Relationship(back_populates="artefacts")
+    task: Mapped["Task"] = Relationship(back_populates="artifacts")
 
     repo_path: str
     media_type: str
