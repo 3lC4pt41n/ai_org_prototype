@@ -18,6 +18,6 @@ class Purpose(SQLModel, table=True):
     tenant_id: str = Field(foreign_key="tenant.id")
     name: str
 
-    tenant: "Tenant" = Relationship(back_populates="purposes")
+    tenant: Mapped["Tenant"] = Relationship(back_populates="purposes")
     tasks: Mapped[List["Task"]] = Relationship(back_populates="purpose")
 
