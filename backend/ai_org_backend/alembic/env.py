@@ -6,6 +6,7 @@ from alembic import context
 # Importiere die SQLModel-MetaData!
 from ai_org_backend.db import engine
 from sqlmodel import SQLModel
+from ai_org_backend.models import *
 
 config = context.config
 
