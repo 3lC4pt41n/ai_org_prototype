@@ -1,36 +1,39 @@
 #!/usr/bin/env python
 """
-Seed Neo4j with Task rows (incl. KPI columns).
+Seed Neo4j with all Tasks (inkl. KPI-Spalten) und deren Abhängigkeiten.
 
 Usage:
     python scripts/seed_graph.py --tenant demo
 """
 from __future__ import annotations
+
 import argparse
 import os
 import sys
-import pathlib
+from pathlib import Path
 from typing import Dict
 
-# ── dynamic repo-root import ─────────────────────────────────────────
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+from neo4j import GraphDatabase
+from sqlmodel import Session, select
+from sqlalchemy.orm import selectinload
+
+# ───── Repo-Root in sys.path aufnehmen ───────────────────────────────
+ROOT = Path(__file__).resolve().parents[1]
 if ROOT.as_posix() not in sys.path:
     sys.path.insert(0, ROOT.as_posix())
 
-from sqlmodel import Session, select  # noqa: E402
-from ai_org_backend.db import engine  # noqa: E402
-from ai_org_backend.models import Task, TaskDependency  # noqa: E402
-from sqlalchemy.orm import selectinload  # noqa: E402
-from neo4j import GraphDatabase  # noqa: E402
+from ai_org_backend.db import engine                           # noqa: E402
+from ai_org_backend.models import Task, TaskDependency         # noqa: E402
 
-# ── config ───────────────────────────────────────────────────────────
-NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
+# ───── Neo4j-Konfiguration ──────────────────────────────────────────
+NEO4J_URL  = os.getenv("NEO4J_URL",  "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
 
 driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
-CLEAN = "MATCH (t:Task) DETACH DELETE t"
+CLEAN_CYPHER = "MATCH (t:Task) DETACH DELETE t"
+
 MERGE_TASK = """
 MERGE (t:Task {id:$id})
 SET   t.status            = $status,
@@ -40,21 +43,27 @@ SET   t.status            = $status,
       t.tokens_actual     = $tok_act,
       t.purpose_relevance = $purp_rel
 """
-DEPENDS_CYPHER = """
+
+MERGE_DEP = """
 MATCH (a:Task {id:$from_id}), (b:Task {id:$to_id})
 MERGE (a)-[r:DEPENDS_ON {kind:$kind}]->(b)
 SET   r.source=$source,
       r.note=$note
 """
 
-
-# ── main logic ───────────────────────────────────────────────────────
+# ───── Ingest-Routine ───────────────────────────────────────────────
 def ingest(tenant: str) -> Dict[str, int]:
-    """Copy one tenant's tasks into Neo4j; return stats."""
+    """Kopiert Tasks + Dependencies eines Tenants nach Neo4j."""
     with driver.session() as g, Session(engine) as db:
-        g.run(CLEAN)
+        # Neo4j leeren
+        g.run(CLEAN_CYPHER)
 
-        # now only TaskDependency pivot
+        # Tasks dieses Tenants holen
+        tasks = db.exec(
+            select(Task).where(Task.tenant_id == tenant)
+        ).all()
+
+        # Dependencies inkl. beteiligter Tasks eager-laden
         deps = db.exec(
             select(TaskDependency)
             .join(Task, Task.id == TaskDependency.from_id)
@@ -67,39 +76,44 @@ def ingest(tenant: str) -> Dict[str, int]:
 
         merged: set[str] = set()
         with g.begin_transaction() as tx:
-            for dep in deps:
-                for t in (dep.from_task, dep.to_task):
-                    if t.id not in merged:
-                        tx.run(
-                            MERGE_TASK,
-                            id=t.id,
-                            status=t.status,
-                            desc=t.description,
-                            bv=t.business_value,
-                            tok_plan=t.tokens_plan,
-                            tok_act=t.tokens_actual,
-                            purp_rel=t.purpose_relevance,
-                        )
-                        merged.add(t.id)
+            # zuerst Task-Nodes
+            for t in tasks:
                 tx.run(
-                    DEPENDS_CYPHER,
+                    MERGE_TASK,
+                    id=t.id,
+                    status=t.status,
+                    desc=t.description,
+                    bv=t.business_value,
+                    tok_plan=t.tokens_plan,
+                    tok_act=t.tokens_actual,
+                    purp_rel=t.purpose_relevance,
+                )
+                merged.add(t.id)
+
+            # dann Kanten
+            for dep in deps:
+                tx.run(
+                    MERGE_DEP,
                     from_id=dep.from_id,
                     to_id=dep.to_id,
                     kind=dep.kind.value,
                     source=dep.source,
                     note=dep.note,
                 )
+
             tx.commit()
+
     driver.close()
     return {"tasks": len(merged), "deps": len(deps)}
 
-
-# ── CLI ──────────────────────────────────────────────────────────────
+# ───── CLI-Entry-Point ──────────────────────────────────────────────
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Seed Neo4j graph from Task")
+    ap = argparse.ArgumentParser(description="Seed Neo4j graph from Task table")
     ap.add_argument("--tenant", default="demo", help="tenant_id to migrate")
     ns = ap.parse_args()
+
     stats = ingest(ns.tenant)
     print(
-        f"✅  Seeded {stats['tasks']} tasks and {stats['deps']} dependencies for tenant '{ns.tenant}' into Neo4j"
+        f"✅  Seeded {stats['tasks']} tasks and {stats['deps']} dependencies "
+        f"for tenant '{ns.tenant}' into Neo4j"
     )
