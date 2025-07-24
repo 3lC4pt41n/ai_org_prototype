@@ -11,10 +11,11 @@ if TYPE_CHECKING:
 
 
 class DepKind(str, Enum):
-    FINISH_START = "FINISH_START"
-    START_START = "START_START"
-    FINISH_FINISH = "FINISH_FINISH"
-    START_FINISH = "START_FINISH"
+    """Dependency type for tasks (short codes)."""
+    FINISH_START = "FS"
+    START_START = "SS"
+    FINISH_FINISH = "FF"
+    START_FINISH = "SF"
 
 
 class TaskDependency(SQLModel, table=True):
@@ -23,18 +24,13 @@ class TaskDependency(SQLModel, table=True):
     from_id: str = Field(foreign_key="task.id")
     to_id: str = Field(foreign_key="task.id")
 
-    kind: DepKind = Field(
-        sa_column=sa.Column(sa.Enum(DepKind), nullable=False)
-    )
+    kind: DepKind = Field(sa_column=sa.Column(sa.Enum(DepKind), nullable=False))
     source: Optional[str] = None
     note: Optional[str] = None
 
-    # Rückverweise
     from_task: Mapped["Task"] = relationship(
-        back_populates="dependencies",
-        foreign_keys=[from_id]
+        back_populates="outgoing", foreign_keys=[from_id]
     )
     to_task: Mapped["Task"] = relationship(
-        back_populates="dependents",
-        foreign_keys=[to_id]
+        back_populates="incoming", foreign_keys=[to_id]
     )
