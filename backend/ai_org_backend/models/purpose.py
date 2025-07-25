@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime  # <-- Dieser Import fehlt
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlmodel import SQLModel, Field, Relationship
