@@ -48,7 +48,7 @@ class Task(SQLModel, table=True):
         default=TaskStatus.TODO,
         sa_column=sa.Column(sa.Enum(TaskStatus), nullable=False),
     )
-    owner: Optional[str] = None
+    owner: str = None
     notes: str = ""
 
     # N:M edges (TaskDependency)
