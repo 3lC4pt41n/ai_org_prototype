@@ -18,5 +18,5 @@ class Tenant(SQLModel, table=True):
     balance: float = settings.default_budget
     # ⇣ richtige Relationship-Syntax
 
-    tasks: Mapped[List["Task"]] = relationship(back_populates="tenant", foreign_keys=[Task.tenant_id])
-    purposes: Mapped[List["Purpose"]] = relationship(back_populates="tenant", foreign_keys=[Purpose.tenant_id])
+    tasks: Mapped[List["Task"]] = relationship("Task", back_populates="tenant", foreign_keys=[Task.tenant_id])
+    purposes: Mapped[List["Purpose"]] = relationship("Purpose", back_populates="tenant", foreign_keys=[Purpose.tenant_id])
