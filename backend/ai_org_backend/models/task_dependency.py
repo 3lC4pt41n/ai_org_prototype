@@ -25,8 +25,8 @@ class TaskDependency(SQLModel, table=True):
     to_id: str = Field(foreign_key="task.id")
 
     kind: DepKind = Field(sa_column=sa.Column(sa.Enum(DepKind), nullable=False))
-    source: Optional[str] = None
-    note: Optional[str] = None
+    source: str = Field(default=None, nullable=True)
+    note: str = Field(default=None, nullable=True)
 
     from_task: Mapped["Task"] = relationship("Task", back_populates="outgoing", foreign_keys=[from_id])
     to_task: Mapped["Task"] = relationship("Task", back_populates="incoming", foreign_keys=[to_id])
