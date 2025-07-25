@@ -3,8 +3,8 @@ from enum import Enum
 from typing import Optional, TYPE_CHECKING
 
 import sqlalchemy as sa
-from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy.orm import Mapped
+from sqlmodel import SQLModel, Field
+from sqlalchemy.orm import Mapped, relationship
 
 if TYPE_CHECKING:
     from .task import Task
@@ -28,11 +28,5 @@ class TaskDependency(SQLModel, table=True):
     source: Optional[str] = None
     note: Optional[str] = None
 
-    from_task: Mapped["Task"] = Relationship(
-        back_populates="outgoing",
-        sa_relationship_kwargs={"foreign_keys": [from_id]},
-    )
-    to_task: Mapped["Task"] = Relationship(
-        back_populates="incoming",
-        sa_relationship_kwargs={"foreign_keys": [to_id]},
-    )
+    from_task: Mapped["Task"] = relationship(back_populates="outgoing", foreign_keys=[from_id])
+    to_task: Mapped["Task"] = relationship(back_populates="incoming", foreign_keys=[to_id])
