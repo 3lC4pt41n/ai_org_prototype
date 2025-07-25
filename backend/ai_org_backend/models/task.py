@@ -5,8 +5,8 @@ from typing import Optional, TYPE_CHECKING, List
 
 import sqlalchemy as sa
 from enum import Enum
-from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy.orm import Mapped
+from sqlmodel import SQLModel, Field
+from sqlalchemy.orm import Mapped, relationship
 
 if TYPE_CHECKING:                # verhindert Laufzeit‐Zyklus
     from .tenant import Tenant
@@ -28,10 +28,10 @@ class Task(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id")
-    tenant: Mapped["Tenant"] = Relationship(back_populates="tasks")
+    tenant: Mapped["Tenant"] = relationship(back_populates="tasks")
 
     purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
-    purpose: Mapped[Optional["Purpose"]] = Relationship(back_populates="tasks")
+    purpose: Mapped[Optional["Purpose"]] = relationship(back_populates="tasks")
 
     description: str
     business_value: float = 1.0
@@ -46,14 +46,14 @@ class Task(SQLModel, table=True):
     notes: str = ""
 
     # N:M edges (TaskDependency)
-    outgoing: Mapped[List["TaskDependency"]] = Relationship(
+    outgoing: Mapped[List["TaskDependency"]] = relationship(
         back_populates="from_task",
         sa_relationship_kwargs={
             "foreign_keys": "TaskDependency.from_id",
             "cascade": "all, delete-orphan",
         },
     )
-    incoming: Mapped[List["TaskDependency"]] = Relationship(
+    incoming: Mapped[List["TaskDependency"]] = relationship(
         back_populates="to_task",
         sa_relationship_kwargs={
             "foreign_keys": "TaskDependency.to_id",
@@ -63,4 +63,4 @@ class Task(SQLModel, table=True):
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
-    artifacts: Mapped[List["Artifact"]] = Relationship(back_populates="task")
+    artifacts: Mapped[List["Artifact"]] = relationship(back_populates="task")
