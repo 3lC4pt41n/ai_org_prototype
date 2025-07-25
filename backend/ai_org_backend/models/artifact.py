@@ -6,7 +6,8 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import Mapped
+from sqlmodel import Relationship
 
 from sqlmodel import SQLModel, Field
 
@@ -20,7 +21,7 @@ class Artifact(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
 
     task_id: str = Field(foreign_key="task.id")
-    task: Mapped["Task"] = relationship(back_populates="artifacts")
+    task: Mapped["Task"] = Relationship(back_populates="artifacts")
 
     repo_path: str
     media_type: str
