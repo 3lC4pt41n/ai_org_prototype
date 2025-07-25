@@ -257,4 +257,22 @@ class Task(SQLModel, table=True):
         if not description or not description.strip():
             raise ValueError("Task description cannot be empty")
         
-        if
+        if len(description.strip()) > 2000:
+            raise ValueError("Task description too long (max 2000 characters)")
+        
+        if title and len(title.strip()) > 200:
+            raise ValueError("Task title too long (max 200 characters)")
+        
+        if business_value < 0 or business_value > 10:
+            raise ValueError("Business value must be between 0 and 10")
+            
+        return cls(
+            tenant_id=tenant_id,
+            description=description.strip(),
+            title=title.strip() if title else None,
+            purpose_id=purpose_id,
+            business_value=business_value,
+            priority=priority,
+            owner=owner,
+            due_date=due_date
+        )
