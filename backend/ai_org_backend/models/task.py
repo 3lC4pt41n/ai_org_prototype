@@ -35,7 +35,7 @@ class Task(SQLModel, table=True):
     )
 
     purpose_id: str = Field(default=None, foreign_key="purpose.id")
-    purpose: Mapped["Purpose"]] = relationship(
+    purpose: Mapped["Purpose"] = relationship(
         "Purpose", back_populates="tasks", foreign_keys=[purpose_id]
     )
 
