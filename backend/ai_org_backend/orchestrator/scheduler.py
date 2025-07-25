@@ -15,6 +15,7 @@ from ai_org_backend.orchestrator.graph_orchestrator import (
     CRIT_Q,
 )
 from ai_org_backend.models import Task, TaskDependency
+from ai_org_backend.models.task import TaskStatus
 from ai_org_backend.orchestrator.router import classify_role
 from ai_org_backend.orchestrator.inspector import (
     alert,
@@ -32,7 +33,7 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
             select(TaskDependency)
             .where(TaskDependency.to_id == task.id)
             .join(Task, Task.id == TaskDependency.from_id)
-            .where(Task.status != "done")
+            .where(Task.status != TaskStatus.DONE)
         ).first()
     )
     return unresolved is None
