@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from ai_org_backend.db import engine
 from ai_org_backend.main import DEFAULT_BUDGET, pool
 from ai_org_backend.models import Task
+from ai_org_backend.models.task import TaskStatus
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
 PROM_TASK_BLOCKED = Gauge(
@@ -27,7 +28,7 @@ insights_generated_total = Counter(
 def todo_count(tenant: str) -> int:
     with Session(engine) as s:
         return (
-            s.exec(select(Task).where(Task.tenant_id == tenant, Task.status == "todo"))
+            s.exec(select(Task).where(Task.tenant_id == tenant, Task.status == TaskStatus.TODO))
         ).count()
 
 

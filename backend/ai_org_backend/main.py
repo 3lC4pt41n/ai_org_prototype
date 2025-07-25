@@ -16,6 +16,7 @@ from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.db import engine
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.models import Task
+from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 from neo4j import GraphDatabase
 import redis
@@ -79,14 +80,17 @@ class Repo:
         with Session(engine) as s:
             task = s.get(Task, task_id)
             for k, v in kw.items():
-                setattr(task, k, v)
+                if k == "status" and isinstance(v, str):
+                    setattr(task, k, TaskStatus(v))
+                else:
+                    setattr(task, k, v)
             s.commit()
         if "status" in kw:
             with driver.session() as g:
                 g.run(
                     "MATCH (t:Task {id:$id}) SET t.status=$st",
                     id=task_id,
-                    st=kw["status"],
+                    st=str(kw["status"]),
                 )
 
 # ──────────────── Budget utils ───────────────────────────────
@@ -173,7 +177,7 @@ async def create_task(d: Dict):
 async def backlog():
     with Session(engine) as s:
         rows = s.exec(
-            select(Task).where(Task.tenant_id == "demo", Task.status == "todo")
+            select(Task).where(Task.tenant_id == "demo", Task.status == TaskStatus.TODO)
         ).all()
     return [r.model_dump() for r in rows]
 
