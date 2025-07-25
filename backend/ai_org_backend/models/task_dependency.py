@@ -28,5 +28,5 @@ class TaskDependency(SQLModel, table=True):
     source: Optional[str] = None
     note: Optional[str] = None
 
-    from_task: Mapped["Task"] = relationship(back_populates="outgoing", foreign_keys=[from_id])
-    to_task: Mapped["Task"] = relationship(back_populates="incoming", foreign_keys=[to_id])
+    from_task: Mapped["Task"] = relationship("Task", back_populates="outgoing", foreign_keys=[from_id])
+    to_task: Mapped["Task"] = relationship("Task", back_populates="incoming", foreign_keys=[to_id])
