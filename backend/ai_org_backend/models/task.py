@@ -34,8 +34,8 @@ class Task(SQLModel, table=True):
         "Tenant", back_populates="tasks", foreign_keys=[tenant_id]
     )
 
-    purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
-    purpose: Mapped[Optional["Purpose"]] = relationship(
+    purpose_id: str = Field(default=None, foreign_key="purpose.id")
+    purpose: Mapped["Purpose"]] = relationship(
         "Purpose", back_populates="tasks", foreign_keys=[purpose_id]
     )
 
