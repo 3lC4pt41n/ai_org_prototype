@@ -10,7 +10,8 @@ from sqlalchemy.orm import Mapped, relationship
 
 from .task_dependency import TaskDependency
 from .artifact import Artifact
-if TYPE_CHECKING:                # verhindert Laufzeit‐Zyklus
+
+if TYPE_CHECKING:  # verhindert Laufzeit‐Zyklus
     from .tenant import Tenant
     from .purpose import Purpose
 
@@ -25,13 +26,18 @@ class TaskStatus(str, Enum):
 
 class Task(SQLModel, table=True):
     """Core work item tracked in Neo4j + SQL."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id")
-    tenant: Mapped["Tenant"] = relationship(back_populates="tasks", foreign_keys=[tenant_id])
+    tenant: Mapped["Tenant"] = relationship(
+        "Tenant", back_populates="tasks", foreign_keys=[tenant_id]
+    )
 
     purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
-    purpose: Mapped[Optional["Purpose"]] = relationship(back_populates="tasks", foreign_keys=[purpose_id])
+    purpose: Mapped[Optional["Purpose"]] = relationship(
+        "Purpose", back_populates="tasks", foreign_keys=[purpose_id]
+    )
 
     description: str
     business_value: float = 1.0
@@ -47,11 +53,13 @@ class Task(SQLModel, table=True):
 
     # N:M edges (TaskDependency)
     outgoing: Mapped[List["TaskDependency"]] = relationship(
+        "TaskDependency",
         back_populates="from_task",
         foreign_keys=[TaskDependency.from_id],
         cascade="all, delete-orphan",
     )
     incoming: Mapped[List["TaskDependency"]] = relationship(
+        "TaskDependency",
         back_populates="to_task",
         foreign_keys=[TaskDependency.to_id],
         cascade="all, delete-orphan",
@@ -59,4 +67,6 @@ class Task(SQLModel, table=True):
 
     created_at: dt = Field(default_factory=dt.utcnow)
 
-    artifacts: Mapped[List["Artifact"]] = relationship(back_populates="task", foreign_keys=[Artifact.task_id])
+    artifacts: Mapped[List["Artifact"]] = relationship(
+        "Artifact", back_populates="task", foreign_keys=[Artifact.task_id]
+    )
