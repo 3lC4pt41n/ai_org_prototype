@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import uuid
 from typing import TYPE_CHECKING, List
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, relationship
 
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover - type hints
     from .tenant import Tenant
@@ -18,6 +18,6 @@ class Purpose(SQLModel, table=True):
     tenant_id: str = Field(foreign_key="tenant.id")
     name: str
 
-    tenant: Mapped["Tenant"] = Relationship(back_populates="purposes")
-    tasks: Mapped[List["Task"]] = Relationship(back_populates="purpose")
+    tenant: Mapped["Tenant"] = relationship(back_populates="purposes")
+    tasks: Mapped[List["Task"]] = relationship(back_populates="purpose")
 
