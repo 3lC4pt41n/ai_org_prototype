@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -21,17 +21,14 @@ class Tenant(SQLModel, table=True):
         primary_key=True
     )
     
-    name: str = Field(nullable=False, min_length=1, max_length=255, unique=True)
+    name: str = Field(nullable=False, min_length=1, max_length=255)
     balance: float = Field(default=settings.default_budget, ge=0.0)
     
-    email: Optional[str] = Field(default=None, max_length=255)
+    email: Optional[str] = Field(default=None)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    # FIXED: Proper SQLModel Relationships - NO Mapped[], just direct List[]
-    tasks: List["Task"] = Relationship(back_populates="tenant")
-    purposes: List["Purpose"] = Relationship(back_populates="tenant")
-
-    def __str__(self) -> str:
-        return f"Tenant({self.id}: {self.name})"
+    # FIXED: Use list["Model"] instead of List["Model"] - this is the key!
+    tasks: list["Task"] = Relationship(back_populates="tenant")
+    purposes: list["Purpose"] = Relationship(back_populates="tenant")
