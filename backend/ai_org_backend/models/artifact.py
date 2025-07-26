@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import uuid
 import hashlib
 from datetime import datetime as dt
@@ -22,7 +20,6 @@ class Artifact(SQLModel, table=True):
 
     task_id: str = Field(foreign_key="task.id", nullable=False)
     
-    # FIXED: Simple relationship without List[]
     task: "Task" = Relationship(back_populates="artifacts")
 
     repo_path: str = Field(nullable=False)
