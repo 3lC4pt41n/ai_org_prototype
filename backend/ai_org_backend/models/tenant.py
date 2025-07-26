@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -29,6 +27,6 @@ class Tenant(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    # FIXED: Use list["Model"] instead of List["Model"] - this is the key!
-    tasks: list["Task"] = Relationship(back_populates="tenant")
-    purposes: list["Purpose"] = Relationship(back_populates="tenant")
+    # FIXED: Import List from typing explicitly, no __future__ annotations
+    tasks: List["Task"] = Relationship(back_populates="tenant")
+    purposes: List["Purpose"] = Relationship(back_populates="tenant")
