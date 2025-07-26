@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from sqlmodel import Session, select
-from celery import Celery
+from ai_org_backend.tasks.celery_app import celery
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ai_org_backend.api.templates import router as tmpl_router
@@ -103,8 +103,7 @@ def debit(tenant: str, amount: float):
     BUDGET_GA.labels(tenant).set(left)
 
 # ──────────────── Celery setup ───────────────────────────────
-celery = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
-celery.conf.task_acks_late = True
+# (Celery app initialized in ai_org_backend.tasks.celery_app)
 
 # import artefact helper
 
