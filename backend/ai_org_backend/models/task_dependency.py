@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Optional
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -12,13 +10,11 @@ class TaskDependency(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # FIXED: Use str for UUID foreign keys
     from_task_id: str = Field(foreign_key="task.id", nullable=False)
     to_task_id: str = Field(foreign_key="task.id", nullable=False)
     
     dependency_type: str = Field(max_length=50, nullable=False, default="blocks")
     
-    # FIXED: Use simple string references, not List[]
     from_task: "Task" = Relationship(
         back_populates="outgoing_dependencies",
         sa_relationship_kwargs={"foreign_keys": "[TaskDependency.from_task_id]"}
