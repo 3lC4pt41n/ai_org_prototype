@@ -48,15 +48,15 @@ class Task(SQLModel, table=True):
     # Timestamps
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)
 
-    # Use List from typing explicitly - this works without __future__ annotations
+    # Relationships
     tenant: "Tenant" = Relationship(back_populates="tasks")
     purpose: Optional["Purpose"] = Relationship(back_populates="tasks")
 
-    # Dependencies
+    # FIXED: Update foreign_keys references to match TaskDependency field names
     outgoing_dependencies: List["TaskDependency"] = Relationship(
         back_populates="from_task",
         sa_relationship_kwargs={
-            "foreign_keys": "[TaskDependency.from_task_id]",
+            "foreign_keys": "[TaskDependency.from_id]",
             "cascade": "all, delete-orphan"
         }
     )
@@ -64,7 +64,7 @@ class Task(SQLModel, table=True):
     incoming_dependencies: List["TaskDependency"] = Relationship(
         back_populates="to_task",
         sa_relationship_kwargs={
-            "foreign_keys": "[TaskDependency.to_task_id]",
+            "foreign_keys": "[TaskDependency.to_id]",
             "cascade": "all, delete-orphan"
         }
     )
@@ -77,4 +77,3 @@ class Task(SQLModel, table=True):
     @property
     def is_completed(self) -> bool:
         return self.status == TaskStatus.DONE
-
