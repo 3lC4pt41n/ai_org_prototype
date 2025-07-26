@@ -21,7 +21,7 @@ from ai_org_backend.utils.llm import chat_completion
 load_dotenv()
 
 TENANT = os.getenv("TENANT", "demo")
-PROMPT_DIR = Path(__file__).parent / "prompts"
+PROMPT_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
