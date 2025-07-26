@@ -22,10 +22,8 @@ class Artifact(SQLModel, table=True):
 
     task_id: str = Field(foreign_key="task.id", nullable=False)
     
-    # FIXED: Use Relationship from SQLModel, not SQLAlchemy
-    task: "Task" = Relationship(
-        back_populates="artifacts"
-    )
+    # FIXED: Simple relationship without List[]
+    task: "Task" = Relationship(back_populates="artifacts")
 
     repo_path: str = Field(nullable=False)
     media_type: str = Field(nullable=False)
@@ -40,14 +38,12 @@ class Artifact(SQLModel, table=True):
         abs_path: Path,
         repo_root: Path = Path.cwd() / "workspace",
     ) -> "Artifact":
-        """Create artifact from file and copy to repository."""
         if not abs_path.exists():
             raise FileNotFoundError(f"Source file not found: {abs_path}")
         
         repo_root.mkdir(exist_ok=True, parents=True)
         tgt = repo_root / abs_path.name
         
-        # Handle file name conflicts
         counter = 1
         original_tgt = tgt
         while tgt.exists():
@@ -67,13 +63,8 @@ class Artifact(SQLModel, table=True):
             sha256=sha,
         )
 
-    def get_full_path(self, repo_root: Path = Path.cwd() / "workspace") -> Path:
-        """Get absolute path to the artifact file."""
-        return repo_root / self.repo_path
-
 
 def _guess_media_type(p: Path) -> str:
-    """Guess media type based on file extension."""
     suffix_lower = p.suffix.lower()
     
     if suffix_lower in {".md", ".txt", ".rst"}:
