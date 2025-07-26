@@ -10,13 +10,13 @@ class TaskDependency(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # FIXED: Use the field names that seed_graph.py expects
+    # CORRECTED: Use the original field names from the existing database
     from_id: str = Field(foreign_key="task.id", nullable=False)
     to_id: str = Field(foreign_key="task.id", nullable=False)
     
+    # ADD: The missing dependency_type field (this requires DB migration)
     dependency_type: str = Field(max_length=50, nullable=False, default="blocks")
     
-    # FIXED: Update the foreign_keys references to match the field names
     from_task: "Task" = Relationship(
         back_populates="outgoing_dependencies",
         sa_relationship_kwargs={"foreign_keys": "[TaskDependency.from_id]"}
@@ -25,6 +25,3 @@ class TaskDependency(SQLModel, table=True):
         back_populates="incoming_dependencies",
         sa_relationship_kwargs={"foreign_keys": "[TaskDependency.to_id]"}
     )
-
-    def __str__(self) -> str:
-        return f"TaskDependency({self.from_id} -> {self.to_id})"
