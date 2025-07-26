@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -27,6 +25,6 @@ class Purpose(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    # FIXED: No List[] in the type annotation - SQLModel handles it internally
+    # Use List from typing explicitly
     tenant: "Tenant" = Relationship(back_populates="purposes")
-    tasks: list["Task"] = Relationship(back_populates="purpose")
+    tasks: List["Task"] = Relationship(back_populates="purpose")
