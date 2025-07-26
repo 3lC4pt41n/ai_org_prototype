@@ -52,11 +52,11 @@ class Task(SQLModel, table=True):
     tenant: "Tenant" = Relationship(back_populates="tasks")
     purpose: Optional["Purpose"] = Relationship(back_populates="tasks")
 
-    # FIXED: Update foreign_keys references to match TaskDependency field names
+    # CORRECTED: Use the correct field names that match TaskDependency
     outgoing_dependencies: List["TaskDependency"] = Relationship(
         back_populates="from_task",
         sa_relationship_kwargs={
-            "foreign_keys": "[TaskDependency.from_id]",
+            "foreign_keys": "[TaskDependency.from_id]",  # Corrected to from_id
             "cascade": "all, delete-orphan"
         }
     )
@@ -64,7 +64,7 @@ class Task(SQLModel, table=True):
     incoming_dependencies: List["TaskDependency"] = Relationship(
         back_populates="to_task",
         sa_relationship_kwargs={
-            "foreign_keys": "[TaskDependency.to_id]",
+            "foreign_keys": "[TaskDependency.to_id]",  # Corrected to to_id
             "cascade": "all, delete-orphan"
         }
     )
