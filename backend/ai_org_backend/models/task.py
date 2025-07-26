@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import uuid
 from datetime import datetime as dt
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, List
 from enum import Enum
 
 from sqlmodel import SQLModel, Field, Relationship
@@ -50,12 +48,12 @@ class Task(SQLModel, table=True):
     # Timestamps
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)
 
-    # FIXED: Use list["Model"] for collections, "Model" for single relationships
+    # Use List from typing explicitly - this works without __future__ annotations
     tenant: "Tenant" = Relationship(back_populates="tasks")
     purpose: Optional["Purpose"] = Relationship(back_populates="tasks")
 
     # Dependencies
-    outgoing_dependencies: list["TaskDependency"] = Relationship(
+    outgoing_dependencies: List["TaskDependency"] = Relationship(
         back_populates="from_task",
         sa_relationship_kwargs={
             "foreign_keys": "[TaskDependency.from_task_id]",
@@ -63,7 +61,7 @@ class Task(SQLModel, table=True):
         }
     )
     
-    incoming_dependencies: list["TaskDependency"] = Relationship(
+    incoming_dependencies: List["TaskDependency"] = Relationship(
         back_populates="to_task",
         sa_relationship_kwargs={
             "foreign_keys": "[TaskDependency.to_task_id]",
@@ -71,7 +69,7 @@ class Task(SQLModel, table=True):
         }
     )
 
-    artifacts: list["Artifact"] = Relationship(
+    artifacts: List["Artifact"] = Relationship(
         back_populates="task",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -79,3 +77,4 @@ class Task(SQLModel, table=True):
     @property
     def is_completed(self) -> bool:
         return self.status == TaskStatus.DONE
+
