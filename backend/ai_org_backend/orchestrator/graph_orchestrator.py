@@ -94,6 +94,8 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
 def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     if todo_count(TENANT) > 0:
         return
+    # Backlog is empty, initiate seeding
+    print(f"[SEED] Seeding started for purpose '{purpose_name}' (tenant '{TENANT}')")
     # Determine or create Purpose for seeding
     from ai_org_backend.models import Purpose
     with Session(engine) as session:
@@ -109,15 +111,36 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     # Generate tasks via LLM agents
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.agents.planner import run_planner
-    blueprint = run_architect(purpose)
-    plan = run_planner(blueprint)
+    try:
+        blueprint = run_architect(purpose)
+        plan = run_planner(blueprint)
+    except Exception as e:
+        alert(f"Seed run failed: {e}", "seed")
+        return
     tasks = plan if isinstance(plan, list) else []
     if not tasks:
         alert("Seed LLM returned no tasks", "seed")
         return
     from ai_org_backend.main import Repo
-
-    repo, id_map = Repo(TENANT), {}
+    # Avoid duplicate tasks (idempotent seeding)
+    with Session(engine) as session:
+        existing_tasks = session.exec(
+            select(Task).where(Task.tenant_id == TENANT, Task.purpose_id == purpose.id)
+        ).all()
+        existing_id_map = {t.description: t.id for t in existing_tasks}
+    id_map = {}
+    new_tasks = []
+    for t in tasks:
+        desc = t["description"]
+        if desc in existing_id_map:
+            id_map[t["id"]] = existing_id_map[desc]
+            continue
+        new_tasks.append(t)
+    if not new_tasks:
+        print(f"No new tasks to seed for purpose '{purpose.name}'.")
+        return
+    tasks = new_tasks
+    repo = Repo(TENANT)
     for t in tasks:
         node = repo.add(
             description=t["description"],
@@ -135,7 +158,9 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         s.commit()
     from ai_org_backend.scripts.seed_graph import ingest
     ingest(TENANT)
-    print(f" Auto-seeded {len(tasks)} tasks for purpose '{purpose.name}'.")
+    print(
+        f"[SEED] Seeding completed: added {len(tasks)} tasks for purpose '{purpose.name}'."
+    )
 
 
 def _build_graph(session, tenant_id: str) -> DiGraph:
