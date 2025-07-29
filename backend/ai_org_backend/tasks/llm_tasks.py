@@ -46,8 +46,8 @@ def insight_agent(tenant: str, task_id: str) -> None:
     except Exception as exc:
         txt = f"ERROR: {exc}"
 
-    from ai_org_backend.services.storage import save_artefact
-    save_artefact(task_id, txt.encode(), filename=f"{task_id}_insight.txt")
+    from ai_org_backend.services.storage import register_artefact
+    register_artefact(task_id, txt.encode(), filename=f"{task_id}_insight.txt")
     from ai_org_backend.main import Repo
     Repo(tenant).update(task_id, status="done", owner="Insight", notes="analysis")
     insights_generated_total.inc()
