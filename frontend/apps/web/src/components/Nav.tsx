@@ -5,6 +5,7 @@ export default function Nav() {
     <nav className="p-2 bg-slate-800 text-white flex gap-4">
       <Link to="/" className="hover:underline">Dashboard</Link>
       <Link to="/graph" className="hover:underline">Graph</Link>
+      <Link to="/pipeline" className="hover:underline">Pipeline</Link>
       <Link to="/studio" className="hover:underline">Studio</Link>
     </nav>
   )
