@@ -1,0 +1,17 @@
+{# Prompt template for the Repo Composer agent #}
+You are an AI assistant tasked with initializing a new software project repository.
+
+Based on the following high-level architecture plan, generate an initial project structure, including key directories and files (like a main application file, README, and CI pipeline stub).
+
+Architecture Plan:
+{{ architecture_plan }}
+
+Provide the output as a JSON object with a "files" list. Each list entry should be an object containing:
+- "path": the file path (including directories if any)
+- "content": the text content of the file
+
+Ensure the JSON is valid. Include at least:
+- A main application entry point (e.g., `main.py`)
+- A README.md with project description
+- A continuous integration config stub (e.g., `.github/workflows/ci.yml`)
+- Any important configuration or module files suggested by the architecture.

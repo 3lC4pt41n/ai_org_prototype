@@ -108,6 +108,7 @@ def debit(tenant: str, amount: float):
 # (Celery app initialized in ai_org_backend.tasks.celery_app)
 
 # import artefact helper
+from ai_org_backend.agents import repo_composer  # ensure repo_composer agent is loaded
 
 
 # ──────────────── Agent stubs (patched) ──────────────────────
@@ -149,6 +150,7 @@ AGENTS = {
     "ux_ui": agent_ux_ui,
     "qa": agent_qa,
     "telemetry": agent_telemetry,
+    "repo": repo_composer.agent_repo,   # Register new repo_composer agent
 }
 
 # ──────────────── FastAPI + startup ─────────────────────────

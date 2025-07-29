@@ -7,7 +7,8 @@ from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.utils.llm import chat_completion
 from ai_org_backend.main import AGENTS
 
-AGENT_ROLES = list(AGENTS.keys())
+# Include repo agent for bootstrapping
+AGENT_ROLES = list(AGENTS.keys())  # Now includes 'repo' role
 
 
 def classify_role(desc: str) -> str:
