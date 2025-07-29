@@ -19,42 +19,5 @@ Current task (if any): **“{{ task | default('n/a') }}”**
 ## ❸ Feature Backlog
 * List **Must-Have / Should-Have / Nice-to-Have** features (bullet points).
 
-## ❹ Task Break-down (Seed)
-* Split the project into **10-20 ordered tasks**.
-* Each task must include:
-  * `id` – concise slug (`task01`, …)
-  * `description`
-  * `business_value` (0-1)
-  * `tokens_plan`    (int, model tokens)
-  * `purpose_relevance` (0-1)
-  * `depends_on`    (id / null)
-
-## ❺ Quality Gate
-* Append final Review / QA tasks (use IDs `qa01`, `qa02`, … – not counted in main sequence).
-* Ensure the chain is complete & realistic.
-
----
-
-### OUTPUT (⇢ strict JSON)
-
-```json
-{
-  "architecture": "<~50 words>",
-  "features": {
-    "must":   ["…"],
-    "should": ["…"],
-    "nice":   ["…"]
-  },
-  "tasks": [
-    {
-      "id": "task01",
-      "description": "Initialise repo & CI pipeline",
-      "business_value": 0.8,
-      "tokens_plan": 1500,
-      "purpose_relevance": 0.9,
-      "depends_on": null
-    }
-    // ...
-  ],
-  "qa_tasks": []
-}
+## ❹ Project Plan Outline
+* Outline 5-7 key phases or high-level tasks required to achieve the project (no detailed task list).

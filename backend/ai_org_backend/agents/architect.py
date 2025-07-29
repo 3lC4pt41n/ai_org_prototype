@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
@@ -19,8 +18,8 @@ ARCHITECT_LATENCY = prom_hist("ai_architect_latency_seconds", "Architect latency
 PROMPT_TMPL = Template(Path("prompts/architect.j2").read_text())
 
 
-def run_architect(purpose: Purpose, task: str | None = None) -> dict:
-    """Render template prompt and call OpenAI."""
+def run_architect(purpose: Purpose, task: str | None = None) -> str:
+    """Render template prompt and call OpenAI to produce an architecture blueprint."""
     prompt = PROMPT_TMPL.render(purpose=purpose.name, task=task or "n/a")
     start = time.time()
     try:
@@ -32,8 +31,8 @@ def run_architect(purpose: Purpose, task: str | None = None) -> dict:
     finally:
         ARCHITECT_LATENCY.observe(time.time() - start)
 
-    payload = json.loads(resp.choices[0].message.content)
-    return payload
+    content = resp.choices[0].message.content
+    return content
 
 
 @shared_task(name="architect.seed_graph", queue="architect")
@@ -42,11 +41,14 @@ def seed_graph(tenant_id: str, purpose_id: str) -> None:
 
     with SessionLocal() as db:
         purpose = db.get(Purpose, purpose_id)
-        data = run_architect(purpose)
-
-        for t in data["tasks"]:
+        blueprint = run_architect(purpose)
+        # Generate structured task list using planner
+        from ai_org_backend.agents.planner import run_planner
+        tasks = run_planner(blueprint)
+        # Persist tasks in the database
+        id_map = {}
+        for t in tasks:
             obj = Task(
-                id=t["id"],
                 tenant_id=tenant_id,
                 purpose_id=purpose_id,
                 description=t["description"],
@@ -55,18 +57,13 @@ def seed_graph(tenant_id: str, purpose_id: str) -> None:
                 purpose_relevance=t["purpose_relevance"],
             )
             db.add(obj)
+            id_map[t["id"]] = obj.id
         db.commit()
 
-        for t in data["tasks"]:
-            if t.get("depends_on"):
-                db.add(
-                    TaskDependency(
-                        from_id=t["id"],
-                        to_id=t["depends_on"],
-                        kind="hard_blocker",
-                        source="architect",
-                    )
-                )
+        for t in tasks:
+            dep_id = t.get("depends_on") or t.get("depends_on_id")
+            if dep_id and dep_id in id_map:
+                db.add(TaskDependency(from_id=id_map[dep_id], to_id=id_map[t["id"]]))
         db.commit()
 
     ingest(tenant_id)
