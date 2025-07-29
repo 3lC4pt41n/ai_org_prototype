@@ -1,13 +1,8 @@
-{# prompts/orchestrator.j2 #}
-You are the Orchestrator-Agent.
+{# prompts/orchestrator.j2 – Role classification prompt template #}
+You are a task routing assistant.
+Given the task description and the list of roles, determine which agent role should handle the task.
 
-Context:
-- You receive a list of tasks ...
+Available roles: {{ roles|join(', ') }}
+Task description: "{{ description }}"
 
-Goal:
-1. Pick up to **10 “todo” tasks** ...
-...
-
-Constraints:
-- Do **not** change any task fields.
-- Do **not** output anything except the JSON list.
+Provide the answer as a JSON object with a single key "role" and the role name as the value.
