@@ -7,9 +7,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@ui": path.resolve(__dirname, "../packages/ui/src"),
-      "@api": path.resolve(__dirname, "../packages/api-client/src"),
-      "@web": path.resolve(__dirname, "src")
+      "@ui": path.resolve(__dirname, "../../packages/ui/src"),
+      "@api": path.resolve(__dirname, "../../packages/api-client/src"),
+      "@web": path.resolve(__dirname, "src"),
+      
     }
   },
   server: {
