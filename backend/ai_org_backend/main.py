@@ -54,10 +54,12 @@ class Repo:
         business_value: float = 1.0,
         tokens_plan: int = 0,
         purpose_relevance: float = 0.0,
+        purpose_id: str | None = None,
     ) -> Task:
         with Session(engine) as s:
             t = Task(
                 tenant_id=self.tid,
+                purpose_id=purpose_id,
                 description=description,
                 business_value=business_value,
                 tokens_plan=tokens_plan,
