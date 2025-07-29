@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.db import engine
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.models import Task
 from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
@@ -115,7 +115,7 @@ def debit(tenant: str, amount: float):
 def agent_dev(tid: str, task_id: str):
     with TASK_LAT.labels("dev").time():
         code = f"# Auto-generated stub for {task_id}\n\ndef foo():\n    return 42\n"
-        save_artefact(task_id, code.encode(), filename=f"{task_id}.py")
+        register_artefact(task_id, code.encode(), filename=f"{task_id}.py")
         Repo(tid).update(task_id, status="done", owner="Dev", notes="stub code")
     TASK_CNT.labels("dev", "done").inc()
 
@@ -124,7 +124,7 @@ def agent_dev(tid: str, task_id: str):
 def agent_ux_ui(tid: str, task_id: str):
     with TASK_LAT.labels("ux_ui").time():
         html = f"<!-- mock wireframe for {task_id} -->\n<div class='p-4'>TODO UI</div>"
-        save_artefact(task_id, html.encode(), filename=f"{task_id}.html")
+        register_artefact(task_id, html.encode(), filename=f"{task_id}.html")
         Repo(tid).update(task_id, status="done", owner="UX/UI", notes="wireframe")
     TASK_CNT.labels("ux_ui", "done").inc()
 
@@ -133,7 +133,7 @@ def agent_ux_ui(tid: str, task_id: str):
 def agent_qa(tid: str, task_id: str):
     with TASK_LAT.labels("qa").time():
         report = f"QA report for {task_id}: ✅ looks good"
-        save_artefact(task_id, report.encode(), filename=f"{task_id}_qa.txt")
+        register_artefact(task_id, report.encode(), filename=f"{task_id}_qa.txt")
         Repo(tid).update(task_id, status="done", owner="QA", notes="qa pass")
     TASK_CNT.labels("qa", "done").inc()
 
