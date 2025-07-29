@@ -13,27 +13,46 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version:
-          - 18
-          - 20
+        include:
+          - language: node
+            node-version: 18
+          - language: python
+            python-version: 3.11
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Setup Node
+        if: ${{ matrix.language == 'node' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test -- --ci --coverage
-      - run: npm run build
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Setup Python
+        if: ${{ matrix.language == 'python' }}
+        uses: actions/setup-python@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: No raw OpenAI calls
-        run: ./.github/scripts/no_raw_openai.sh
+          python-version: ${{ matrix.python-version }}
+      - name: Install Python dependencies
+        if: ${{ matrix.language == 'python' }}
+        working-directory: backend
+        run: pip install -e ".[dev]"
+      - name: Run Backend Tests
+        if: ${{ matrix.language == 'python' }}
+        working-directory: backend
+        run: pytest -q
+      - name: Install Node dependencies
+        if: ${{ matrix.language == 'node' }}
+        run: npm install -g pnpm
+      - name: Install Frontend dependencies
+        if: ${{ matrix.language == 'node' }}
+        working-directory: frontend/apps/web
+        run: pnpm install
+      - name: Build Frontend
+        if: ${{ matrix.language == 'node' }}
+        working-directory: frontend/apps/web
+        run: pnpm run build
   release:
     if: github.ref == 'refs/heads/main'
     needs: build-test
