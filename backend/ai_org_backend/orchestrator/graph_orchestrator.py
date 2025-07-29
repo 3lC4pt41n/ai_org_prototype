@@ -16,11 +16,12 @@ from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.models import Task, TaskDependency
 from sqlmodel import select, Session
 from ai_org_backend.db import engine
-from ai_org_backend.utils.llm import chat_completion
+
 
 load_dotenv()
 
 TENANT = os.getenv("TENANT", "demo")
+PURPOSE = os.getenv("PURPOSE", "bootstrap")
 PROMPT_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
@@ -81,21 +82,36 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
             dict(
                 id=re.sub(r"\s+", "_", cols[0].lower())[:8] or f"task{len(tasks)+1}",
                 description=cols[0],
-                depends_on_id=cols[1] or None,
+                depends_on=cols[1] or None,
                 business_value=1.0,
                 tokens_plan=1_000,
-                purpose_relevance=50,
+                purpose_relevance=0.5,
             )
         )
     return tasks
 
 
-def seed_if_empty() -> None:
+def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     if todo_count(TENANT) > 0:
         return
-    arch = chat_completion(TMPL_ARCH.render(purpose="bootstrap", task="bootstrap"))
-    plan = chat_completion(TMPL_PLAN.render(task=arch))
-    tasks = _extract_tasks(plan)
+    # Determine or create Purpose for seeding
+    from ai_org_backend.models import Purpose
+    with Session(engine) as session:
+        purpose = session.exec(
+            select(Purpose).where(Purpose.name == purpose_name, Purpose.tenant_id == TENANT)
+        ).first()
+        if not purpose:
+            purpose = Purpose(name=purpose_name, tenant_id=TENANT)
+            session.add(purpose)
+            session.commit()
+            session.refresh(purpose)
+
+    # Generate tasks via LLM agents
+    from ai_org_backend.agents.architect import run_architect
+    from ai_org_backend.agents.planner import run_planner
+    blueprint = run_architect(purpose)
+    plan = run_planner(blueprint)
+    tasks = plan if isinstance(plan, list) else []
     if not tasks:
         alert("Seed LLM returned no tasks", "seed")
         return
@@ -107,16 +123,19 @@ def seed_if_empty() -> None:
             description=t["description"],
             business_value=t.get("business_value", 1.0),
             tokens_plan=t.get("tokens_plan", 0),
-            purpose_relevance=t.get("purpose_relevance", 0),
+            purpose_relevance=t.get("purpose_relevance", 0.0),
+            purpose_id=purpose.id,
         )
         id_map[t["id"]] = node.id
     with Session(engine) as s:
         for t in tasks:
-            dep = t.get("depends_on_id")
+            dep = t.get("depends_on") or t.get("depends_on_id")
             if dep and dep in id_map:
                 s.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
         s.commit()
-    print(f"📥  Auto-seeded {len(tasks)} tasks.")
+    from ai_org_backend.scripts.seed_graph import ingest
+    ingest(TENANT)
+    print(f" Auto-seeded {len(tasks)} tasks for purpose '{purpose.name}'.")
 
 
 def _build_graph(session, tenant_id: str) -> DiGraph:
@@ -132,7 +151,7 @@ def _build_graph(session, tenant_id: str) -> DiGraph:
         )
     ).all()
     for dep in deps:
-        g.add_edge(dep.from_id, dep.to_id, kind=dep.kind)
+        g.add_edge(dep.from_id, dep.to_id, kind=dep.dependency_type)
 
     return g
 

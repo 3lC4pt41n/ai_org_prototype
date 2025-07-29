@@ -47,8 +47,6 @@ SET   t.status            = $status,
 MERGE_DEP = """
 MATCH (a:Task {id:$from_id}), (b:Task {id:$to_id})
 MERGE (a)-[r:DEPENDS_ON {kind:$kind}]->(b)
-SET   r.source=$source,
-      r.note=$note
 """
 
 # ───── Ingest-Routine ───────────────────────────────────────────────
@@ -96,9 +94,7 @@ def ingest(tenant: str) -> Dict[str, int]:
                     MERGE_DEP,
                     from_id=dep.from_id,
                     to_id=dep.to_id,
-                    kind=dep.kind.value,
-                    source=dep.source,
-                    note=dep.note,
+                    kind=getattr(dep, "dependency_type", "blocks"),
                 )
 
             tx.commit()

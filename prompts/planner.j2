@@ -6,12 +6,13 @@ Blueprint reference: {{ task }}
 - Analyse the project scope.
 - Break the project into clear, actionable tasks.
 - Define dependencies between tasks.
-- For every task add:
+- For every task include:
   - `business_value` (0-1 float, impact)
   - `tokens_plan`    (estimated LLM tokens)
   - `purpose_relevance` (0-1 float, alignment with overall goal)
 
-Output **only** the dependency table in Markdown (no intro / no summary):
+- Include 1-2 final QA/review tasks with IDs starting "qa" (depending on the final main task).
+Output **only** the dependency table in Markdown (no intro / no summary), including all tasks and QA tasks:
 
 | Task                       | Depends_on              |
 |----------------------------|-------------------------|
