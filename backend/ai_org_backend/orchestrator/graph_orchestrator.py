@@ -121,6 +121,15 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     if not tasks:
         alert("Seed LLM returned no tasks", "seed")
         return
+    # Insert repository initialization task if not already present
+    if not any(t for t in tasks if str(t.get("description", "")).lower().startswith("initialize repository")):
+        tasks.insert(0, {
+            "id": "repo_init",
+            "description": "Initialize repository scaffolding",
+            "business_value": 1.0,
+            "tokens_plan": 0,
+            "purpose_relevance": 0.0
+        })
     from ai_org_backend.main import Repo
     # Avoid duplicate tasks (idempotent seeding)
     with Session(engine) as session:
@@ -155,6 +164,12 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             dep = t.get("depends_on") or t.get("depends_on_id")
             if dep and dep in id_map:
                 s.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
+        # Ensure all new tasks depend on the repo_init task (if present)
+        repo_id = id_map.get("repo_init")
+        if repo_id:
+            for slug, tid in id_map.items():
+                if slug != "repo_init":
+                    s.add(TaskDependency(from_id=repo_id, to_id=tid))
         s.commit()
     from ai_org_backend.scripts.seed_graph import ingest
     ingest(TENANT)
