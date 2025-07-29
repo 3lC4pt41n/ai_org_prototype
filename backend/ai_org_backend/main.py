@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.agents import router as agent_router
+from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.db import engine
 from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.models import Task
@@ -108,7 +109,7 @@ def debit(tenant: str, amount: float):
 # (Celery app initialized in ai_org_backend.tasks.celery_app)
 
 # import artefact helper
-from ai_org_backend.agents import repo_composer  # ensure repo_composer agent is loaded
+from ai_org_backend.agents import repo_composer  # ensure repo_composer agent is loaded  # noqa: E402
 
 
 # ──────────────── Agent stubs (patched) ──────────────────────
@@ -163,6 +164,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(tmpl_router)
 app.include_router(agent_router)
+app.include_router(pipeline_router)
 
 
 # CRUD endpoints (minimal)
