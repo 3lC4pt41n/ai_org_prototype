@@ -19,6 +19,11 @@ PROM_CRIT_PATH_LEN = Gauge(
     "Length of critical path",
     ["tenant"],
 )
+PROM_BUDGET_BLOCKED = Gauge(
+    "ai_tasks_budget_blocked",
+    "Number of tasks blocked by budget",
+    ["tenant"],
+)
 insights_generated_total = Counter(
     "ai_insights_total",
     "Insights generated",

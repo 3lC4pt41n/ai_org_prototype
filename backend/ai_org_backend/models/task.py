@@ -19,6 +19,8 @@ class TaskStatus(str, Enum):
     DONE = "done"
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
+    # Mark task skipped due to insufficient budget
+    BUDGET_EXCEEDED = "budget_exceeded"
 
 
 class Task(SQLModel, table=True):

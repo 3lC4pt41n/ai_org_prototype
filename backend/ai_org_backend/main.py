@@ -31,6 +31,8 @@ NEO4J_URL     = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER    = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASS    = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
 DEFAULT_BUDGET= float(os.getenv("DEFAULT_BUDGET", 20))
+# Price per 1k tokens (USD)
+TOKEN_PRICE_PER_1000 = float(os.getenv("TOKEN_PRICE_PER_1000", "0.0005"))
 
 pool    = redis.from_url(REDIS_URL, decode_responses=True)
 driver  = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
