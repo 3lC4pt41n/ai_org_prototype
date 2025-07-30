@@ -11,6 +11,7 @@ from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose
 from ai_org_backend.utils.llm import chat
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 
 # Load prompt template for Dev agent
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "dev.j2"
@@ -44,11 +45,13 @@ def agent_dev(tid: str, task_id: str) -> None:
             }
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
+        error_msg = None
         try:
             response = chat(model="o3", messages=[{"role": "user", "content": prompt}], temperature=0)
             content = response.choices[0].message.content
             logging.info(f"[DevAgent] LLM returned content for task {task_id}")
         except Exception as exc:
+            error_msg = str(exc)
             content = f"ERROR: {exc}"
             logging.error(f"[DevAgent] LLM generation failed for task {task_id}: {exc}")
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.py")
@@ -57,6 +60,11 @@ def agent_dev(tid: str, task_id: str) -> None:
             tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
         except Exception:
             pass
+        if error_msg:
+            Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
+            PROM_TASK_FAILED.labels(tid).inc()
+            TASK_CNT.labels("dev", "failed").inc()
+            return
         Repo(tid).update(task_id, status="done", owner="Dev", notes="code generated", tokens_actual=tokens_used)
     try:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))

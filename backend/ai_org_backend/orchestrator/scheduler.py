@@ -69,6 +69,7 @@ async def orchestrator() -> None:
             # Deduct planned cost from available budget and dispatch
             avail_budget -= cost_est
             role = classify_role(rec["d"])
+            Repo(TENANT).update(task_obj.id, status="doing")
             celery.send_task(
                 f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}"
             )

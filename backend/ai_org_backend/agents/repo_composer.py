@@ -12,6 +12,7 @@ from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Artifact
 from ai_org_backend.utils.llm import chat
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 
 # Load prompt template for repository composition
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "repo_composer.j2"
@@ -48,11 +49,14 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
                 logging.warning(f"[repo_composer] Task {task_id} not found in DB; proceeding with empty plan.")
         # Render prompt and call LLM to generate repository scaffold
         prompt = PROMPT_TMPL.render(architecture_plan=architecture_plan)
+        response = None
+        error_msg = None
         try:
             response = chat(model="o3", messages=[{"role": "user", "content": prompt}], temperature=0)
             content = response.choices[0].message.content
             logging.info(f"[repo_composer] LLM generated scaffold for Task {task_id}")
         except Exception as exc:
+            error_msg = str(exc)
             content = f"ERROR: Failed to generate repository scaffold - {exc}"
             logging.error(f"[repo_composer] LLM generation failed: {exc}")
         # Record tokens used by LLM
@@ -82,6 +86,11 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             save_artefact(task_id, file_content.encode("utf-8"), filename=path)
             files_created += 1
         # Mark task as done and assign to Repo owner
+        if error_msg:
+            Repo(tenant_id).update(task_id, status="failed", owner="Repo", notes=error_msg)
+            PROM_TASK_FAILED.labels(tenant_id).inc()
+            TASK_CNT.labels("repo", "failed").inc()
+            return
         Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created", tokens_actual=tokens_used)
     try:
         debit(tenant_id, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
