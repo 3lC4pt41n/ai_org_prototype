@@ -8,7 +8,7 @@ from jinja2 import Template
 # Import Celery app and utilities
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.services.storage import save_artefact
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT
+from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Artifact
 from ai_org_backend.utils.llm import chat
@@ -55,6 +55,12 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         except Exception as exc:
             content = f"ERROR: Failed to generate repository scaffold - {exc}"
             logging.error(f"[repo_composer] LLM generation failed: {exc}")
+        # Record tokens used by LLM
+        tokens_used = 0
+        try:
+            tokens_used = response.usage.total_tokens if response and hasattr(response, 'usage') else 0
+        except Exception:
+            pass
         # Expect LLM to return JSON with files list; try parsing if possible
         files_created = 0
         try:
@@ -76,6 +82,10 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             save_artefact(task_id, file_content.encode("utf-8"), filename=path)
             files_created += 1
         # Mark task as done and assign to Repo owner
-        Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created")
+        Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created", tokens_actual=tokens_used)
+    try:
+        debit(tenant_id, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+    except Exception as e:
+        logging.error(f"[repo_composer] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels("repo", "done").inc()
     logging.info(f"[repo_composer] Completed repo scaffolding for Task {task_id}: {files_created} file(s) saved")
