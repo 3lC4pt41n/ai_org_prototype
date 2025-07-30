@@ -8,6 +8,13 @@ You are a **QA Lead** for the project “{{ purpose }}”.
 Task under review:
 “{{ task }}”
 
+{% if snippet %}
+**Code snippet for review**:
+```{{ snippet_language }}
+{{ snippet }}
+```
+{% endif %}
+
 ## Review checklist
 1. **Functional correctness**  
 2. **Security & privacy** (OWASP Top 10, least-privilege)  
