@@ -16,6 +16,7 @@ from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.models import Task, TaskDependency
 from sqlmodel import select, Session
 from ai_org_backend.db import engine
+from ai_org_backend.services.storage import register_artefact
 
 
 load_dotenv()
@@ -130,6 +131,14 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             "tokens_plan": 0,
             "purpose_relevance": 0.0
         })
+    # Add a task to capture the Architecture Blueprint
+    tasks.append({
+        "id": "blueprint",
+        "description": "Architecture Blueprint",
+        "business_value": 0.0,
+        "tokens_plan": 0,
+        "purpose_relevance": 0.0
+    })
     from ai_org_backend.main import Repo
     # Avoid duplicate tasks (idempotent seeding)
     with Session(engine) as session:
@@ -167,10 +176,20 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         # Ensure all new tasks depend on the repo_init task (if present)
         repo_id = id_map.get("repo_init")
         if repo_id:
+            # Make repo_init depend on the architecture blueprint task if present
+            blueprint_tid = id_map.get("blueprint")
+            if blueprint_tid:
+                s.add(TaskDependency(from_id=blueprint_tid, to_id=repo_id))
+            # All other tasks (except repo_init and blueprint) depend on repo_init
             for slug, tid in id_map.items():
-                if slug != "repo_init":
+                if slug not in ("repo_init", "blueprint"):
                     s.add(TaskDependency(from_id=repo_id, to_id=tid))
         s.commit()
+    # Persist the architecture blueprint as an artifact and mark the task as done
+    blueprint_id = id_map.get("blueprint")
+    if blueprint_id:
+        register_artefact(blueprint_id, blueprint.encode("utf-8"), filename="blueprints/architecture_blueprint.md")
+        repo.update(blueprint_id, status="done", owner="Architect")
     from ai_org_backend.scripts.seed_graph import ingest
     ingest(TENANT)
     print(
