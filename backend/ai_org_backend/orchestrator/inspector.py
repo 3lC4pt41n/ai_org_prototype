@@ -24,6 +24,11 @@ PROM_BUDGET_BLOCKED = Gauge(
     "Number of tasks blocked by budget",
     ["tenant"],
 )
+PROM_TASK_FAILED = Counter(
+    "ai_tasks_failed_total",
+    "Number of tasks that failed",
+    ["tenant"]
+)
 insights_generated_total = Counter(
     "ai_insights_total",
     "Insights generated",
