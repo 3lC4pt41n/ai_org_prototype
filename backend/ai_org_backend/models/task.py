@@ -19,6 +19,8 @@ class TaskStatus(str, Enum):
     DONE = "done"
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
+    # Mark task skipped (no artefact or prerequisites)
+    SKIPPED = "skipped"
     # Mark task skipped due to insufficient budget
     BUDGET_EXCEEDED = "budget_exceeded"
 

@@ -9,13 +9,16 @@ from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, Purpose
+from sqlmodel import select
+from ai_org_backend.models import Task, Purpose, TaskDependency, Artifact
 from ai_org_backend.utils.llm import chat
+from ai_org_backend.metrics import prom_counter
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 
 # Load prompt template for QA agent
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "qa.j2"
 PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
+QA_ARTIFACT_COUNTER = prom_counter("ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts")
 
 
 @celery.task(name="agent.qa")
@@ -40,6 +43,65 @@ def agent_qa(tid: str, task_id: str) -> None:
                 "purpose": purpose_name,
                 "task": task_obj.description,
             }
+            # Attach code artefact snippet from preceding Dev task if available
+            dep = session.exec(select(TaskDependency).where(TaskDependency.to_id == task_id, TaskDependency.dependency_type == "FINISH_START")).first()
+            dev_task_id = dep.from_id if dep else None
+            if dev_task_id:
+                artefact = session.exec(select(Artifact).where(Artifact.task_id == dev_task_id)).first()
+                if artefact:
+                    file_path = Path("workspace") / tid / artefact.repo_path
+                    try:
+                        code_content = file_path.read_text(encoding="utf-8")
+                    except Exception as e:
+                        logging.error(f"[QAAgent] Failed to read artefact file {file_path}: {e}")
+                        code_content = ""
+                    snippet = ""
+                    snippet_lang = ""
+                    if code_content:
+                        MAX_TOKENS = 800
+                        if len(code_content) <= MAX_TOKENS * 4:
+                            snippet = code_content
+                        else:
+                            lines = code_content.splitlines()
+                            snippet_lines = []
+                            for ln in lines:
+                                lstripped = ln.lstrip()
+                                if lstripped.startswith("def ") or lstripped.startswith("class ") or "TODO" in ln or "todo" in ln:
+                                    snippet_lines.append(ln)
+                            if not snippet_lines:
+                                snippet_lines = lines[:50]
+                            snippet = "\n".join(snippet_lines)
+                        ext = Path(artefact.repo_path).suffix.lower()
+                        if ext == ".py":
+                            snippet_lang = "python"
+                        elif ext == ".js":
+                            snippet_lang = "javascript"
+                        elif ext == ".ts":
+                            snippet_lang = "typescript"
+                        elif ext in [".jsx", ".tsx"]:
+                            snippet_lang = "jsx"
+                        elif ext in [".html", ".htm"]:
+                            snippet_lang = "html"
+                        elif ext == ".css":
+                            snippet_lang = "css"
+                        elif ext == ".json":
+                            snippet_lang = "json"
+                        ctx["snippet"] = snippet
+                        ctx["snippet_language"] = snippet_lang
+                        logging.info(f"[QAAgent] Attached code snippet from task {dev_task_id} into QA prompt for task {task_id}")
+                        QA_ARTIFACT_COUNTER.inc()
+                else:
+                    logging.warning(f"[QAAgent] Dev artefact missing for task {dev_task_id}, skipping QA for task {task_id}")
+                    Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
+                    PROM_TASK_FAILED.labels(tid).inc()
+                    TASK_CNT.labels("qa", "failed").inc()
+                    return
+            else:
+                logging.warning(f"[QAAgent] No preceding dev task found for task {task_id}, skipping QA")
+                Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev task")
+                PROM_TASK_FAILED.labels(tid).inc()
+                TASK_CNT.labels("qa", "failed").inc()
+                return
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
         error_msg = None
