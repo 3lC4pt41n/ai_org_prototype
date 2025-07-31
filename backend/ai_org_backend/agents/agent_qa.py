@@ -47,51 +47,61 @@ def agent_qa(tid: str, task_id: str) -> None:
             dep = session.exec(select(TaskDependency).where(TaskDependency.to_id == task_id, TaskDependency.dependency_type == "FINISH_START")).first()
             dev_task_id = dep.from_id if dep else None
             if dev_task_id:
-                artefact = session.exec(select(Artifact).where(Artifact.task_id == dev_task_id)).first()
-                if artefact:
+                artifacts = session.exec(select(Artifact).where(Artifact.task_id == dev_task_id)).all()
+                if not artifacts:
+                    logging.warning(f"[QAAgent] Dev artefact missing for task {dev_task_id}, skipping QA for task {task_id}")
+                    Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
+                    PROM_TASK_FAILED.labels(tid).inc()
+                    TASK_CNT.labels("qa", "failed").inc()
+                    return
+                snippets = []
+                for artefact in artifacts:
                     file_path = Path("workspace") / tid / artefact.repo_path
                     try:
                         code_content = file_path.read_text(encoding="utf-8")
                     except Exception as e:
                         logging.error(f"[QAAgent] Failed to read artefact file {file_path}: {e}")
                         code_content = ""
-                    snippet = ""
-                    snippet_lang = ""
-                    if code_content:
-                        MAX_TOKENS = 800
-                        if len(code_content) <= MAX_TOKENS * 4:
-                            snippet = code_content
-                        else:
-                            lines = code_content.splitlines()
-                            snippet_lines = []
-                            for ln in lines:
-                                lstripped = ln.lstrip()
-                                if lstripped.startswith("def ") or lstripped.startswith("class ") or "TODO" in ln or "todo" in ln:
-                                    snippet_lines.append(ln)
-                            if not snippet_lines:
-                                snippet_lines = lines[:50]
-                            snippet = "\n".join(snippet_lines)
-                        ext = Path(artefact.repo_path).suffix.lower()
-                        if ext == ".py":
-                            snippet_lang = "python"
-                        elif ext == ".js":
-                            snippet_lang = "javascript"
-                        elif ext == ".ts":
-                            snippet_lang = "typescript"
-                        elif ext in [".jsx", ".tsx"]:
-                            snippet_lang = "jsx"
-                        elif ext in [".html", ".htm"]:
-                            snippet_lang = "html"
-                        elif ext == ".css":
-                            snippet_lang = "css"
-                        elif ext == ".json":
-                            snippet_lang = "json"
-                        ctx["snippet"] = snippet
-                        ctx["snippet_language"] = snippet_lang
-                        logging.info(f"[QAAgent] Attached code snippet from task {dev_task_id} into QA prompt for task {task_id}")
-                        QA_ARTIFACT_COUNTER.inc()
+                    if not code_content:
+                        continue
+                    # Extract snippet (full or partial) from artefact content
+                    MAX_TOKENS = 800
+                    if len(code_content) <= MAX_TOKENS * 4:
+                        snippet_content = code_content
+                    else:
+                        lines = code_content.splitlines()
+                        snippet_lines = []
+                        for ln in lines:
+                            lstripped = ln.lstrip()
+                            if lstripped.startswith("def ") or lstripped.startswith("class ") or "TODO" in ln or "todo" in ln:
+                                snippet_lines.append(ln)
+                        if not snippet_lines:
+                            snippet_lines = lines[:50]
+                        snippet_content = "\n".join(snippet_lines)
+                    ext = Path(artefact.repo_path).suffix.lower()
+                    if ext == ".py":
+                        snippet_lang = "python"
+                    elif ext == ".js":
+                        snippet_lang = "javascript"
+                    elif ext == ".ts":
+                        snippet_lang = "typescript"
+                    elif ext in [".jsx", ".tsx"]:
+                        snippet_lang = "jsx"
+                    elif ext in [".html", ".htm"]:
+                        snippet_lang = "html"
+                    elif ext == ".css":
+                        snippet_lang = "css"
+                    elif ext == ".json":
+                        snippet_lang = "json"
+                    else:
+                        snippet_lang = ""
+                    snippets.append({"filename": artefact.repo_path, "content": snippet_content, "language": snippet_lang})
+                if snippets:
+                    ctx["snippets"] = snippets
+                    logging.info(f"[QAAgent] Attached code snippets from task {dev_task_id} into QA prompt for task {task_id} ({len(snippets)} file(s))")
+                    QA_ARTIFACT_COUNTER.inc(len(snippets))
                 else:
-                    logging.warning(f"[QAAgent] Dev artefact missing for task {dev_task_id}, skipping QA for task {task_id}")
+                    logging.warning(f"[QAAgent] No readable code artifacts for task {dev_task_id}, skipping QA for task {task_id}")
                     Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels("qa", "failed").inc()
