@@ -21,45 +21,63 @@ Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware
 
 ## 🚀 1 | Quick Start (Local Dev)
 
+
 ```bash
-# Klonen
-git clone https://github.com/your‑org/ai_org_prototype.git
+# Clone repository
+git clone https://github.com/3lC4pt41n/ai_org_prototype.git
 cd ai_org_prototype
 
-# Python venv
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+# Python ≥ 3.11
+python -m venv .venv && source .venv/bin/activate  # Win: .venv\Scripts\activate
 pip install -e backend[dev]
 
-# Container‑Infra (Redis, Postgres optional, Neo4j, Prom/Grafana)
-docker compose -f ops/persistent.yml up -d    # redis + postgres
-docker compose -f ops/graph.yml      up -d    # neo4j  :7687 /7474
-docker compose -f ops/monitoring.yml up -d    # prometheus :9090 + grafana :3000
+# Container infra (Redis, Postgres, Neo4j, Prom/Grafana)
+docker compose -f ops/persistent.yml up -d
+docker compose -f ops/graph.yml up -d
+docker compose -f ops/monitoring.yml up -d  # prometheus + grafana
 
-# DB‑Migration + Demo‑Seed
+# DB migration & demo seed
 alembic -c backend/ai_org_backend/alembic.ini upgrade head
 python scripts/seed_graph.py --tenant demo
-Dienste starten (dev)
-bash
-Kopieren
-# 1 Celery‑Workers (Queues: demo:dev, demo:ux_ui …)
-celery -A ai_org_backend.tasks.celery_app worker \
-       -Q demo:dev,demo:ux_ui,demo:qa,demo:telemetry -l INFO -P solo
+```
 
-# 2 FastAPI‑Backend (REST + Prom + OpenAPI)
-uvicorn ai_org_backend.main:app --reload  # http://localhost:8000
+2. Budget konfigurieren  
+Der Tokenpreis wird in `backend/ai_org_backend/settings.py` als `TOKEN_PRICE` definiert. Jeder
+Mandant erhält beim ersten Start `settings.default_budget` USD (Redis Hash `budget:{tenant}`).
 
-# 3 Orchestrator‑Loop
-python -m ai_org_backend.orchestrator.scheduler   # zeigt Budget/Blocked/Path
+3. Celery-Worker starten
+```bash
+celery -A ai_org_backend.tasks.celery_app \
+       worker -Q demo:dev,demo:ux_ui,demo:qa,demo:telemetry \
+       -l INFO -P solo
+```
 
-# 4 React‑Frontend
-pnpm --filter ./frontend/apps/web install
-pnpm --filter ./frontend/apps/web dev              # http://localhost:5173
-Service	URL/Port	Default‑Creds
-FastAPI API	http://localhost:8000	–
-Redis	localhost:6379	ai_redis_pw
-Neo4j Browser	http://localhost:7474	neo4j / s3cr3tP@ss
-Grafana	http://localhost:3000	admin / prom-graph
+4. Orchestrator & Scheduler
+```bash
+python -m ai_org_backend.orchestrator.scheduler
+```
 
+5. Frontend
+```bash
+cd frontend && pnpm i
+pnpm --filter ./apps/web dev  # http://localhost:5173
+```
+
+### UI-Workflow
+| Bereich | Beschreibung |
+|---------|--------------|
+| **Purpose Form** | Neues Projektziel eingeben → löst Architect-Seed aus |
+| **Pipeline-Dashboard** | ReactFlow-Graph aller Tasks + Statusfarbe |
+| **Artefacts** | Download-Liste aller vom System erzeugten Dateien |
+
+### Budget-Gate
+* Vor jedem Task-Publish greift ein **Celery-before_publish** Hook (siehe `backend/ai_org_backend/tasks/celery_app.py`).
+* Wenn `budget_left < task.tokens_plan * TOKEN_PRICE`, wird der Task verworfen → Status `blocked` und Prometheus-Counter `ai_tasks_blocked` erhöht sich.
+
+### Smoke-Test
+```bash
+pytest -q backend/tests/test_smoke.py
+```
 🗂 2 | Code‑Struktur (Backend + Frontend)
 text
 Kopieren
