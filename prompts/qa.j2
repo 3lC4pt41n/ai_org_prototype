@@ -8,11 +8,14 @@ You are a **QA Lead** for the project “{{ purpose }}”.
 Task under review:
 “{{ task }}”
 
-{% if snippet %}
-**Code snippet for review**:
-```{{ snippet_language }}
-{{ snippet }}
+{% if snippets %}
+**Code snippet(s) for review**:
+{% for file in snippets %}
+**File:** `{{ file.filename }}`
+```{{ file.language }}
+{{ file.content }}
 ```
+{% endfor %}
 {% endif %}
 
 ## Review checklist
