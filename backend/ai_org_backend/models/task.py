@@ -45,9 +45,12 @@ class Task(SQLModel, table=True):
     purpose_relevance: float = Field(default=0.0, ge=0.0, le=1.0)
     
     # Status and workflow
-    status: TaskStatus = Field(default=TaskStatus.TODO)
+    status: str = Field(default="todo")
     owner: Optional[str] = Field(default=None)
     notes: str = Field(default="")
+    # ───────────── Retry support ─────────────
+    # how often this task wurde bereits automatisch erneut versucht
+    retries: int = Field(default=0, ge=0)
     
     # Timestamps
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)

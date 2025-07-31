@@ -27,6 +27,27 @@ from ai_org_backend.orchestrator.inspector import (
     PROM_BUDGET_BLOCKED,
 )
 
+# ╭────────────────── Retry settings ──────────────────╮
+MAX_RETRIES = 2  # total automatic attempts
+RETRY_DELAY_S = 30  # wait 30s after fail before retry
+
+
+def _retry_failed_tasks() -> None:
+    """Requeue failed tasks that have remaining retries."""
+    now = time.time()
+    with Session(engine) as db:
+        q = select(Task).where(Task.status == "failed", Task.retries < MAX_RETRIES)
+        for t in db.exec(q):
+            age = now - t.created_at.timestamp()
+            if age < RETRY_DELAY_S:
+                continue
+
+            t.status = "todo"
+            t.retries += 1
+            t.notes = f"auto-retry {t.retries}/{MAX_RETRIES}"
+            db.add(t)
+        db.commit()
+
 
 def _ready_for_execution(task: Task, session: Session) -> bool:
     """Return True if a task has no unresolved prerequisites."""
@@ -52,6 +73,9 @@ async def orchestrator() -> None:
         if avail_budget < 0:
             avail_budget = 0.0
         seed_if_empty()
+        # 1️⃣ retry failed tasks
+        _retry_failed_tasks()
+
         # Iterate over ready tasks
         for rec in cypher(LEAF_Q):
             # Fetch full task details for tokens_plan
