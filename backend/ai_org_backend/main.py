@@ -86,10 +86,7 @@ class Repo:
         with Session(engine) as s:
             task = s.get(Task, task_id)
             for k, v in kw.items():
-                if k == "status" and isinstance(v, str):
-                    setattr(task, k, TaskStatus(v))
-                else:
-                    setattr(task, k, v)
+                setattr(task, k, v)
             s.commit()
         if "status" in kw:
             with driver.session() as g:
@@ -163,7 +160,7 @@ async def create_task(d: Dict):
 async def backlog():
     with Session(engine) as s:
         rows = s.exec(
-            select(Task).where(Task.tenant_id == "demo", Task.status == TaskStatus.TODO)
+            select(Task).where(Task.tenant_id == "demo", Task.status == "todo")
         ).all()
     return [r.model_dump() for r in rows]
 
