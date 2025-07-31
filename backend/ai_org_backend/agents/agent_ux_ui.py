@@ -60,17 +60,18 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
             error_msg = str(exc)
             content = f"ERROR: {exc}"
             logging.error(f"[UXAgent] LLM generation failed for task {task_id}: {exc}")
+        if error_msg:
+            Repo(tid).update(task_id, status="failed", owner="UX/UI", notes=error_msg)
+            PROM_TASK_FAILED.labels(tid).inc()
+            TASK_CNT.labels("ux_ui", "failed").inc()
+            return
+        # Artefakt nur bei Erfolg speichern
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.md")
         tokens_used = 0
         try:
             tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
         except Exception:
             pass
-        if error_msg:
-            Repo(tid).update(task_id, status="failed", owner="UX/UI", notes=error_msg)
-            PROM_TASK_FAILED.labels(tid).inc()
-            TASK_CNT.labels("ux_ui", "failed").inc()
-            return
         Repo(tid).update(task_id, status="done", owner="UX/UI", notes="wireframe", tokens_actual=tokens_used)
     try:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
