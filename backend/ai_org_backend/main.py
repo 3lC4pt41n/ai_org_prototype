@@ -38,7 +38,8 @@ pool    = redis.from_url(REDIS_URL, decode_responses=True)
 driver  = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 # ──────────────── Metrics Prometheus ──────────────────────────
-start_http_server(9102)
+if os.getenv("DISABLE_METRICS") != "1":
+    start_http_server(9102)
 TASK_LAT   = Histogram("ai_task_latency_sec", "Task latency", ["role"])
 TASK_CNT   = Counter  ("ai_tasks_total",      "Tasks done",   ["role", "status"])
 BUDGET_GA  = Gauge     ("ai_budget_left_usd", "Budget left",  ["tenant"])
