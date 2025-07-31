@@ -62,11 +62,11 @@ export default function TaskGraph() {
             fontWeight: 500
           }
         }));
-        const edges = data.tasks.flatMap(task =>
-          (task.depends_on
-            ? [{ id: `${task.depends_on}->${task.id}`, source: task.depends_on, target: task.id }]
-            : [])
-        );
+        const edges = data.dependencies.map(dep => ({
+          id: `${dep.from_id}->${dep.to_id}`,
+          source: dep.from_id,
+          target: dep.to_id
+        }));
         setElements([...nodes, ...edges]);
       });
   }, []);
