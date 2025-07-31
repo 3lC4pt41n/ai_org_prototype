@@ -152,3 +152,17 @@ def download_artifact(artifact_id: str):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Artifact file not found")
     return FileResponse(file_path, media_type=art.media_type, filename=Path(art.repo_path).name)
+
+
+@router.get("/project.zip")
+def download_project_archive():
+    """Download a ZIP archive containing all artifacts for the tenant."""
+    base_dir = Path("workspace") / TENANT
+    if not base_dir.exists():
+        raise HTTPException(status_code=404, detail="No project output available")
+    archive_path = base_dir.parent / f"{TENANT}_output.zip"
+    if archive_path.exists():
+        archive_path.unlink()
+    from shutil import make_archive
+    make_archive(str(archive_path.with_suffix("")), "zip", root_dir=base_dir)
+    return FileResponse(archive_path, media_type="application/zip", filename=f"{TENANT}_project.zip")
