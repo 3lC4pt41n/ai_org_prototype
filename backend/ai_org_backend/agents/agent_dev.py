@@ -9,9 +9,10 @@ from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, Purpose
+from sqlmodel import select
+from ai_org_backend.models import Task, Purpose, TaskDependency
 from ai_org_backend.utils.llm import chat
-from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED, insights_generated_total
 
 # Load prompt template for Dev agent
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "dev.j2"
@@ -65,7 +66,49 @@ def agent_dev(tid: str, task_id: str) -> None:
             PROM_TASK_FAILED.labels(tid).inc()
             TASK_CNT.labels("dev", "failed").inc()
             return
+        # Markiere die aktuelle Task als erledigt und prüfe auf Folgeaufgaben
         Repo(tid).update(task_id, status="done", owner="Dev", notes="code generated", tokens_actual=tokens_used)
+        followups = []
+        if "```" not in content:
+            # Wenn die KI eine Aufzählung statt Code geliefert hat: jeden Punkt als neue Task anlegen
+            for line in content.splitlines():
+                if line.strip().startswith(("-", "*", "1.", "2.", "3.")):
+                    desc = line.lstrip("-*0123456789. ").strip()
+                    if desc:
+                        followups.append(desc)
+        else:
+            # Andernfalls nach 'TODO:'-Kommentaren im Code suchen
+            import re
+            for match in re.finditer(r'TODO[:\s]+(.+)', content):
+                desc = match.group(1).strip().rstrip('.:')
+                if desc:
+                    followups.append(desc)
+        if followups:
+            with SessionLocal() as session:
+                parent = session.get(Task, task_id)
+                # Werte für neue Aufgaben bestimmen (Token-Budget aufteilen, Mindestwert 500)
+                bv_each = max(round(parent.business_value / len(followups), 1), 0.1)
+                tok_each = (parent.tokens_plan // len(followups) if parent.tokens_plan else 0) or 500
+                for desc in followups:
+                    new_task = Task(tenant_id=tid, purpose_id=parent.purpose_id,
+                                    description=desc,
+                                    business_value=bv_each,
+                                    tokens_plan=tok_each,
+                                    purpose_relevance=parent.purpose_relevance,
+                                    notes=f"auto-split from task {task_id}")
+                    session.add(new_task)
+                session.flush()
+                # Jede neue Task mit Abhängigkeit (FINISH_START) an die originale Task verknüpfen
+                for t in session.query(Task).filter(Task.notes == f"auto-split from task {task_id}").all():
+                    session.add(TaskDependency(from_id=task_id, to_id=t.id, dependency_type="FINISH_START"))
+                session.commit()
+            logging.info(f"[DevAgent] Created {len(followups)} follow-up task(s) from task {task_id}")
+            insights_generated_total.inc(len(followups))
+            try:
+                from scripts.seed_graph import ingest
+                ingest(tid)
+            except Exception as e:
+                logging.error(f"[DevAgent] Neo4j ingest failed: {e}")
     try:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
