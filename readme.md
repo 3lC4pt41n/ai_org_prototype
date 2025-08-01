@@ -74,6 +74,11 @@ pnpm --filter ./apps/web dev  # http://localhost:5173
 * Vor jedem Task-Publish greift ein **Celery-before_publish** Hook (siehe `backend/ai_org_backend/tasks/celery_app.py`).
 * Wenn `budget_left < task.tokens_plan * TOKEN_PRICE`, wird der Task verworfen → Status `blocked` und Prometheus-Counter `ai_tasks_blocked` erhöht sich.
 
+### Quality-Gate (Automatisierte Testprüfung)
+* Nach jedem Dev-Task startet automatisch ein QA-Task, der generierte **Unit-Tests** ausführt.
+* **Bestanden:** Alle Tests laufen erfolgreich → Artefakt `test_report.txt`, Task bleibt im Status `done`.
+* **Fehlgeschlagen:** Bei Testfehlern oder wenn gar keine Tests vorhanden sind, wird der QA-Task mit Status `failed` markiert und ein Dev-Folgetask ("Fix failing tests" bzw. "Add tests") erzeugt.
+
 ### Smoke-Test
 ```bash
 pytest -q backend/tests/test_smoke.py

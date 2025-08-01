@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 from jinja2 import Template
@@ -11,6 +8,7 @@ from jinja2 import Template
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.testing import run_tests
 from ai_org_backend.db import SessionLocal
 from sqlmodel import select
 from ai_org_backend.models import Task, Purpose, TaskDependency, Artifact
@@ -138,39 +136,47 @@ def agent_qa(tid: str, task_id: str) -> None:
             tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
         except Exception:
             pass
-        Repo(tid).update(task_id, status="done", owner="QA", notes="QA report", tokens_actual=tokens_used)
         # Run any generated tests with pytest in an isolated workspace
         with SessionLocal() as session:
             test_artifacts = session.exec(
                 select(Artifact).where(Artifact.task_id == task_id, Artifact.repo_path.ilike("test%.py"))
             ).all()
+
         if test_artifacts:
-            logging.info(f"[QAAgent] Detected {len(test_artifacts)} test file(s) for task {task_id}, executing pytest")
-            temp_dir = tempfile.mkdtemp(prefix="qa_test_")
-            src_dir = Path("workspace") / tid
-            shutil.copytree(src_dir, temp_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns('.git'))
+            logging.info(
+                f"[QAAgent] Detected {len(test_artifacts)} test file(s) for task {task_id}, executing pytest"
+            )
             test_paths = []
             for art in test_artifacts:
                 art_path = Path(art.repo_path)
                 if art_path.parts and art_path.parts[0] == tid:
                     art_path = Path(*art_path.parts[1:])
                 test_paths.append(str(art_path))
-            try:
-                result = subprocess.run(["pytest", "-q"] + test_paths, cwd=temp_dir, capture_output=True, text=True)
-                test_output = result.stdout + result.stderr
-                tests_passed = (result.returncode == 0)
-            except Exception as exc:
-                tests_passed = False
-                test_output = f"ERROR: {exc}"
-                logging.error(f"[QAAgent] Test execution failed for task {task_id}: {exc}")
+            tests_passed, test_output = run_tests(tid, test_paths)
             save_artefact(task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt")
             if tests_passed:
-                Repo(tid).update(task_id, notes="QA report - tests passed")
+                Repo(tid).update(
+                    task_id,
+                    status="done",
+                    owner="QA",
+                    notes="QA report - tests passed",
+                    tokens_actual=tokens_used,
+                )
                 logging.info(f"[QAAgent] All tests passed for task {task_id}")
             else:
-                Repo(tid).update(task_id, notes="QA report - tests failed")
-                logging.warning(f"[QAAgent] Test failures detected for task {task_id}, creating fix task")
-                fail_lines = [line.strip() for line in test_output.splitlines() if line.strip().startswith("FAILED ")]
+                Repo(tid).update(
+                    task_id,
+                    status="failed",
+                    owner="QA",
+                    notes="QA report - tests failed",
+                    tokens_actual=tokens_used,
+                )
+                logging.warning(
+                    f"[QAAgent] Test failures detected for task {task_id}, creating fix task"
+                )
+                fail_lines = [
+                    line.strip() for line in test_output.splitlines() if line.strip().startswith("FAILED ")
+                ]
                 if fail_lines:
                     if len(fail_lines) == 1:
                         new_desc = f"Fix failing test: {fail_lines[0][len('FAILED '):]}"
@@ -182,8 +188,12 @@ def agent_qa(tid: str, task_id: str) -> None:
                 with SessionLocal() as session:
                     parent_task = session.get(Task, task_id)
                     orig_dev_task = session.get(Task, dev_task_id) if dev_task_id else None
-                    biz_value = orig_dev_task.business_value if orig_dev_task else parent_task.business_value
-                    plan_tokens = (orig_dev_task.tokens_plan if orig_dev_task and orig_dev_task.tokens_plan else 0) or 500
+                    biz_value = (
+                        orig_dev_task.business_value if orig_dev_task else parent_task.business_value
+                    )
+                    plan_tokens = (
+                        orig_dev_task.tokens_plan if orig_dev_task and orig_dev_task.tokens_plan else 0
+                    ) or 500
                     fix_task = Task(
                         tenant_id=tid,
                         purpose_id=parent_task.purpose_id,
@@ -191,20 +201,66 @@ def agent_qa(tid: str, task_id: str) -> None:
                         business_value=biz_value,
                         tokens_plan=plan_tokens,
                         purpose_relevance=parent_task.purpose_relevance,
-                        notes=f"auto-generated from QA task {task_id}"
+                        notes=f"auto-generated from QA task {task_id}",
                     )
                     session.add(fix_task)
                     session.flush()
-                    session.add(TaskDependency(from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START"))
+                    session.add(
+                        TaskDependency(from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START")
+                    )
                     session.commit()
                     new_task_id = fix_task.id
-                logging.info(f"[QAAgent] Created new Dev task {new_task_id} to address test failures from task {task_id}")
+                logging.info(
+                    f"[QAAgent] Created new Dev task {new_task_id} to address test failures from task {task_id}"
+                )
                 try:
                     from scripts.seed_graph import ingest
                     ingest(tid)
                 except Exception as e:
                     logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        else:
+            logging.warning(f"[QAAgent] No tests found for task {task_id}")
+            no_test_msg = "no tests detected"
+            save_artefact(task_id, no_test_msg.encode("utf-8"), filename=f"{task_id}_test_results.txt")
+            Repo(tid).update(
+                task_id,
+                status="failed",
+                owner="QA",
+                notes="QA report - no tests",
+                tokens_actual=tokens_used,
+            )
+            with SessionLocal() as session:
+                parent_task = session.get(Task, task_id)
+                orig_dev_task = session.get(Task, dev_task_id) if dev_task_id else None
+                biz_value = orig_dev_task.business_value if orig_dev_task else parent_task.business_value
+                plan_tokens = (
+                    orig_dev_task.tokens_plan if orig_dev_task and orig_dev_task.tokens_plan else 0
+                ) or 500
+                new_desc = f"Add tests: {parent_task.description}"
+                fix_task = Task(
+                    tenant_id=tid,
+                    purpose_id=parent_task.purpose_id,
+                    description=new_desc,
+                    business_value=biz_value,
+                    tokens_plan=plan_tokens,
+                    purpose_relevance=parent_task.purpose_relevance,
+                    notes=f"auto-generated from QA task {task_id}",
+                )
+                session.add(fix_task)
+                session.flush()
+                session.add(
+                    TaskDependency(from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START")
+                )
+                session.commit()
+                new_task_id = fix_task.id
+            logging.info(
+                f"[QAAgent] Created new Dev task {new_task_id} to add missing tests for task {task_id}"
+            )
+            try:
+                from scripts.seed_graph import ingest
+                ingest(tid)
+            except Exception as e:
+                logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
     try:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
