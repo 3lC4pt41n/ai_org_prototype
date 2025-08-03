@@ -8,6 +8,11 @@ You are a **QA Lead** for the project “{{ purpose }}”.
 Task under review:
 “{{ task }}”
 
+{% if error_note %}
+> Previous attempt failed with error: "{{ error_note }}"
+Please address this issue in the new attempt.
+{% endif %}
+
 {% if snippets %}
 **Code snippet(s) for review**:
 {% for file in snippets %}

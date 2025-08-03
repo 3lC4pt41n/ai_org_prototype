@@ -44,6 +44,12 @@ def agent_dev(tid: str, task_id: str) -> None:
                 "tokens_plan": task_obj.tokens_plan,
                 "purpose_relevance": int((task_obj.purpose_relevance or 0) * 100),
             }
+            # Include error note for retry attempts
+            if task_obj and task_obj.retries > 0 and task_obj.notes:
+                err = task_obj.notes.strip()
+                if len(err) > 200:
+                    err = err[:200] + "..."
+                ctx["error_note"] = err
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
         error_msg = None
