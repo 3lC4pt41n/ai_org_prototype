@@ -15,6 +15,7 @@ from sqlmodel import Session
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Task
+from ai_org_backend.services.embeddings import store_embedding_chunks
 
 WORKSPACE = Path.cwd() / "workspace"
 WORKSPACE.mkdir(exist_ok=True)
@@ -106,20 +107,30 @@ def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] =
         size=tgt.stat().st_size,
         sha256=sha,
     )
+
+    # Read text once for token counting and embeddings
+    try:
+        text_content = tgt.read_text(encoding="utf-8", errors="ignore")
+        word_count = len(text_content.split())
+    except Exception:
+        text_content = ""
+        word_count = 0
+
     # Save artefact in database and link to task
     with Session(engine) as session:
         session.add(artefact)
         task_obj = session.get(Task, task_id)
         if task_obj:
             # Update token usage (approximate)
-            try:
-                text_content = tgt.read_text(encoding="utf-8", errors="ignore")
-                word_count = len(text_content.split())
-            except Exception:
-                word_count = 0
             task_obj.tokens_actual += int(word_count * 1.5)
         session.commit()
         session.refresh(artefact)
+        # Store embeddings in Qdrant for later retrieval
+        if text_content and task_obj:
+            try:
+                store_embedding_chunks(task_obj, artefact, text_content)
+            except Exception as e:
+                logging.error(f"Embedding store failed: {e}")
     _git_commit(artefact.repo_path, f"{task_id}: add artefact {artefact.sha256[:8]}")
     _link_neo4j(task_id, sha)
     logging.info(f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})")

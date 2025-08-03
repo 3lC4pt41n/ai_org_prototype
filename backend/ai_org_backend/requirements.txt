@@ -100,3 +100,7 @@ wcwidth==0.2.13
     # via prompt-toolkit
 networkx==3.3
     # via ai_org_backend (backend/pyproject.toml)
+openai==1.97.2
+    # via ai_org_backend (backend/pyproject.toml)
+qdrant-client==1.15.1
+    # via ai_org_backend (backend/pyproject.toml)
