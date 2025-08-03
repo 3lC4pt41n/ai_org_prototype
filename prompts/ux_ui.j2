@@ -22,6 +22,14 @@ Please address this issue in the new attempt.
 
 ---
 
+{% if memory_snippets %}
+### PROJECT MEMORY
+{% for sn in memory_snippets %}
+- From "{{ sn.source }}": {{ sn.content|trim }}
+{% endfor %}
+---
+{% endif %}
+
 ## REQUIREMENTS
 1. **Visual Concept**
    * Colour palette (Tailwind / CSS vars)

@@ -9,6 +9,7 @@ from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.testing import run_tests
+from ai_org_backend.services.embeddings import get_relevant_snippets
 from ai_org_backend.db import SessionLocal
 from sqlmodel import select
 from ai_org_backend.models import Task, Purpose, TaskDependency, Artifact
@@ -44,6 +45,9 @@ def agent_qa(tid: str, task_id: str) -> None:
                 "purpose": purpose_name,
                 "task": task_obj.description,
             }
+            mem = get_relevant_snippets(tid, task_obj.purpose_id, task_obj.description)
+            if mem:
+                ctx["memory_snippets"] = mem
             # Include error note for retry attempts
             if task_obj and task_obj.retries > 0 and task_obj.notes:
                 err = task_obj.notes.strip()
