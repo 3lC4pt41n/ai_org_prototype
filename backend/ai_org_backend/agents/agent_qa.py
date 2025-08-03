@@ -7,7 +7,7 @@ from jinja2 import Template
 
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
-from ai_org_backend.services.storage import save_artefact, vector_store
+from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.testing import run_tests
 from ai_org_backend.db import SessionLocal
 from sqlmodel import select
@@ -50,23 +50,15 @@ def agent_qa(tid: str, task_id: str) -> None:
                 if len(err) > 200:
                     err = err[:200] + "..."
                 ctx["error_note"] = err
-            # Retrieve semantic memory snippets from the vector store
-            desc = task_obj.description
-            memory_snippets: list[dict] = []
-            results = vector_store.query_vectors(tid, desc, top_k=3)
-            for result in results:
-                file_path = Path("workspace") / result.payload.get("file", "")
-                snippet_text = ""
-                if file_path.exists():
-                    try:
-                        content = file_path.read_text(encoding="utf-8", errors="ignore")
-                    except Exception:
-                        content = ""
-                    snippet_text = content[:500] + ("..." if len(content) > 500 else "")
-                source = result.payload.get("file", f"Artifact {result.id}")
-                if source and source.startswith(f"{tid}/"):
-                    source = source[len(f"{tid}/"):]
-                memory_snippets.append({"source": source, "chunk": snippet_text})
+            # Retrieve semantic memory snippets for context
+            try:
+                from ai_org_backend.services import memory
+            except ImportError:
+                memory_snippets = []
+            else:
+                memory_snippets = memory.get_relevant_snippets(
+                    tid, task_obj.purpose_id, task_obj.description, top_k=3
+                )
             ctx["memory_snippets"] = memory_snippets
             # Attach code artefact snippet from preceding Dev task if available
             dep = session.exec(select(TaskDependency).where(TaskDependency.to_id == task_id, TaskDependency.dependency_type == "FINISH_START")).first()
