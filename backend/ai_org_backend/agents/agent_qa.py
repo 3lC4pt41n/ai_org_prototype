@@ -44,6 +44,12 @@ def agent_qa(tid: str, task_id: str) -> None:
                 "purpose": purpose_name,
                 "task": task_obj.description,
             }
+            # Include error note for retry attempts
+            if task_obj and task_obj.retries > 0 and task_obj.notes:
+                err = task_obj.notes.strip()
+                if len(err) > 200:
+                    err = err[:200] + "..."
+                ctx["error_note"] = err
             # Attach code artefact snippet from preceding Dev task if available
             dep = session.exec(select(TaskDependency).where(TaskDependency.to_id == task_id, TaskDependency.dependency_type == "FINISH_START")).first()
             dev_task_id = dep.from_id if dep else None
