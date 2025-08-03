@@ -15,6 +15,7 @@ from sqlmodel import Session
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Task
+from .vector_store import VectorStore
 
 WORKSPACE = Path.cwd() / "workspace"
 WORKSPACE.mkdir(exist_ok=True)
@@ -24,6 +25,8 @@ driver = GraphDatabase.driver(
     NEO4J_URL,
     auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASS", "s3cr3tP@ss")),
 )
+
+vector_store = VectorStore()
 
 if not (WORKSPACE / ".git").exists():
     subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
@@ -106,6 +109,7 @@ def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] =
         size=tgt.stat().st_size,
         sha256=sha,
     )
+    text_content: Optional[str] = None
     # Save artefact in database and link to task
     with Session(engine) as session:
         session.add(artefact)
@@ -122,7 +126,19 @@ def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] =
         session.refresh(artefact)
     _git_commit(artefact.repo_path, f"{task_id}: add artefact {artefact.sha256[:8]}")
     _link_neo4j(task_id, sha)
-    logging.info(f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})")
+    if text_content:
+        try:
+            vector_store.store_vector(
+                tenant_dir,
+                artefact.id,
+                text_content,
+                {"task": task_id, "file": artefact.repo_path},
+            )
+        except Exception as exc:  # pragma: no cover
+            logging.warning("Vector store failed: %s", exc)
+    logging.info(
+        f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})"
+    )
     return artefact
 
 # Maintain backward compatibility
