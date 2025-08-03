@@ -7,7 +7,7 @@ from jinja2 import Template
 
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, budget_left, debit, TOKEN_PRICE_PER_1000
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import save_artefact, vector_store
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose
 from ai_org_backend.utils.llm import chat
@@ -55,6 +55,24 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 if len(err) > 200:
                     err = err[:200] + "..."
                 ctx["error_note"] = err
+            # Retrieve semantic memory snippets from the vector store
+            desc = task_obj.description
+            memory_snippets: list[dict] = []
+            results = vector_store.query_vectors(tid, desc, top_k=3)
+            for result in results:
+                file_path = Path("workspace") / result.payload.get("file", "")
+                snippet_text = ""
+                if file_path.exists():
+                    try:
+                        content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        content = ""
+                    snippet_text = content[:500] + ("..." if len(content) > 500 else "")
+                source = result.payload.get("file", f"Artifact {result.id}")
+                if source and source.startswith(f"{tid}/"):
+                    source = source[len(f"{tid}/"):]
+                memory_snippets.append({"source": source, "chunk": snippet_text})
+            ctx["memory_snippets"] = memory_snippets
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
         error_msg = None
