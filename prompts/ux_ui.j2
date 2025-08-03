@@ -20,6 +20,13 @@ Please address this issue in the new attempt.
 * **Budget left**: {{ budget_left }} USD
 * **Tokens (plan / actual)**: {{ task.tokens_plan }} / {{ task.tokens_actual }}
 
+{% if memory_snippets %}
+### Project Memory
+{% for snippet in memory_snippets %}
+- From: {{ snippet.source }}: {{ snippet.chunk }}
+{% endfor %}
+{% endif %}
+
 ---
 
 ## REQUIREMENTS

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from ai_org_backend.services.storage import vector_store
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from ai_org_backend.db import engine
@@ -166,3 +167,36 @@ def download_project_archive():
     from shutil import make_archive
     make_archive(str(archive_path.with_suffix("")), "zip", root_dir=base_dir)
     return FileResponse(archive_path, media_type="application/zip", filename=f"{TENANT}_project.zip")
+
+
+@router.get("/context")
+def get_context(task_id: str):
+    """Get semantically relevant snippets for a given task."""
+    # Fetch task and ensure it exists
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        tenant_id = task.tenant_id
+        query_text = task.description
+    # Query vector store for relevant snippets
+    results = vector_store.query_vectors(tenant_id, query_text, top_k=5)
+    snippets: list[dict] = []
+    for res in results:
+        payload = res.payload or {}
+        source = payload.get("file", "")
+        snippet_text = ""
+        if source:
+            file_path = Path("workspace") / source
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    content = ""
+                snippet_text = content[:500] + ("..." if len(content) > 500 else "")
+        snippets.append({
+            "source": source,
+            "snippet": snippet_text,
+            "score": getattr(res, "score", None)
+        })
+    return {"task_id": task_id, "snippets": snippets}

@@ -26,6 +26,13 @@ Please address this issue in the new attempt.
   - Purpose relev. : {{ purpose_relevance }} %
   - Token budget   : ≤ {{ tokens_plan }} tokens ← *hard cap*
 
+{% if memory_snippets %}
+### Project Memory
+{% for snippet in memory_snippets %}
+- From: {{ snippet.source }}: {{ snippet.chunk }}
+{% endfor %}
+{% endif %}
+
 ### Guidelines ✅
 1. **Deliver only what the task needs** – no boilerplate beyond scope.
 2. Prefer idiomatic, well-documented code; reference modern best-practices.

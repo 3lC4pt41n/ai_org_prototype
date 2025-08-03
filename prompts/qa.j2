@@ -23,6 +23,13 @@ Please address this issue in the new attempt.
 {% endfor %}
 {% endif %}
 
+{% if memory_snippets %}
+### Project Memory
+{% for snippet in memory_snippets %}
+- From: {{ snippet.source }}: {{ snippet.chunk }}
+{% endfor %}
+{% endif %}
+
 ## Review checklist
 1. **Functional correctness**  
 2. **Security & privacy** (OWASP Top 10, least-privilege)  
