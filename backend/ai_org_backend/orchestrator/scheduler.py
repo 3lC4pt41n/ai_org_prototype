@@ -44,7 +44,9 @@ def _retry_failed_tasks() -> None:
 
             t.status = "todo"
             t.retries += 1
-            t.notes = f"auto-retry {t.retries}/{MAX_RETRIES}"
+            base_note = (t.notes or "").split("| auto-retry")[0].strip()
+            retry_msg = f"auto-retry {t.retries}/{MAX_RETRIES}"
+            t.notes = f"{base_note} | {retry_msg}" if base_note else retry_msg
             db.add(t)
         db.commit()
 

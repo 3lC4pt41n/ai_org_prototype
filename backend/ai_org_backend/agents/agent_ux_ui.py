@@ -49,6 +49,12 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 "task": task_data,
                 "budget_left": budget_val,
             }
+            # Include error note for retry attempts
+            if task_obj and task_obj.retries > 0 and task_obj.notes:
+                err = task_obj.notes.strip()
+                if len(err) > 200:
+                    err = err[:200] + "..."
+                ctx["error_note"] = err
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
         error_msg = None
