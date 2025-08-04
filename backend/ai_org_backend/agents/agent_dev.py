@@ -61,20 +61,30 @@ def agent_dev(tid: str, task_id: str) -> None:
             ctx["memory_snippets"] = memory_snippets
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
+        content = ""
         error_msg = None
-        try:
-            response = chat(model="o3", messages=[{"role": "user", "content": prompt}], temperature=0)
-            content = response.choices[0].message.content
-            logging.info(f"[DevAgent] LLM returned content for task {task_id}")
-        except Exception as exc:
-            error_msg = str(exc)
-            content = f"ERROR: {exc}"
-            logging.error(f"[DevAgent] LLM generation failed for task {task_id}: {exc}")
-        if error_msg:
-            Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
-            PROM_TASK_FAILED.labels(tid).inc()
-            TASK_CNT.labels("dev", "failed").inc()
-            return
+        model = "o3"
+        for attempt in range(2):
+            try:
+                response = chat(model=model, messages=[{"role": "user", "content": prompt}], temperature=0)
+                content = response.choices[0].message.content
+                logging.info(f"[DevAgent] LLM returned content for task {task_id} (attempt {attempt+1})")
+                error_msg = None
+                break
+            except Exception as exc:
+                error_msg = str(exc)
+                logging.error(f"[DevAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}")
+                if attempt == 0:
+                    Repo(tid).update(task_id, retries=task_obj.retries + 1, notes=error_msg)
+                    err = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
+                    ctx["error_note"] = err
+                    prompt = PROMPT_TMPL.render(**ctx)
+                    model = "o3-pro"
+                else:
+                    Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
+                    PROM_TASK_FAILED.labels(tid).inc()
+                    TASK_CNT.labels("dev", "failed").inc()
+                    return
         # Artefakt nur bei erfolgreichem LLM-Output speichern
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.py")
         tokens_used = 0
