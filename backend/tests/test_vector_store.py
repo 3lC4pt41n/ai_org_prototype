@@ -3,6 +3,7 @@ import sys
 import types
 
 from sqlmodel import SQLModel, Session
+from types import SimpleNamespace
 
 from ai_org_backend.models import Task
 
@@ -18,9 +19,14 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
 
+    monkeypatch.setattr(
+        "ai_org_backend.metrics.prom_counter",
+        lambda *a, **k: SimpleNamespace(inc=lambda: None),
+        raising=False,
+    )
+    monkeypatch.delitem(sys.modules, "ai_org_backend.db", raising=False)
+    monkeypatch.delitem(sys.modules, "ai_org_backend.services.storage", raising=False)
     import ai_org_backend.services.storage as storage
-
-    storage = importlib.reload(storage)
 
     # Use temporary workspace to avoid polluting repo
     monkeypatch.setattr(storage, "WORKSPACE", tmp_path / "ws")
