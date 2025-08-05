@@ -5,7 +5,7 @@ from sqlmodel import SQLModel, Session
 
 
 def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
-    """When overwriting an artifact, old vectors are removed and only the new vector remains."""
+    """When overwriting an artifact, old vectors are marked obsolete and new vector persists."""
     # Stub OpenAI embedding API
     openai_stub = types.ModuleType("openai")
     openai_stub.Embedding = SimpleNamespace(create=lambda *args, **kwargs: {"data": [{"embedding": [0.0]}]})
@@ -31,30 +31,25 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
                 return [SimpleNamespace(payload=self.store[ids[0]])]
             return []
 
-        def delete(self, collection_name, points_selector=None, **kwargs):
-            if points_selector is None:
-                return
-            if isinstance(points_selector, list):
-                for pid in points_selector:
-                    self.store.pop(pid, None)
-            else:
-                # Handle FilterSelector with .filter.must conditions
-                flt = getattr(points_selector, "filter", points_selector)
-                conditions = {}
-                for cond in getattr(flt, "must", []):
-                    conditions[cond.key] = cond.match.value
-                to_remove = [
-                    pid
-                    for pid, payload in self.store.items()
-                    if all(payload.get(k) == v for k, v in conditions.items())
-                ]
-                for pid in to_remove:
-                    self.store.pop(pid, None)
-
         def upsert(self, collection_name, points, **kwargs):
             # Store payload by point id
             for point in points:
                 self.store[point.id] = point.payload
+
+        def delete(self, collection_name, points_selector=None, **kwargs):
+            # Not used in this test but required by VectorStore.store_vector
+            pass
+
+        def set_payload(self, collection_name, points_selector=None, payload=None, **kwargs):
+            if payload is None or points_selector is None:
+                return
+            flt = getattr(points_selector, "filter", points_selector)
+            conditions = {}
+            for cond in getattr(flt, "must", []):
+                conditions[cond.key] = cond.match.value
+            for pid, pl in self.store.items():
+                if all(pl.get(k) == v for k, v in conditions.items()):
+                    pl.update(payload)
 
     qc_stub.QdrantClient = DummyQdrantClient
 
@@ -111,15 +106,18 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     # Both artifacts have the same repo_path since overwrite succeeded
     assert art2.repo_path == art1.repo_path
 
-    # After overwrite, old vector should be removed and only the new one present
+    # After overwrite, old vector remains but is flagged obsolete, new one persists
     vs_client = storage.vector_store.client
-    assert art1.id not in vs_client.store
+    assert art1.id in vs_client.store
+    assert vs_client.store[art1.id].get("obsolete") is True
     assert art2.id in vs_client.store
+    assert vs_client.store[art2.id].get("obsolete") is not True
 
     # The new vector's payload should reflect the updated metadata
     new_payload = vs_client.store[art2.id]
     assert new_payload.get("tenant") == "demo"
     assert new_payload.get("file") == art2.repo_path
+    assert new_payload.get("sha")
     # The version should reset to 1 for the new artifact (new artifact_id used)
     assert new_payload.get("version") == 1
 
