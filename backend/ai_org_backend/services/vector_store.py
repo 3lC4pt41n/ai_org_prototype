@@ -49,7 +49,7 @@ class VectorStore:
         tenant_id: str,
         artifact_id: str,
         text: str,
-        metadata: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Embed *text* and store it in the vector database.
 
@@ -109,7 +109,10 @@ class VectorStore:
         try:
             embed = openai.Embedding.create(model="text-embedding-3-small", input=query_text)
             vector = embed["data"][0]["embedding"]
-            q_filter = Filter(must=[FieldCondition(key="tenant", match=MatchValue(value=tenant_id))])
+            q_filter = Filter(
+                must=[FieldCondition(key="tenant", match=MatchValue(value=tenant_id))],
+                must_not=[FieldCondition(key="obsolete", match=MatchValue(value=True))],
+            )
             return self.client.search(
                 collection_name=self.collection_name,
                 query_vector=vector,

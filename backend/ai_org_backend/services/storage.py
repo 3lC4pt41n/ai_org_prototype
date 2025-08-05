@@ -179,7 +179,7 @@ def register_artefact(
                 FilterSelector,
             )
 
-            vector_store.client.delete(
+            vector_store.client.set_payload(
                 collection_name=vector_store.collection_name,
                 points_selector=FilterSelector(
                     filter=Filter(
@@ -194,6 +194,7 @@ def register_artefact(
                         ]
                     )
                 ),
+                payload={"obsolete": True},
             )
         except Exception as exc:
             logging.getLogger(__name__).warning("Vector cleanup failed: %s", exc)
@@ -207,7 +208,7 @@ def register_artefact(
                     tenant_dir,
                     artefact.id,
                     text_content,
-                    {"task": task_id, "file": artefact.repo_path},
+                    {"task": task_id, "file": artefact.repo_path, "sha": sha},
                 ):
                     stored = True
                     break
