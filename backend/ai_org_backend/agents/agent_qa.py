@@ -227,7 +227,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                         business_value=biz_value,
                         tokens_plan=plan_tokens,
                         purpose_relevance=parent_task.purpose_relevance,
-                        notes=f"auto-generated from QA task {task_id}",
+                        notes=f"auto-generated from QA task {task_id}; allow_overwrite",
                     )
                     session.add(fix_task)
                     session.flush()
@@ -270,7 +270,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     business_value=biz_value,
                     tokens_plan=plan_tokens,
                     purpose_relevance=parent_task.purpose_relevance,
-                    notes=f"auto-generated from QA task {task_id}",
+                    notes=f"auto-generated from QA task {task_id}; allow_overwrite",
                 )
                 session.add(fix_task)
                 session.flush()
