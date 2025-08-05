@@ -7,11 +7,14 @@ from jinja2 import Template
 
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import save_artefact, driver
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose, TaskDependency
 from ai_org_backend.utils.llm import chat
-from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED, insights_generated_total
+from ai_org_backend.orchestrator.inspector import (
+    PROM_TASK_FAILED,
+    insights_generated_total,
+)
 
 # Load prompt template for Dev agent
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "dev.j2"
@@ -66,22 +69,34 @@ def agent_dev(tid: str, task_id: str) -> None:
         model = "o3"
         for attempt in range(2):
             try:
-                response = chat(model=model, messages=[{"role": "user", "content": prompt}], temperature=0)
+                response = chat(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                )
                 content = response.choices[0].message.content
-                logging.info(f"[DevAgent] LLM returned content for task {task_id} (attempt {attempt+1})")
+                logging.info(
+                    f"[DevAgent] LLM returned content for task {task_id} (attempt {attempt+1})"
+                )
                 error_msg = None
                 break
             except Exception as exc:
                 error_msg = str(exc)
-                logging.error(f"[DevAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}")
+                logging.error(
+                    f"[DevAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}"
+                )
                 if attempt == 0:
-                    Repo(tid).update(task_id, retries=task_obj.retries + 1, notes=error_msg)
+                    Repo(tid).update(
+                        task_id, retries=task_obj.retries + 1, notes=error_msg
+                    )
                     err = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     ctx["error_note"] = err
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
                 else:
-                    Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
+                    Repo(tid).update(
+                        task_id, status="failed", owner="Dev", notes=error_msg
+                    )
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels("dev", "failed").inc()
                     return
@@ -95,11 +110,21 @@ def agent_dev(tid: str, task_id: str) -> None:
         )
         tokens_used = 0
         try:
-            tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
+            tokens_used = (
+                response.usage.total_tokens
+                if response and hasattr(response, "usage")
+                else 0
+            )
         except Exception:
             pass
         # Markiere die aktuelle Task als erledigt und prüfe auf Folgeaufgaben
-        Repo(tid).update(task_id, status="done", owner="Dev", notes="code generated", tokens_actual=tokens_used)
+        Repo(tid).update(
+            task_id,
+            status="done",
+            owner="Dev",
+            notes="code generated",
+            tokens_actual=tokens_used,
+        )
         followups = []
         if "```" not in content:
             # Wenn die KI eine Aufzählung statt Code geliefert hat: jeden Punkt als neue Task anlegen
@@ -111,8 +136,9 @@ def agent_dev(tid: str, task_id: str) -> None:
         else:
             # Andernfalls nach 'TODO:'-Kommentaren im Code suchen
             import re
-            for match in re.finditer(r'TODO[:\s]+(.+)', content):
-                desc = match.group(1).strip().rstrip('.:')
+
+            for match in re.finditer(r"TODO[:\s]+(.+)", content):
+                desc = match.group(1).strip().rstrip(".:")
                 if desc:
                     followups.append(desc)
         if followups:
@@ -120,30 +146,66 @@ def agent_dev(tid: str, task_id: str) -> None:
                 parent = session.get(Task, task_id)
                 # Werte für neue Aufgaben bestimmen (Token-Budget aufteilen, Mindestwert 500)
                 bv_each = max(round(parent.business_value / len(followups), 1), 0.1)
-                tok_each = (parent.tokens_plan // len(followups) if parent.tokens_plan else 0) or 500
+                tok_each = (
+                    parent.tokens_plan // len(followups) if parent.tokens_plan else 0
+                ) or 500
                 for desc in followups:
-                    new_task = Task(tenant_id=tid, purpose_id=parent.purpose_id,
-                                    description=desc,
-                                    business_value=bv_each,
-                                    tokens_plan=tok_each,
-                                    purpose_relevance=parent.purpose_relevance,
-                                    notes=f"auto-split from task {task_id}")
+                    new_task = Task(
+                        tenant_id=tid,
+                        purpose_id=parent.purpose_id,
+                        description=desc,
+                        business_value=bv_each,
+                        tokens_plan=tok_each,
+                        purpose_relevance=parent.purpose_relevance,
+                        notes=f"auto-split from task {task_id}",
+                    )
                     session.add(new_task)
-                session.flush()
-                # Jede neue Task mit Abhängigkeit (FINISH_START) an die originale Task verknüpfen
-                for t in session.query(Task).filter(Task.notes == f"auto-split from task {task_id}").all():
-                    session.add(TaskDependency(from_id=task_id, to_id=t.id, dependency_type="FINISH_START"))
+                session.flush()  # IDs zuweisen
+                # Jede neue Task als FINISH_START-Abhängigkeit mit Original-Task verknüpfen
+                for t in (
+                    session.query(Task)
+                    .filter(Task.notes == f"auto-split from task {task_id}")
+                    .all()
+                ):
+                    session.add(
+                        TaskDependency(
+                            from_id=task_id, to_id=t.id, dependency_type="FINISH_START"
+                        )
+                    )
                 session.commit()
-            logging.info(f"[DevAgent] Created {len(followups)} follow-up task(s) from task {task_id}")
+            logging.info(
+                f"[DevAgent] Created {len(followups)} follow-up task(s) from task {task_id}"
+            )
             insights_generated_total.inc(len(followups))
+            # Neo4j-Graph mit neuen Tasks und Abhängigkeiten aktualisieren (inkrementeller Sync)
             try:
-                from scripts.seed_graph import ingest
-                ingest(tid)
+                with SessionLocal() as session2:
+                    new_tasks = (
+                        session2.query(Task)
+                        .filter(Task.notes == f"auto-split from task {task_id}")
+                        .all()
+                    )
+                with driver.session() as g:
+                    for t_obj in new_tasks:
+                        g.run(
+                            """MERGE (t:Task {id:$id}) SET t.desc=$desc, t.status=$status""",
+                            id=t_obj.id,
+                            desc=t_obj.description,
+                            status=str(t_obj.status),
+                        )
+                        g.run(
+                            """MATCH (p:Task {id:$pid}), (c:Task {id:$cid})
+                                 MERGE (p)-[:DEPENDS_ON {kind:'FINISH_START'}]->(c)""",
+                            pid=task_id,
+                            cid=t_obj.id,
+                        )
             except Exception as e:
-                logging.error(f"[DevAgent] Neo4j ingest failed: {e}")
+                logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
     try:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
         logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels("dev", "done").inc()
-    logging.info(f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})")
+    logging.info(
+        f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})"
+    )
