@@ -1,4 +1,3 @@
-import importlib
 import sys
 import types
 
@@ -44,6 +43,7 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
 
     def fake_store(tenant, artifact_id, text, metadata):
         called.update(tenant=tenant, artifact_id=artifact_id, text=text, metadata=metadata)
+        return True
 
     monkeypatch.setattr(storage.vector_store, "store_vector", fake_store)
 
