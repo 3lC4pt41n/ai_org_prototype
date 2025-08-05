@@ -86,7 +86,13 @@ def agent_dev(tid: str, task_id: str) -> None:
                     TASK_CNT.labels("dev", "failed").inc()
                     return
         # Artefakt nur bei erfolgreichem LLM-Output speichern
-        save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.py")
+        overwrite_flag = "allow_overwrite" in (task_obj.notes or "")
+        save_artefact(
+            task_id,
+            content.encode("utf-8"),
+            filename=f"{task_id}.py",
+            allow_overwrite=overwrite_flag,
+        )
         tokens_used = 0
         try:
             tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
