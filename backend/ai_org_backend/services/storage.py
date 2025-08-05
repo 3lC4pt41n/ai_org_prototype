@@ -15,6 +15,7 @@ from sqlmodel import Session
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Task
+from ai_org_backend.metrics import prom_counter
 from .vector_store import VectorStore
 
 WORKSPACE = Path.cwd() / "workspace"
@@ -27,6 +28,9 @@ driver = GraphDatabase.driver(
 )
 
 vector_store = VectorStore()
+ARTIFACT_UPDATES = prom_counter(
+    "ai_artifact_updates_total", "Count of artefacts overwritten via register_artefact"
+)
 
 if not (WORKSPACE / ".git").exists():
     subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
@@ -69,8 +73,16 @@ def _link_neo4j(task_id: str, artefact_sha: str) -> None:
         )
 
 
-def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] = None) -> Artifact:
+def register_artefact(
+    task_id: str,
+    src: Path | bytes,
+    filename: Optional[str] = None,
+    *,
+    allow_overwrite: bool = False,
+) -> Artifact:
     """Save artefact file for a completed task and register it in the database.
+    If ``allow_overwrite`` is True and a file with the same name already exists in the
+    tenant workspace, the existing file is replaced instead of creating a suffixed copy.
     Automatically stores the artefact under the tenant's workspace directory and records metadata."""
     # Determine tenant workspace directory
     with Session(engine) as session:
@@ -87,13 +99,16 @@ def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] =
         src = Path(src).expanduser().resolve()
         base_name = filename or src.name
     tgt = target_dir / base_name
-    original_tgt = tgt
-    counter = 1
-    while tgt.exists():
-        stem = original_tgt.stem
-        suffix = original_tgt.suffix
-        tgt = target_dir / f"{stem}_{counter}{suffix}"
-        counter += 1
+    original_exists = tgt.exists()
+    if tgt.exists() and not allow_overwrite:
+        original_tgt = tgt
+        counter = 1
+        while tgt.exists():
+            stem = original_tgt.stem
+            suffix = original_tgt.suffix
+            tgt = target_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+        original_exists = False
     # Write bytes or copy file
     if isinstance(src, bytes):
         tgt.write_bytes(src)
@@ -124,7 +139,10 @@ def register_artefact(task_id: str, src: Path | bytes, filename: Optional[str] =
             task_obj.tokens_actual += int(word_count * 1.5)
         session.commit()
         session.refresh(artefact)
-    _git_commit(artefact.repo_path, f"{task_id}: add artefact {artefact.sha256[:8]}")
+    action = "update" if original_exists and allow_overwrite else "add"
+    _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
+    if original_exists and allow_overwrite:
+        ARTIFACT_UPDATES.inc()
     _link_neo4j(task_id, sha)
     if text_content:
         try:
