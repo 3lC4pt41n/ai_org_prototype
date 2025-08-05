@@ -84,7 +84,11 @@ class VectorStore:
 
             embed = openai.Embedding.create(model="text-embedding-3-small", input=text)
             vector = embed["data"][0]["embedding"]
-            payload: Dict[str, Any] = {"tenant": tenant_id, "version": version}
+            payload: Dict[str, Any] = {
+                "tenant": tenant_id,
+                "version": version,
+                "artifact_id": artifact_id,
+            }
             if metadata:
                 payload.update(metadata)
                 payload["version"] = int(payload.get("version", version))
