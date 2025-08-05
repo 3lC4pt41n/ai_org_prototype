@@ -56,11 +56,33 @@ class VectorStore:
         if not self.client or not text or openai is None:
             return
         try:
+            version = 1
+            existing_payload: Dict[str, Any] | None = None
+            try:
+                existing = self.client.retrieve(
+                    collection_name=self.collection_name,
+                    ids=[artifact_id],
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                if existing:
+                    existing_payload = existing[0].payload or {}
+                    prev_version = existing_payload.get("version")
+                    if isinstance(prev_version, int):
+                        version = prev_version + 1
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        points_selector=[artifact_id],
+                    )
+            except Exception as exc:  # pragma: no cover
+                logging.getLogger(__name__).warning("Vector cleanup failed: %s", exc)
+
             embed = openai.Embedding.create(model="text-embedding-3-small", input=text)
             vector = embed["data"][0]["embedding"]
-            payload = {"tenant": tenant_id}
+            payload: Dict[str, Any] = {"tenant": tenant_id, "version": version}
             if metadata:
                 payload.update(metadata)
+                payload["version"] = int(payload.get("version", version))
             self.client.upsert(
                 collection_name=self.collection_name,
                 points=[PointStruct(id=artifact_id, vector=vector, payload=payload)],
