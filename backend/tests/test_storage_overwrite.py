@@ -5,13 +5,8 @@ import types
 from sqlmodel import SQLModel, Session
 from types import SimpleNamespace
 
-from ai_org_backend.models import Task
 
-
-def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
-    """Ensure artefact registration stores an embedding."""
-
-    # Stub OpenAI before importing storage module
+def test_register_artefact_overwrites(monkeypatch, tmp_path):
     openai_stub = types.ModuleType("openai")
     openai_stub.Embedding = types.SimpleNamespace(create=lambda *a, **kw: {"data": [{"embedding": [0.0]}]})
     openai_stub.OpenAIError = Exception
@@ -28,11 +23,11 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
     monkeypatch.delitem(sys.modules, "ai_org_backend.services.storage", raising=False)
     import ai_org_backend.services.storage as storage
 
-    # Use temporary workspace to avoid polluting repo
     monkeypatch.setattr(storage, "WORKSPACE", tmp_path / "ws")
     storage.WORKSPACE.mkdir()
 
     SQLModel.metadata.create_all(storage.engine)
+    from ai_org_backend.models import Task
     with Session(storage.engine) as session:
         session.add(Task(id="t1", tenant_id="demo", description="x", status="done"))
         session.commit()
@@ -40,19 +35,15 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
     monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)
     monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)
 
-    called = {}
+    file1 = tmp_path / "demo.txt"
+    file1.write_text("v1")
+    art1 = storage.register_artefact("t1", file1)
 
-    def fake_store(tenant, artifact_id, text, metadata):
-        called.update(tenant=tenant, artifact_id=artifact_id, text=text, metadata=metadata)
+    file2 = tmp_path / "demo2.txt"
+    file2.write_text("v2")
+    art2 = storage.register_artefact("t1", file2, filename="demo.txt", allow_overwrite=True)
 
-    monkeypatch.setattr(storage.vector_store, "store_vector", fake_store)
-
-    file_path = tmp_path / "demo.txt"
-    file_path.write_text("hello world")
-
-    artefact = storage.register_artefact("t1", file_path)
-
-    assert called["tenant"] == "demo"
-    assert called["artifact_id"] == artefact.id
-    assert called["text"] == "hello world"
-    assert called["metadata"]["task"] == "t1"
+    assert art2.repo_path == art1.repo_path
+    path = storage.WORKSPACE / "demo" / "demo.txt"
+    assert path.read_text() == "v2"
+    assert art1.id != art2.id
