@@ -22,11 +22,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if ROOT.as_posix() not in sys.path:
     sys.path.insert(0, ROOT.as_posix())
 
-from ai_org_backend.db import engine                           # noqa: E402
-from ai_org_backend.models import Task, TaskDependency         # noqa: E402
+from ai_org_backend.db import engine  # noqa: E402
+from ai_org_backend.models import Task, TaskDependency, Artifact  # noqa: E402
 
 # ───── Neo4j-Konfiguration ──────────────────────────────────────────
-NEO4J_URL  = os.getenv("NEO4J_URL",  "bolt://localhost:7687")
+NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
 
@@ -49,6 +49,7 @@ MATCH (a:Task {id:$from_id}), (b:Task {id:$to_id})
 MERGE (a)-[r:DEPENDS_ON {kind:$kind}]->(b)
 """
 
+
 # ───── Ingest-Routine ───────────────────────────────────────────────
 def ingest(tenant: str) -> Dict[str, int]:
     """Kopiert Tasks + Dependencies eines Tenants nach Neo4j."""
@@ -57,9 +58,7 @@ def ingest(tenant: str) -> Dict[str, int]:
         g.run(CLEAN_CYPHER)
 
         # Tasks dieses Tenants holen
-        tasks = db.exec(
-            select(Task).where(Task.tenant_id == tenant)
-        ).all()
+        tasks = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
 
         # Dependencies inkl. beteiligter Tasks eager-laden
         deps = db.exec(
@@ -70,6 +69,10 @@ def ingest(tenant: str) -> Dict[str, int]:
                 selectinload(TaskDependency.from_task),
                 selectinload(TaskDependency.to_task),
             )
+        ).all()
+        # Alle Artefakte dieses Tenants holen (für PRODUCED-Kanten)
+        artifacts = db.exec(
+            select(Artifact).where(Artifact.task.has(tenant_id=tenant))
         ).all()
 
         merged: set[str] = set()
@@ -88,7 +91,7 @@ def ingest(tenant: str) -> Dict[str, int]:
                 )
                 merged.add(t.id)
 
-            # dann Kanten
+            # dann Kanten (Task-Dependencies)
             for dep in deps:
                 tx.run(
                     MERGE_DEP,
@@ -96,11 +99,25 @@ def ingest(tenant: str) -> Dict[str, int]:
                     to_id=dep.to_id,
                     kind=getattr(dep, "dependency_type", "blocks"),
                 )
+            # dann Artefakt-Kanten (Task->Artifact)
+            for art in artifacts:
+                tx.run(
+                    """
+                    MERGE (a:Artifact {sha256:$sha})
+                      ON CREATE SET a.created_at=$ts
+                    MATCH (t:Task {id:$tid})
+                    MERGE (t)-[:PRODUCED]->(a)
+                    """,
+                    sha=art.sha256,
+                    ts=art.created_at.isoformat(),
+                    tid=art.task_id,
+                )
 
             tx.commit()
 
     driver.close()
     return {"tasks": len(merged), "deps": len(deps)}
+
 
 # ───── CLI-Entry-Point ──────────────────────────────────────────────
 if __name__ == "__main__":

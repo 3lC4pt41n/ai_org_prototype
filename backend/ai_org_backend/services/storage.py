@@ -51,29 +51,46 @@ def _mime(p: Path) -> str:
 
 def _git_commit(rel_path: str, message: str) -> None:
     subprocess.run(["git", "-C", str(WORKSPACE), "add", rel_path], check=True)
-    subprocess.run([
-        "git",
-        "-C",
-        str(WORKSPACE),
-        "commit",
-        "-m",
-        message,
-        "--quiet",
-    ], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(WORKSPACE),
+            "commit",
+            "-m",
+            message,
+            "--quiet",
+        ],
+        check=True,
+    )
 
 
 def _link_neo4j(task_id: str, artefact_sha: str) -> None:
-    with driver.session() as g:
-        g.run(
-            """
-            MERGE (a:Artifact {sha256:$sha})
-              ON CREATE SET a.created_at=$ts
-            MATCH (t:Task {id:$tid})
-            MERGE (t)-[:PRODUCED]->(a)
-            """,
-            sha=artefact_sha,
-            ts=dt.utcnow().isoformat(),
-            tid=task_id,
+    """Link artifact to task in Neo4j graph, ensuring both nodes and relation exist."""
+    try:
+        # Ensure the task exists in graph (merge on id). Fetch task info for meaningful properties.
+        with Session(engine) as session:
+            task_obj = session.get(Task, task_id)
+            t_status = str(task_obj.status) if task_obj else "todo"
+            t_desc = task_obj.description if task_obj else ""
+        with driver.session() as g:
+            g.run(
+                """
+                MERGE (t:Task {id:$tid})
+                  ON CREATE SET t.status=$status, t.desc=$desc, t.created_at=$ts
+                MERGE (a:Artifact {sha256:$sha})
+                  ON CREATE SET a.created_at=$ts
+                MERGE (t)-[:PRODUCED]->(a)
+                """,
+                tid=task_id,
+                sha=artefact_sha,
+                status=t_status,
+                desc=t_desc[:200],
+                ts=dt.utcnow().isoformat(),
+            )
+    except Exception as exc:
+        logging.getLogger(__name__).error(
+            f"Neo4j link failed for Task {task_id}, Artifact {artefact_sha[:8]}: {exc}"
         )
 
 
@@ -85,6 +102,7 @@ def should_embed(text: str) -> bool:
     word_count = len(text.split())
     return word_count >= 20
 
+
 def register_artefact(
     task_id: str,
     src: Path | bytes,
@@ -95,7 +113,8 @@ def register_artefact(
     """Save artefact file for a completed task and register it in the database.
     If ``allow_overwrite`` is True and a file with the same name already exists in the
     tenant workspace, the existing file is replaced instead of creating a suffixed copy.
-    Automatically stores the artefact under the tenant's workspace directory and records metadata."""
+    Automatically stores the artefact under the tenant's workspace directory and records metadata.
+    """
     # Determine tenant workspace directory
     with Session(engine) as session:
         task_obj = session.get(Task, task_id)
@@ -153,15 +172,25 @@ def register_artefact(
         session.refresh(artefact)
     if original_exists and allow_overwrite and vector_store.client:
         try:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+            from qdrant_client.models import (
+                Filter,
+                FieldCondition,
+                MatchValue,
+                FilterSelector,
+            )
 
             vector_store.client.delete(
                 collection_name=vector_store.collection_name,
                 points_selector=FilterSelector(
                     filter=Filter(
                         must=[
-                            FieldCondition(key="tenant", match=MatchValue(value=tenant_dir)),
-                            FieldCondition(key="file", match=MatchValue(value=str(artefact.repo_path))),
+                            FieldCondition(
+                                key="tenant", match=MatchValue(value=tenant_dir)
+                            ),
+                            FieldCondition(
+                                key="file",
+                                match=MatchValue(value=str(artefact.repo_path)),
+                            ),
                         ]
                     )
                 ),
@@ -192,10 +221,16 @@ def register_artefact(
             )
 
     action = "update" if original_exists and allow_overwrite else "add"
-    _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
+    _git_commit(
+        artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}"
+    )
     if original_exists and allow_overwrite:
         ARTIFACT_UPDATES.inc()
-    _link_neo4j(task_id, sha)
+    try:
+        _link_neo4j(task_id, sha)
+    except Exception:
+        # Fehler im Neo4j-Link wurden bereits geloggt
+        pass
     logging.info(
         f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})"
     )
@@ -208,20 +243,29 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
     if vector_store.client:
         try:
             # Remove points by artifact_id (all chunks) using Qdrant filter
-            from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+            from qdrant_client.models import (
+                Filter,
+                FieldCondition,
+                MatchValue,
+                FilterSelector,
+            )
 
             vector_store.client.delete(
                 collection_name=vector_store.collection_name,
                 points_selector=FilterSelector(
                     filter=Filter(
                         must=[
-                            FieldCondition(key="artifact_id", match=MatchValue(value=artifact_id))
+                            FieldCondition(
+                                key="artifact_id", match=MatchValue(value=artifact_id)
+                            )
                         ]
                     )
                 ),
             )
         except Exception as exc:
-            logging.getLogger(__name__).warning("Vector retraction via filter failed: %s", exc)
+            logging.getLogger(__name__).warning(
+                "Vector retraction via filter failed: %s", exc
+            )
             try:
                 # Fallback: direct deletion by ID (non-chunked entries)
                 vector_store.client.delete(
@@ -241,9 +285,13 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
                     sha_val = art_obj.sha256
             if sha_val:
                 with driver.session() as g:
-                    g.run("MATCH (a:Artifact {sha256:$sha}) DETACH DELETE a", sha=sha_val)
+                    g.run(
+                        "MATCH (a:Artifact {sha256:$sha}) DETACH DELETE a", sha=sha_val
+                    )
         except Exception as exc:
-            logging.getLogger(__name__).warning("Neo4j artifact removal failed: %s", exc)
+            logging.getLogger(__name__).warning(
+                "Neo4j artifact removal failed: %s", exc
+            )
 
 
 # Maintain backward compatibility
