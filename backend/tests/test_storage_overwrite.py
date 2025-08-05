@@ -1,4 +1,3 @@
-import importlib
 import sys
 import types
 
@@ -34,6 +33,7 @@ def test_register_artefact_overwrites(monkeypatch, tmp_path):
 
     monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)
     monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)
+    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *a, **k: True)
 
     file1 = tmp_path / "demo.txt"
     file1.write_text("v1")

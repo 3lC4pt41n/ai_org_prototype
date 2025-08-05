@@ -7,6 +7,7 @@ import os
 import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -31,6 +32,9 @@ vector_store = VectorStore()
 ARTIFACT_UPDATES = prom_counter(
     "ai_artifact_updates_total", "Count of artefacts overwritten via register_artefact"
 )
+
+# retry settings for vector persistence
+VECTOR_STORE_RETRIES = 3
 
 if not (WORKSPACE / ".git").exists():
     subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
@@ -139,21 +143,28 @@ def register_artefact(
             task_obj.tokens_actual += int(word_count * 1.5)
         session.commit()
         session.refresh(artefact)
+    # persist vector before committing to git / graph
+    if text_content:
+        stored = False
+        for attempt in range(1, VECTOR_STORE_RETRIES + 1):
+            if vector_store.store_vector(
+                tenant_dir,
+                artefact.id,
+                text_content,
+                {"task": task_id, "file": artefact.repo_path},
+            ):
+                stored = True
+                break
+            logging.warning("Vector store attempt %s failed", attempt)
+            time.sleep(1)
+        if not stored:
+            raise RuntimeError("Vector store persistence failed")
+
     action = "update" if original_exists and allow_overwrite else "add"
     _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
     if original_exists and allow_overwrite:
         ARTIFACT_UPDATES.inc()
     _link_neo4j(task_id, sha)
-    if text_content:
-        try:
-            vector_store.store_vector(
-                tenant_dir,
-                artefact.id,
-                text_content,
-                {"task": task_id, "file": artefact.repo_path},
-            )
-        except Exception as exc:  # pragma: no cover
-            logging.warning("Vector store failed: %s", exc)
     logging.info(
         f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})"
     )
