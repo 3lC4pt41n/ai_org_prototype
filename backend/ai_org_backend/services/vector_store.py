@@ -50,11 +50,16 @@ class VectorStore:
         artifact_id: str,
         text: str,
         metadata: Optional[Dict[str, str]] = None,
-    ) -> None:
-        """Embed *text* and store it in the vector database."""
+    ) -> bool:
+        """Embed *text* and store it in the vector database.
+
+        Returns ``True`` on success and ``False`` if the vector could not be
+        persisted. A ``False`` return value indicates that the caller should
+        retry the operation.
+        """
 
         if not self.client or not text or openai is None:
-            return
+            return True
         try:
             version = 1
             existing_payload: Dict[str, Any] | None = None
@@ -87,8 +92,10 @@ class VectorStore:
                 collection_name=self.collection_name,
                 points=[PointStruct(id=artifact_id, vector=vector, payload=payload)],
             )
+            return True
         except Exception as exc:  # pragma: no cover
             logging.getLogger(__name__).warning("Vector upsert failed: %s", exc)
+            return False
 
     def query_vectors(self, tenant_id: str, query_text: str, top_k: int = 5) -> List[Any]:
         """Return up to *top_k* similar vectors for *query_text*."""
