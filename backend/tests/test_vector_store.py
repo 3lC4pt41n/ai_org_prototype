@@ -48,11 +48,11 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
     monkeypatch.setattr(storage.vector_store, "store_vector", fake_store)
 
     file_path = tmp_path / "demo.txt"
-    file_path.write_text("hello world")
+    file_path.write_text("hello world " * 15)
 
     artefact = storage.register_artefact("t1", file_path)
 
     assert called["tenant"] == "demo"
     assert called["artifact_id"] == artefact.id
-    assert called["text"] == "hello world"
+    assert called["text"] == "hello world " * 15
     assert called["metadata"]["task"] == "t1"
