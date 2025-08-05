@@ -14,6 +14,7 @@ def get_relevant_snippets(
     purpose_id: Optional[str],
     query_text: str,
     top_k: int = 3,
+    scope: str = "project",
 ) -> List[Dict[str, str]]:
     """Retrieve relevant context snippets for a query via semantic vector search.
 
@@ -27,6 +28,7 @@ def get_relevant_snippets(
         purpose_id: Optional purpose/project identifier to further filter results.
         query_text: The text to search for similar content.
         top_k: Number of top results to retrieve.
+        scope: Retrieval scope ("project" or "global"). Use "project" to restrict results to the given project, or "global" to search across all projects of the tenant.
 
     Returns:
         A list of snippet dictionaries. If no results are found or the vector
@@ -44,7 +46,7 @@ def get_relevant_snippets(
         return snippets
 
     session = None
-    if purpose_id:
+    if purpose_id and scope != "global":
         try:
             session = SessionLocal()
         except Exception as exc:  # pragma: no cover - defensive logging
@@ -52,7 +54,7 @@ def get_relevant_snippets(
             session = None
 
     for result in results:
-        if purpose_id and session:
+        if scope != "global" and purpose_id and session:
             try:
                 task_id = result.payload.get("task")
                 if task_id:
