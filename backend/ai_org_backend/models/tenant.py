@@ -27,6 +27,10 @@ class Tenant(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
+    allow_web_research: bool = Field(
+        default=False,
+        description="If true, agents may access the public web."
+    )
 
     # FIXED: Import List from typing explicitly, no __future__ annotations
     tasks: List["Task"] = Relationship(back_populates="tenant")

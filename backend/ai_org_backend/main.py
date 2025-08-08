@@ -15,6 +15,7 @@ from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.auth import router as auth_router
+from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 # storage helpers are used by individual agent modules
@@ -151,6 +152,7 @@ app.include_router(auth_router)
 app.include_router(tmpl_router)
 app.include_router(agent_router)
 app.include_router(pipeline_router)
+app.include_router(settings_router)
 
 
 # CRUD endpoints (minimal)
