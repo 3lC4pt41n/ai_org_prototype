@@ -1,0 +1,16 @@
+# Testen
+pytest
+pytest-cov
+pytest-mock
+
+# Statische Analyse / Sicherheit
+mypy
+types-requests
+ruff
+black
+isort
+bandit
+pre-commit
+
+# Optional nützlich
+requests-mock
