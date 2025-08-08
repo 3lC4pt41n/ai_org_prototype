@@ -178,7 +178,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                 if art_path.parts and art_path.parts[0] == tid:
                     art_path = Path(*art_path.parts[1:])
                 test_paths.append(str(art_path))
-            tests_passed, test_output = run_tests(tid, test_paths)
+            tests_passed, test_output, note = run_tests(tid, test_paths)
             save_artefact(task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt")
             if tests_passed:
                 Repo(tid).update(
@@ -194,7 +194,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     task_id,
                     status="failed",
                     owner="QA",
-                    notes="QA report - tests failed",
+                    notes=note or "QA report - tests failed",
                     tokens_actual=tokens_used,
                 )
                 logging.warning(
