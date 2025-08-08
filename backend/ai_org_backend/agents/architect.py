@@ -11,6 +11,8 @@ from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.services.llm_client import chat_with_tools, MODEL_PRO
 from ai_org_backend.services.deep_research import run_deep_research
+from ai_org_backend.services.budget import BudgetExceededError
+from ai_org_backend.services.storage import save_artefact
 
 
 ARCHITECT_RUNS = prom_counter("ai_architect_runs_total", "Architect executions")
@@ -47,13 +49,21 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         resp = chat_with_tools(
             messages=[{"role": "user", "content": prompt}],
             model=MODEL_PRO,
+            tenant_id=purpose.tenant_id,
+            usage_label="architect",
         )
         ARCHITECT_RUNS.inc()
+        content = resp["choices"][0]["message"]["content"]
+        return content
+    except BudgetExceededError:
+        save_artefact(
+            tenant_id=purpose.tenant_id,
+            filename="architect_budget.md",
+            content=b"Budget exhausted during architecture planning. Please top up and retry.",
+        )
+        return "\u26d4 Budget exhausted. Architecture step skipped."
     finally:
         ARCHITECT_LATENCY.observe(time.time() - start)
-
-    content = resp["choices"][0]["message"]["content"]
-    return content
 
 
 @shared_task(name="architect.seed_graph", queue="architect")
