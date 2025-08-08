@@ -5,6 +5,7 @@ tools to search the web and fetch web pages. It returns a markdown
 summary and sources list. Fetching uses DuckDuckGo for search and
 Readability for extraction; URLs are checked via `url_safety`.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,7 @@ from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 from readability import Document
 
-from .llm_client import MODEL_PRO, MODEL_THINKING, chat_with_tools
+from .llm_client import MODEL_THINKING, chat_with_tools
 from .url_safety import is_url_safe
 
 MAX_STEPS = int(os.getenv("DEEPRESEARCH_MAX_STEPS", "8"))
@@ -108,12 +109,22 @@ def run_deep_research(
     used_sources: Dict[str, Dict[str, str]] = {}
 
     for step in range(max_steps):
-        resp = chat_with_tools(messages=messages, tools=TOOLS, model=model or MODEL_THINKING)
+        resp = chat_with_tools(
+            messages=messages, tools=TOOLS, model=model or MODEL_THINKING, tenant=tenant_id
+        )
+        if resp is None:
+            return {
+                "summary": "Budget exhausted",
+                "sources": [],
+                "raw": {"steps": step, "note": "budget_exhausted"},
+            }
         choice = resp["choices"][0]
         msg = choice["message"]
         tool_calls = msg.get("tool_calls") or []
         if tool_calls:
-            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+            messages.append(
+                {"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls}
+            )
             for call in tool_calls:
                 fn = call["function"]["name"]
                 args = json.loads(call["function"].get("arguments") or "{}")
