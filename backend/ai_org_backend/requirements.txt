@@ -87,7 +87,15 @@ networkx==3.3
     # via ai_org_backend (backend/pyproject.toml)
 numpy==2.3.2
     # via qdrant-client
-openai==0.27.0
+beautifulsoup4>=4.12.3
+    # via ai_org_backend (backend/pyproject.toml)
+duckduckgo-search>=5.3.1
+    # via ai_org_backend (backend/pyproject.toml)
+lxml>=5.2.2
+    # via ai_org_backend (backend/pyproject.toml)
+openai>=1.40.0
+    # via ai_org_backend (backend/pyproject.toml)
+readability-lxml>=0.8.1
     # via ai_org_backend (backend/pyproject.toml)
 packaging==25.0
     # via kombu
