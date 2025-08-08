@@ -6,8 +6,9 @@ from pathlib import Path
 from jinja2 import Template
 
 from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
+from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT
 from ai_org_backend.services.storage import save_artefact, driver
+from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose, TaskDependency, Tenant
 from ai_org_backend.services.llm_client import chat_with_tools, MODEL_DEFAULT, MODEL_THINKING
@@ -98,6 +99,8 @@ def agent_dev(tid: str, task_id: str) -> None:
                     messages=[{"role": "user", "content": prompt}],
                     model=model,
                     temperature=0,
+                    tenant_id=tid,
+                    usage_label="dev",
                 )
                 content = response["choices"][0]["message"]["content"]
                 logging.info(
@@ -105,6 +108,14 @@ def agent_dev(tid: str, task_id: str) -> None:
                 )
                 error_msg = None
                 break
+            except BudgetExceededError:
+                Repo(tid).update(
+                    task_id,
+                    status="budget_exceeded",
+                    owner="Dev",
+                    notes="Budget exhausted. Please top up and retry.",
+                )
+                return
             except Exception as exc:
                 error_msg = str(exc)
                 logging.error(
@@ -233,10 +244,6 @@ def agent_dev(tid: str, task_id: str) -> None:
                         )
             except Exception as e:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
-    try:
-        debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
-    except Exception as e:
-        logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels("dev", "done").inc()
     logging.info(
         f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})"
