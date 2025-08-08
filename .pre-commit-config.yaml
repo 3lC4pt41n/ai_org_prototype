@@ -1,9 +1,47 @@
+# Pre-commit führt lokale Code-Checks aus, bevor ein Commit entsteht.
+# So bleibt der Code stabil formatiert und Lint-Fehler werden früh gefixt.
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Black formatiert Python-Code deterministisch.
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        args: [--line-length=100]
+        additional_dependencies: []
+
+  # Ruff prüft Lints ultraschnell (PEP8, Flake, uvm.).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.6.2
     hooks:
       - id: ruff
-  - repo: https://github.com/pytest-dev/pytest
-    rev: 8.2.1
+        args: [--fix]
+
+  # isort sortiert Importe – Black-kompatibel.
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
     hooks:
-      - id: pytest
+      - id: isort
+        args: ["--profile", "black", "--line-length=100"]
+
+  # mypy Typprüfung – wir starten pragmatisch (siehe mypy.ini)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        files: ^backend/
+        additional_dependencies: [types-requests]
+
+  # Bandit: statische Sicherheitsanalyse für Python
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        args: ["-c", "bandit.yaml", "-r", "backend/ai_org_backend"]
+        pass_filenames: false

@@ -1,57 +1,50 @@
-"""Tests for planner parsing fallbacks and retries."""
+"""
+Ziel dieses Tests:
+- Sicherstellen, dass der Planner auch dann stabile Ergebnisse liefert,
+  wenn die erste LLM-Antwort fehlerhaft formatiert ist (Markdown-JSON, fehlende Felder).
+- Wir "mocken" die chat()-Funktion, um deterministische Antworten zu erzeugen,
+  ohne echte API-Calls zu machen. So laufen Tests schnell und reproduzierbar.
+"""
 
-from __future__ import annotations
+from types import SimpleNamespace
 
-import importlib.util
-import sys
-from pathlib import Path
+# WICHTIG: Wir setzen PYTHONPATH=backend (siehe Makefile/CI),
+# damit 'ai_org_backend...' importierbar ist.
+import ai_org_backend.agents.planner as planner
+
+
+def _mk_resp(text: str):
+    """Hilfsfunktion: baut eine fake-Response wie die LLM-Client-Library."""
+    # choices[0].message.content soll 'text' enthalten
+    msg = SimpleNamespace(content=text)
+    choice = SimpleNamespace(message=msg)
+    return SimpleNamespace(choices=[choice])
 
 
 def test_run_planner_parsing_fallback(monkeypatch):
-    """Ensure the planner retries and parses JSON from code blocks."""
+    # 1. Antwort: JSON in Markdown-Codeblock + fehlende Felder (Schemafail)
+    bad = """```json
+    [ { "id": "T1", "description": "Do something" } ]
+    ```"""
+    # 2. Antwort: Korrektes JSON-Array gemäß Schema
+    good = """[
+      { "id": "T1", "description": "Do something",
+        "depends_on": null, "business_value": 1.0,
+        "tokens_plan": 300, "purpose_relevance": 0.8 }
+    ]"""
+    calls = {"n": 0}
 
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
-    spec = importlib.util.spec_from_file_location(
-        "planner",
-        Path(__file__).resolve().parents[1]
-        / "ai_org_backend"
-        / "agents"
-        / "planner.py",
-    )
-    planner = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(planner)
+    def fake_chat(model: str, messages, **kwargs):
+        # Beim ersten Aufruf gib 'bad', beim zweiten 'good' zurück
+        text = bad if calls["n"] == 0 else good
+        calls["n"] += 1
+        return _mk_resp(text)
 
-    responses = [
-        # Erste Antwort: JSON im Markdown-Block und mit fehlenden Feldern
-        "```json\n[{\"id\": \"T1\", \"description\": \"Testtask\"}]\n```",
-        # Zweite Antwort: gültige Taskliste
-        "[{\"id\": \"T1\", \"description\": \"Testtask\", \"depends_on\": null, \"business_value\": 1.0, \"tokens_plan\": 500, \"purpose_relevance\": 0.5}]",
-    ]
-    call_count = {"n": 0}
+    # chat() im Planner temporär durch fake_chat ersetzen
+    monkeypatch.setattr(planner, "chat", fake_chat)
 
-    def dummy_chat(model: str, messages: list[dict], **kwargs):
-        content = responses[call_count["n"]]
-        call_count["n"] += 1
-
-        class _Msg:
-            def __init__(self, c: str):
-                self.content = c
-
-        class _Choice:
-            def __init__(self, c: str):
-                self.message = _Msg(c)
-
-        class _Resp:
-            def __init__(self, c: str):
-                self.choices = [_Choice(c)]
-
-        return _Resp(content)
-
-    monkeypatch.setattr(planner, "chat", dummy_chat)
-
-    tasks = planner.run_planner("Dummy blueprint")
-
-    assert tasks and tasks[0]["id"] == "T1"
-    assert call_count["n"] == 2
-
+    tasks = planner.run_planner("Any blueprint")
+    # Erwartung: Nach Fallback/Retry existiert eine gültige Task-Liste
+    assert isinstance(tasks, list) and len(tasks) == 1
+    assert tasks[0]["id"] == "T1"
+    assert calls["n"] == 2  # 1x fehlerhaft, 1x erfolgreicher Retry
