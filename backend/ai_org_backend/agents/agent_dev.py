@@ -9,8 +9,9 @@ from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact, driver
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, Purpose, TaskDependency
-from ai_org_backend.utils.llm import chat
+from ai_org_backend.models import Task, Purpose, TaskDependency, Tenant
+from ai_org_backend.services.llm_client import chat_with_tools, MODEL_DEFAULT, MODEL_THINKING
+from ai_org_backend.services.deep_research import run_deep_research
 from ai_org_backend.orchestrator.inspector import (
     PROM_TASK_FAILED,
     insights_generated_total,
@@ -42,6 +43,10 @@ def agent_dev(tid: str, task_id: str) -> None:
             else:
                 logging.error(f"Task {task_id} not found in DB")
                 return
+
+            tenant = session.get(Tenant, tid)
+            allow_research = bool(tenant and tenant.allow_web_research)
+
             ctx = {
                 "purpose": purpose_name,
                 "task": task_obj.description,
@@ -64,20 +69,37 @@ def agent_dev(tid: str, task_id: str) -> None:
                 memory_snippets = memory.get_relevant_snippets(
                     tid, task_obj.purpose_id, task_obj.description, top_k=3
                 )
+
+            trigger_keywords = (
+                "integrate", "sdk", "oauth", "stripe", "webhook", "kafka", "docker",
+                "helm", "mongodb", "cassandra", "redis stream"
+            )
+            need_research = any(k in task_obj.description.lower() for k in trigger_keywords)
+            research_note = ""
+            if allow_research and need_research:
+                q = (
+                    f"Give me the safest and most up-to-date way to: {task_obj.description}. "
+                    "Return concrete code-level hints and recommended libraries with versions."
+                )
+                research = run_deep_research(tid, q, model=MODEL_THINKING)
+                research_note = research["summary"][:2000]
+            if research_note:
+                memory_snippets.insert(0, {"category": "research", "source": "web", "chunk": research_note})
+
             ctx["memory_snippets"] = memory_snippets
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
         content = ""
         error_msg = None
-        model = "o3"
+        model = MODEL_DEFAULT
         for attempt in range(MAX_AGENT_RETRIES + 1):
             try:
-                response = chat(
-                    model=model,
+                response = chat_with_tools(
                     messages=[{"role": "user", "content": prompt}],
+                    model=model,
                     temperature=0,
                 )
-                content = response.choices[0].message.content
+                content = response["choices"][0]["message"]["content"]
                 logging.info(
                     f"[DevAgent] LLM returned content for task {task_id} (attempt {attempt+1})"
                 )
@@ -99,7 +121,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                     )
                     ctx["error_note"] = err_note
                     prompt = PROMPT_TMPL.render(**ctx)
-                    model = "o3-pro"
+                    model = MODEL_THINKING
                 else:
                     Repo(tid).update(
                         task_id, status="failed", owner="Dev", notes=error_msg

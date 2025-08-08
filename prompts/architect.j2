@@ -11,7 +11,8 @@ Current task (if any): **“{{ task | default('n/a') }}”**
 
 ## ❶ Context Analysis & Research
 * Summarise relevant market standards, best practices, security / scalability concerns.
-* Cite 3 reference projects with stack & lessons learned.
+* Where provided, incorporate verified references:
+{{ external_references if external_references else "- (no external references inserted)" }}
 
 ## ❷ Tech-Stack Decision
 * Propose an up-to-date stack; justify each core choice (DB, backend, frontend, infra).

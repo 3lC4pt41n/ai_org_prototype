@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const [blueprint, setBlueprint] = useState("");
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [allowResearch, setAllowResearch] = useState<boolean>(false);
 
   const statusInfo: Record<string, { label: string; color: string; tooltip: string }> = {
     todo: { label: "Todo", color: "bg-yellow-500 text-black", tooltip: "Task is not started yet." },
@@ -60,6 +61,16 @@ export default function AdminDashboard() {
     };
   }, []);
 
+  // Load research setting
+  useEffect(() => {
+    fetch(`${API}/api/settings/research`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+    })
+      .then((r) => r.json())
+      .then((d) => setAllowResearch(!!d.allow_web_research))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (budgetTotal != null && budget != null) {
       const remaining = budget;
@@ -90,6 +101,23 @@ export default function AdminDashboard() {
   function handleCloseOnboarding() {
     localStorage.setItem("skipOnboarding", "true");
     setShowOnboarding(false);
+  }
+
+  function toggleResearch() {
+    fetch(`${API}/api/settings/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`
+      },
+      body: JSON.stringify({ allow: !allowResearch })
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        setAllowResearch(!!d.allow_web_research);
+        toast.success(d.allow_web_research ? "Web Research enabled" : "Web Research disabled");
+      })
+      .catch(() => toast.error("Failed to update research setting"));
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -160,6 +188,20 @@ export default function AdminDashboard() {
                 />
               </div>
             )}
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 text-white">
+          <CardContent className="p-4">
+            <h2 className="text-lg font-semibold mb-2">Web Research</h2>
+            <p className="text-sm text-slate-300 mb-3">
+              Allow agents to access the public web (search & fetch) to ground their outputs.
+            </p>
+            <button
+              onClick={toggleResearch}
+              className={`px-3 py-1 rounded ${allowResearch ? "bg-emerald-600" : "bg-slate-600"} hover:opacity-90`}
+            >
+              {allowResearch ? "Enabled" : "Disabled"} — toggle
+            </button>
           </CardContent>
         </Card>
 

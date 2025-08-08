@@ -4,12 +4,13 @@ import time
 from pathlib import Path
 
 from jinja2 import Template
-from ai_org_backend.utils.llm import chat
 from celery import shared_task
 
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Purpose, Task, TaskDependency
+from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.metrics import prom_counter, prom_hist
+from ai_org_backend.services.llm_client import chat_with_tools, MODEL_PRO
+from ai_org_backend.services.deep_research import run_deep_research
 
 
 ARCHITECT_RUNS = prom_counter("ai_architect_runs_total", "Architect executions")
@@ -19,19 +20,39 @@ PROMPT_TMPL = Template(Path("prompts/architect.j2").read_text())
 
 
 def run_architect(purpose: Purpose, task: str | None = None) -> str:
-    """Render template prompt and call OpenAI to produce an architecture blueprint."""
-    prompt = PROMPT_TMPL.render(purpose=purpose.name, task=task or "n/a")
+    """Render template prompt and call OpenAI to produce an architecture blueprint.
+
+    If the tenant opted in, a short deep-research step is executed first and
+    references are injected into the prompt.
+    """
+    ctx = {"purpose": purpose.name, "task": task or "n/a", "external_references": ""}
+
+    allow_research = False
+    with SessionLocal() as db:
+        tenant = db.get(Tenant, purpose.tenant_id)
+        allow_research = bool(tenant and tenant.allow_web_research)
+
+    if allow_research:
+        q = (
+            f"Find best practices and recent high-quality references for building: {purpose.name}. "
+            "Focus on architecture, security, scalability, and representative open-source examples."
+        )
+        research = run_deep_research(purpose.tenant_id, q, model=MODEL_PRO)
+        refs_lines = [f"- {s['title']} ({s['url']})" for s in research["sources"]][:5]
+        ctx["external_references"] = "\n".join(refs_lines)
+
+    prompt = PROMPT_TMPL.render(**ctx)
     start = time.time()
     try:
-        resp = chat(
-            model="o3",
+        resp = chat_with_tools(
             messages=[{"role": "user", "content": prompt}],
+            model=MODEL_PRO,
         )
         ARCHITECT_RUNS.inc()
     finally:
         ARCHITECT_LATENCY.observe(time.time() - start)
 
-    content = resp.choices[0].message.content
+    content = resp["choices"][0]["message"]["content"]
     return content
 
 
