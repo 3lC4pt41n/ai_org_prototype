@@ -1,14 +1,46 @@
 // src/pages/TaskGraph.jsx
 import React, { useEffect, useState } from "react";
 import ReactFlow, { MiniMap, Controls, Background } from "reactflow";
+import { toast } from "react-hot-toast";
 import "reactflow/dist/style.css";
-
-function statusColor(status) {
+function statusColor(status: string) {
   switch (status) {
-    case "done": return "#22c55e";
-    case "doing": return "#fbbf24";
-    case "failed": return "#ef4444";
-    default: return "#64748b";
+    case "done":
+      return "#22c55e";
+    case "doing":
+      return "#3b82f6";
+    case "failed":
+      return "#ef4444";
+    case "blocked":
+    case "skipped":
+    case "budget_exceeded":
+      return "#64748b";
+    default:
+      return "#64748b";
+  }
+}
+
+function getStatusTooltip(status: string, owner?: string): string {
+  if (status === "failed" && owner === "QA") {
+    return "QA failed – automated tests did not pass.";
+  }
+  switch (status) {
+    case "todo":
+      return "Task not started yet.";
+    case "doing":
+      return "Task in progress.";
+    case "done":
+      return "Task completed successfully.";
+    case "failed":
+      return "Task execution failed.";
+    case "blocked":
+      return "Task blocked (prerequisites not met or budget).";
+    case "budget_exceeded":
+      return "Task not executed due to budget limit.";
+    case "skipped":
+      return "Task was skipped (not executed).";
+    default:
+      return "";
   }
 }
 
@@ -43,7 +75,12 @@ export default function TaskGraph() {
                   <br />
                   📊 Token Plan/Ist: <b>{task.tokens_plan ?? "-"}</b> / <b>{task.tokens_actual ?? "-"}</b>
                   <br />
-                  <i>Status: {task.status}</i>
+                  <i>
+                    Status: {" "}
+                    <span title={getStatusTooltip(task.status, task.owner)}>
+                      {task.status}
+                    </span>
+                  </i>
                 </div>
               </div>
             )
@@ -70,6 +107,9 @@ export default function TaskGraph() {
           target: dep.to_id
         }));
         setElements([...nodes, ...edges]);
+      })
+      .catch(() => {
+        toast.error("Failed to load task graph.");
       });
   }, []);
 
