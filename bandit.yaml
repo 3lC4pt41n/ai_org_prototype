@@ -1,0 +1,3 @@
+# Basis-Konfiguration für Bandit – passt auf gängige Schwachstellen auf.
+# Wir whitelisten nichts, um zunächst möglichst viel zu sehen.
+skips: []
