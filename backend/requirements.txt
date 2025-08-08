@@ -1,1 +1,3 @@
 -r ai_org_backend/requirements.txt
+redis>=5.0.8
+prometheus-client>=0.20.0

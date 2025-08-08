@@ -16,12 +16,13 @@ from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.settings import router as settings_router
+from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
 from ai_org_backend.models.task import TaskStatus
-from prometheus_client import Counter, Histogram, Gauge, start_http_server
+from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
 from neo4j import GraphDatabase
 import redis
 
@@ -43,10 +44,19 @@ driver  = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 # ──────────────── Metrics Prometheus ──────────────────────────
 if os.getenv("DISABLE_METRICS") != "1":
-    start_http_server(9102)
-TASK_LAT   = Histogram("ai_task_latency_sec", "Task latency", ["role"])
-TASK_CNT   = Counter  ("ai_tasks_total",      "Tasks done",   ["role", "status"])
-BUDGET_GA  = Gauge     ("ai_budget_left_usd", "Budget left",  ["tenant"])
+    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role"])
+    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["role", "status"])
+    BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"])
+else:  # create unregistered dummies
+    TASK_LAT = Histogram(
+        "ai_task_latency_sec", "Task latency", ["role"], registry=None
+    )
+    TASK_CNT = Counter(
+        "ai_tasks_total", "Tasks done", ["role", "status"], registry=None
+    )
+    BUDGET_GA = Gauge(
+        "ai_budget_left_usd", "Budget left", ["tenant"], registry=None
+    )
 
 # ──────────────── SQLModel tables ─────────────────────────────
 
@@ -153,6 +163,11 @@ app.include_router(tmpl_router)
 app.include_router(agent_router)
 app.include_router(pipeline_router)
 app.include_router(settings_router)
+app.include_router(root_router)
+
+if os.getenv("DISABLE_METRICS") != "1":
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
 
 
 # CRUD endpoints (minimal)
@@ -174,9 +189,6 @@ async def backlog(current_tenant: Tenant = Depends(get_current_tenant)):
         ).all()
     return [r.model_dump() for r in rows]
 
-@app.get("/")
-async def root():
-    return {"status": "alive"}
 
 # run dev server
 if __name__ == "__main__":

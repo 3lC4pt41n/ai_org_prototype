@@ -108,7 +108,13 @@ def run_deep_research(
     used_sources: Dict[str, Dict[str, str]] = {}
 
     for step in range(max_steps):
-        resp = chat_with_tools(messages=messages, tools=TOOLS, model=model or MODEL_THINKING)
+        resp = chat_with_tools(
+            messages=messages,
+            tools=TOOLS,
+            model=model or MODEL_THINKING,
+            tenant_id=tenant_id,
+            usage_label="deep_research",
+        )
         choice = resp["choices"][0]
         msg = choice["message"]
         tool_calls = msg.get("tool_calls") or []
