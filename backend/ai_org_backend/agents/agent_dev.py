@@ -16,6 +16,9 @@ from ai_org_backend.orchestrator.inspector import (
     insights_generated_total,
 )
 
+# Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
+MAX_AGENT_RETRIES = 2
+
 # Load prompt template for Dev agent
 _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "dev.j2"
 PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
@@ -67,7 +70,7 @@ def agent_dev(tid: str, task_id: str) -> None:
         content = ""
         error_msg = None
         model = "o3"
-        for attempt in range(2):
+        for attempt in range(MAX_AGENT_RETRIES + 1):
             try:
                 response = chat(
                     model=model,
@@ -85,12 +88,16 @@ def agent_dev(tid: str, task_id: str) -> None:
                 logging.error(
                     f"[DevAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}"
                 )
-                if attempt == 0:
+                if attempt < MAX_AGENT_RETRIES:
                     Repo(tid).update(
-                        task_id, retries=task_obj.retries + 1, notes=error_msg
+                        task_id,
+                        retries=task_obj.retries + 1,
+                        notes="LLM-Fehler: " + error_msg,
                     )
-                    err = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
-                    ctx["error_note"] = err
+                    err_note = (
+                        error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
+                    )
+                    ctx["error_note"] = err_note
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
                 else:
@@ -127,6 +134,9 @@ def agent_dev(tid: str, task_id: str) -> None:
         )
         followups = []
         if "```" not in content:
+            logging.info(
+                f"[DevAgent] Output was a list for task {task_id}; splitting into sub-tasks"
+            )
             # Wenn die KI eine Aufzählung statt Code geliefert hat: jeden Punkt als neue Task anlegen
             for line in content.splitlines():
                 if line.strip().startswith(("-", "*", "1.", "2.", "3.")):

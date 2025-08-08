@@ -21,6 +21,9 @@ _TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "qa.j2"
 PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
 QA_ARTIFACT_COUNTER = prom_counter("ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts")
 
+# Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
+MAX_AGENT_RETRIES = 2
+
 
 @celery.task(name="agent.qa")
 def agent_qa(tid: str, task_id: str) -> None:
@@ -134,20 +137,34 @@ def agent_qa(tid: str, task_id: str) -> None:
         content = ""
         error_msg = None
         model = "o3"
-        for attempt in range(2):
+        for attempt in range(MAX_AGENT_RETRIES + 1):
             try:
-                response = chat(model=model, messages=[{"role": "user", "content": prompt}], temperature=0)
+                response = chat(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                )
                 content = response.choices[0].message.content
-                logging.info(f"[QAAgent] LLM returned QA report for task {task_id} (attempt {attempt+1})")
+                logging.info(
+                    f"[QAAgent] LLM returned QA report for task {task_id} (attempt {attempt+1})"
+                )
                 error_msg = None
                 break
             except Exception as exc:
                 error_msg = str(exc)
-                logging.error(f"[QAAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}")
-                if attempt == 0:
-                    Repo(tid).update(task_id, retries=task_obj.retries + 1, notes=error_msg)
-                    err = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
-                    ctx["error_note"] = err
+                logging.error(
+                    f"[QAAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}"
+                )
+                if attempt < MAX_AGENT_RETRIES:
+                    Repo(tid).update(
+                        task_id,
+                        retries=task_obj.retries + 1,
+                        notes="LLM-Fehler: " + error_msg,
+                    )
+                    err_note = (
+                        error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
+                    )
+                    ctx["error_note"] = err_note
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
                 else:
