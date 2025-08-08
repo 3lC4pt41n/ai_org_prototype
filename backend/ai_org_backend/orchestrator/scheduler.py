@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from sqlmodel import Session, select
@@ -38,7 +39,7 @@ def _retry_failed_tasks() -> None:
     with Session(engine) as db:
         q = select(Task).where(Task.status == "failed", Task.retries < MAX_RETRIES)
         for t in db.exec(q):
-            age = now - t.created_at.timestamp()
+            age = now - t.updated_at.timestamp()
             if age < RETRY_DELAY_S:
                 continue
 
@@ -48,6 +49,9 @@ def _retry_failed_tasks() -> None:
             retry_msg = f"auto-retry {t.retries}/{MAX_RETRIES}"
             t.notes = f"{base_note} | {retry_msg}" if base_note else retry_msg
             db.add(t)
+            logging.info(
+                f"Orchestrator: Task {t.id} requeued for retry {t.retries}/{MAX_RETRIES}"
+            )
         db.commit()
 
 
