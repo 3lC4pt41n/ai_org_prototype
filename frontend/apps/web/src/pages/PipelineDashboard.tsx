@@ -6,7 +6,10 @@ import "reactflow/dist/style.css";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 async function getJson(path: string) {
-  const res = await fetch(`${API}${path}`, { headers: { Accept: "application/json" } });
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API}${path}`, { headers });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -99,7 +102,11 @@ export default function PipelineDashboard() {
     e.preventDefault();
     fetch(`${API}/api/purpose`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`
+      },
       body: JSON.stringify({ purpose: purposeInput })
     })
       .then(async (res) => {
@@ -225,7 +232,7 @@ export default function PipelineDashboard() {
               ) : (
                 <ul className="list-disc list-inside text-sm">
                   {artifacts.filter((art) => art.task_id === selectedTask.id).map((artifact) => {
-                    const displayPath = artifact.repo_path.replace(/^demo\//, "");
+                    const displayPath = artifact.repo_path.replace(/^[^/]+\//, "");
                     return (
                       <li key={artifact.id}>
                         <a href={artifact.url} className="text-amber-400 hover:underline" target="_blank" rel="noopener noreferrer">

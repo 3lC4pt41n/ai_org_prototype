@@ -17,6 +17,8 @@ dependencies = [
   "networkx",
   "qdrant-client",
   "openai==0.27.0",
+  "PyJWT",
+  "python-multipart",
 ]
 
 [project.optional-dependencies]

@@ -23,6 +23,7 @@ class Tenant(SQLModel, table=True):
     balance: float = Field(default=settings.default_budget, ge=0.0)
     
     email: Optional[str] = Field(default=None)
+    hashed_password: str = Field(nullable=False, min_length=1)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)

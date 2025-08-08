@@ -1,30 +1,30 @@
-import os
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from ai_org_backend.services.storage import vector_store
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from ai_org_backend.db import engine
-from ai_org_backend.models import Purpose, Task, TaskDependency, Artifact
+from ai_org_backend.models import Purpose, Task, TaskDependency, Artifact, Tenant
 import sys
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 from scripts.seed_graph import ingest  # noqa: E402
+from ai_org_backend.api.dependencies import get_current_tenant
 
-TENANT = os.getenv("TENANT", "demo")
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
 
 @router.get("/graph")
-def get_graph():
+def get_graph(current_tenant: Tenant = Depends(get_current_tenant)):
     """Get all tasks and dependencies as graph data."""
+    tenant_id = current_tenant.id
     with Session(engine) as session:
-        tasks = session.exec(select(Task).where(Task.tenant_id == TENANT)).all()
+        tasks = session.exec(select(Task).where(Task.tenant_id == tenant_id)).all()
         deps = session.exec(
             select(TaskDependency).where(
-                TaskDependency.from_task.has(tenant_id=TENANT)
+                TaskDependency.from_task.has(tenant_id=tenant_id)
             )
         ).all()
         tasks_data = [t.model_dump() for t in tasks]
@@ -33,13 +33,14 @@ def get_graph():
 
 
 @router.get("/artifacts")
-def list_artifacts():
+def list_artifacts(current_tenant: Tenant = Depends(get_current_tenant)):
     """List all artifacts with related task info."""
+    tenant_id = current_tenant.id
     with Session(engine) as session:
         artifacts = session.exec(
             select(Artifact)
             .options(selectinload(Artifact.task))
-            .where(Artifact.task.has(tenant_id=TENANT))
+            .where(Artifact.task.has(tenant_id=tenant_id))
             .order_by(Artifact.created_at)
         ).all()
         result = []
@@ -57,23 +58,22 @@ def list_artifacts():
 
 
 @router.post("/purpose")
-def create_purpose(payload: dict):
+def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_tenant)):
     """Create a new purpose and seed initial tasks via LLM agents."""
     name = payload.get("purpose") or "Untitled"
-    # Ensure Purpose exists (create if not)
+    tenant_id = current_tenant.id
     with Session(engine) as session:
         purpose = session.exec(
-            select(Purpose).where(Purpose.name == name, Purpose.tenant_id == TENANT)
+            select(Purpose).where(Purpose.name == name, Purpose.tenant_id == tenant_id)
         ).first()
         if not purpose:
-            purpose = Purpose(name=name, tenant_id=TENANT)
+            purpose = Purpose(name=name, tenant_id=tenant_id)
             session.add(purpose)
             session.commit()
             session.refresh(purpose)
-    # Prevent duplicate seeding if tasks already exist for this purpose
     with Session(engine) as session:
         existing_tasks = session.exec(
-            select(Task).where(Task.tenant_id == TENANT, Task.purpose_id == purpose.id)
+            select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
         ).all()
         existing_desc_map = {t.description: t.id for t in existing_tasks}
     if existing_tasks:
@@ -111,7 +111,7 @@ def create_purpose(payload: dict):
     with Session(engine) as session:
         for t in tasks_plan:
             task_obj = Task(
-                tenant_id=TENANT,
+                tenant_id=tenant_id,
                 purpose_id=purpose.id,
                 description=t["description"],
                 business_value=t.get("business_value", 1.0),
@@ -136,18 +136,19 @@ def create_purpose(payload: dict):
         session.commit()
     # Update Neo4j graph
     try:
-        ingest(TENANT)
+        ingest(tenant_id)
     except Exception as e:
         print(f"[WARN] Neo4j ingest failed: {e}")
     return {"blueprint": blueprint}
 
 
 @router.get("/artifact/{artifact_id}")
-def download_artifact(artifact_id: str):
+def download_artifact(artifact_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     """Download the content of an artifact file by ID."""
+    tenant_id = current_tenant.id
     with Session(engine) as session:
         art = session.get(Artifact, artifact_id)
-        if not art:
+        if not art or (art.task and art.task.tenant_id != tenant_id):
             raise HTTPException(status_code=404, detail="Artifact not found")
         file_path = Path("workspace") / art.repo_path
         if not file_path.exists():
@@ -156,30 +157,29 @@ def download_artifact(artifact_id: str):
 
 
 @router.get("/project.zip")
-def download_project_archive():
+def download_project_archive(current_tenant: Tenant = Depends(get_current_tenant)):
     """Download a ZIP archive containing all artifacts for the tenant."""
-    base_dir = Path("workspace") / TENANT
+    tenant_id = current_tenant.id
+    base_dir = Path("workspace") / tenant_id
     if not base_dir.exists():
         raise HTTPException(status_code=404, detail="No project output available")
-    archive_path = base_dir.parent / f"{TENANT}_output.zip"
+    archive_path = base_dir.parent / f"{tenant_id}_output.zip"
     if archive_path.exists():
         archive_path.unlink()
     from shutil import make_archive
     make_archive(str(archive_path.with_suffix("")), "zip", root_dir=base_dir)
-    return FileResponse(archive_path, media_type="application/zip", filename=f"{TENANT}_project.zip")
+    return FileResponse(archive_path, media_type="application/zip", filename=f"{tenant_id}_project.zip")
 
 
 @router.get("/context")
-def get_context(task_id: str):
+def get_context(task_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     """Get semantically relevant snippets for a given task."""
-    # Fetch task and ensure it exists
     with Session(engine) as session:
         task = session.get(Task, task_id)
-        if not task:
+        if not task or task.tenant_id != current_tenant.id:
             raise HTTPException(status_code=404, detail="Task not found")
         tenant_id = task.tenant_id
         query_text = task.description
-    # Query vector store for relevant snippets
     results = vector_store.query_vectors(tenant_id, query_text, top_k=5)
     snippets: list[dict] = []
     for res in results:
