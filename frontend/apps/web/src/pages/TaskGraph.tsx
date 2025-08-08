@@ -27,7 +27,9 @@ export default function TaskGraph() {
   const [elements, setElements] = useState([]);
 
   useEffect(() => {
-    fetch("/api/graph")
+    fetch("/api/graph", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` }
+    })
       .then(r => r.json())
       .then(data => {
         const nodes = data.tasks.map(task => ({

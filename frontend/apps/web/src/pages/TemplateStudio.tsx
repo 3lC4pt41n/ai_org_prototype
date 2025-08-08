@@ -7,11 +7,15 @@ export default function TemplateStudio() {
   const [content, setContent] = useState('')
 
   useEffect(() => {
-    fetch('/api/templates').then(r => r.json()).then(setFiles)
+    fetch('/api/templates', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+    }).then(r => r.json()).then(setFiles)
   }, [])
 
   const loadFile = (f: string) => {
-    fetch('/api/templates/' + f)
+    fetch('/api/templates/' + f, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+    })
       .then(r => r.json())
       .then(d => { setName(f); setContent(d.content) })
   }
@@ -19,7 +23,10 @@ export default function TemplateStudio() {
   const save = () =>
     fetch('/api/templates/' + name, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+      },
       body: JSON.stringify({ content })
     })
 

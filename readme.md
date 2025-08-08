@@ -176,3 +176,16 @@ S‑2	Self‑Improve‑Agent (PR‑Generator + CI Gate)
 S‑3	Slack / Discord Notification Hooks
 S‑4	JWT‑Auth + Stripe‑Top‑Up (Multi‑Tenant Billing)
 S‑5	Autoscaling Celery on K8s + Helm Charts
+POST    /api/register  Neuen Account anlegen (email + passwort)
+POST    /api/login     JWT erhalten (Form: username, password)
+
+> Alle geschützten Endpoints erwarten einen `Authorization: Bearer <token>` Header.
+
+
+## 🔑 Authentication
+
+POST /api/register – Neuen Account anlegen (email + passwort)
+
+POST /api/login – JWT erhalten (Form: username, password)
+
+Alle geschützten Endpoints erwarten einen `Authorization: Bearer <token>` Header.

@@ -9,14 +9,16 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from sqlmodel import Session, select
 from ai_org_backend.tasks.celery_app import celery
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.pipeline import router as pipeline_router
+from ai_org_backend.api.auth import router as auth_router
+from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 # storage helpers are used by individual agent modules
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, Tenant
 from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 from neo4j import GraphDatabase
@@ -31,6 +33,7 @@ NEO4J_URL     = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER    = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASS    = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
 DEFAULT_BUDGET= float(os.getenv("DEFAULT_BUDGET", 20))
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 # Price per 1k tokens (USD)
 TOKEN_PRICE_PER_1000 = float(os.getenv("TOKEN_PRICE_PER_1000", "0.0005"))
 
@@ -135,11 +138,16 @@ AGENTS = {
 # ──────────────── FastAPI + startup ─────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Repo("demo").add("bootstrap metrics")
     yield
 
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+app.include_router(auth_router)
 app.include_router(tmpl_router)
 app.include_router(agent_router)
 app.include_router(pipeline_router)
@@ -147,8 +155,8 @@ app.include_router(pipeline_router)
 
 # CRUD endpoints (minimal)
 @app.post("/task")
-async def create_task(d: Dict):
-    t = Repo("demo").add(
+async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tenant)):
+    t = Repo(current_tenant.id).add(
         description=d.get("description", "blank"),
         business_value=d.get("business_value", 1),
         tokens_plan=d.get("tokens_plan", 0),
@@ -157,16 +165,16 @@ async def create_task(d: Dict):
     return t.model_dump()
 
 @app.get("/backlog")
-async def backlog():
+async def backlog(current_tenant: Tenant = Depends(get_current_tenant)):
     with Session(engine) as s:
         rows = s.exec(
-            select(Task).where(Task.tenant_id == "demo", Task.status == "todo")
+            select(Task).where(Task.tenant_id == current_tenant.id, Task.status == "todo")
         ).all()
     return [r.model_dump() for r in rows]
 
 @app.get("/")
 async def root():
-    return {"status": "alive", "budget_left": budget_left()}
+    return {"status": "alive"}
 
 # run dev server
 if __name__ == "__main__":
