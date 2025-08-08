@@ -29,7 +29,6 @@ backoff_stub.expo = lambda *a, **kw: 0
 sys.modules.setdefault("backoff", backoff_stub)
 os.environ["DISABLE_METRICS"] = "1"
 os.environ["DATABASE_URL"] = "sqlite:///test.db"
-os.environ["TENANT"] = "pytest"
 if os.path.exists("test.db"):
     os.remove("test.db")
 
@@ -43,7 +42,10 @@ from ai_org_backend.services.billing import credit, balance  # noqa: E402
 SQLModel.metadata.create_all(main.engine)
 
 client = TestClient(main.app)
-TENANT = "pytest"
+r = client.post("/api/register", json={"email": "t@e.st", "password": "pw"})
+TENANT = r.json()["id"]
+login = client.post("/api/login", data={"username": "t@e.st", "password": "pw"})
+TOKEN = login.json()["access_token"]
 
 
 def test_budget_gate_and_artifact(tmp_path):
@@ -70,6 +72,6 @@ def test_budget_gate_and_artifact(tmp_path):
         )
         db.commit()
 
-    arts = client.get("/api/artifacts", params={"tenant": TENANT}).json()
+    arts = client.get("/api/artifacts", headers={"Authorization": f"Bearer {TOKEN}"}).json()
     assert len(arts) == 1
     assert balance(TENANT) >= 10.0

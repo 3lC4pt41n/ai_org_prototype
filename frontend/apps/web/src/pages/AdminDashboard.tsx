@@ -6,7 +6,10 @@ import { Gauge, History, Target, PlayCircle, FileText, Package } from "lucide-re
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 async function getJson(path) {
-  const r = await fetch(`${API}${path}`, { headers: { Accept: "application/json" } });
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const r = await fetch(`${API}${path}`, { headers });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
@@ -45,7 +48,11 @@ export default function AdminDashboard() {
     e.preventDefault();
     fetch(`${API}/api/purpose`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`
+      },
       body: JSON.stringify({ purpose: purposeInput })
     })
       .then(async (res) => {
@@ -152,7 +159,7 @@ export default function AdminDashboard() {
                   rel="noopener noreferrer"
                   className="text-amber-400 hover:underline"
                 >
-                  {a.repo_path.replace(/^demo\//, "")}
+                  {a.repo_path.replace(/^[^/]+\//, "")}
                 </a>{" "}
                 <span className="text-slate-400 text-xs">
                   ({a.media_type}, {new Date(a.created_at).toLocaleString()})
