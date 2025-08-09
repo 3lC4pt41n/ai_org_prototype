@@ -4,29 +4,33 @@ import asyncio
 import logging
 import time
 
-from sqlmodel import Session, select
-
-from ai_org_backend.main import celery, Repo, TOKEN_PRICE_PER_1000, BUDGET_GA  # import orchestrator dependencies
 from ai_org_backend.db import engine
-from ai_org_backend.orchestrator.graph_orchestrator import (
-    TENANT,
-    seed_if_empty,
-    cypher,
-    LEAF_Q,
-    BLOCKED_Q,
-    CRIT_Q,
+from ai_org_backend.main import (  # import orchestrator dependencies
+    BUDGET_GA,
+    TOKEN_PRICE_PER_1000,
+    Repo,
+    celery,
 )
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.models.task import TaskStatus
-from ai_org_backend.orchestrator.router import classify_role
+from ai_org_backend.orchestrator.graph_orchestrator import (
+    BLOCKED_Q,
+    CRIT_Q,
+    LEAF_Q,
+    TENANT,
+    cypher,
+    seed_if_empty,
+)
 from ai_org_backend.orchestrator.inspector import (
+    PROM_BUDGET_BLOCKED,
+    PROM_CRIT_PATH_LEN,
+    PROM_TASK_BLOCKED,
     alert,
     budget_left,
     todo_count,
-    PROM_TASK_BLOCKED,
-    PROM_CRIT_PATH_LEN,
-    PROM_BUDGET_BLOCKED,
 )
+from ai_org_backend.orchestrator.router import classify_role
+from sqlmodel import Session, select
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -49,22 +53,18 @@ def _retry_failed_tasks() -> None:
             retry_msg = f"auto-retry {t.retries}/{MAX_RETRIES}"
             t.notes = f"{base_note} | {retry_msg}" if base_note else retry_msg
             db.add(t)
-            logging.info(
-                f"Orchestrator: Task {t.id} requeued for retry {t.retries}/{MAX_RETRIES}"
-            )
+            logging.info(f"Orchestrator: Task {t.id} requeued for retry {t.retries}/{MAX_RETRIES}")
         db.commit()
 
 
 def _ready_for_execution(task: Task, session: Session) -> bool:
     """Return True if a task has no unresolved prerequisites."""
-    unresolved = (
-        session.exec(
-            select(TaskDependency)
-            .where(TaskDependency.to_id == task.id)
-            .join(Task, Task.id == TaskDependency.from_id)
-            .where(Task.status != TaskStatus.DONE)
-        ).first()
-    )
+    unresolved = session.exec(
+        select(TaskDependency)
+        .where(TaskDependency.to_id == task.id)
+        .join(Task, Task.id == TaskDependency.from_id)
+        .where(Task.status != TaskStatus.DONE)
+    ).first()
     return unresolved is None
 
 
@@ -100,9 +100,7 @@ async def orchestrator() -> None:
             avail_budget -= cost_est
             role = classify_role(rec["d"])
             Repo(TENANT).update(task_obj.id, status="doing")
-            celery.send_task(
-                f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}"
-            )
+            celery.send_task(f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}")
         if time.time() - last > 10:
             blocked = cypher(BLOCKED_Q)[0]["blocked"]
             crit = cypher(CRIT_Q)
@@ -114,7 +112,11 @@ async def orchestrator() -> None:
             # Count tasks skipped due to budget
             budget_blocked = 0
             with Session(engine) as session:
-                budget_blocked = session.exec(select(Task).where(Task.tenant_id == TENANT, Task.status == TaskStatus.BUDGET_EXCEEDED)).count()
+                budget_blocked = session.exec(
+                    select(Task).where(
+                        Task.tenant_id == TENANT, Task.status == TaskStatus.BUDGET_EXCEEDED
+                    )
+                ).count()
             PROM_BUDGET_BLOCKED.labels(TENANT).set(budget_blocked)
             print(
                 f"ℹ️ todo:{todo_count(TENANT):>3} "
@@ -126,3 +128,8 @@ async def orchestrator() -> None:
             alert("Budget exhausted", "budget")
         await asyncio.sleep(2)
 
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(orchestrator())
