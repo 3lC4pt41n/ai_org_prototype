@@ -31,10 +31,17 @@ driver = GraphDatabase.driver(
     auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASS", "s3cr3tP@ss")),
 )
 
+# A task is "ready" iff it is 'todo' AND has no incoming FINISH_START
+# dependency whose predecessor is NOT done.
+# (Missing r.kind is treated as FINISH_START for safety.)
 LEAF_Q = """
 MATCH (t:Task {status:'todo'})
-WHERE NOT (t)<-[:DEPENDS_ON]-(:Task {status:'todo'})
-RETURN t.id AS id, t.desc AS d LIMIT 10
+WHERE NOT EXISTS {
+  MATCH (p:Task)-[r:DEPENDS_ON]->(t)
+  WHERE coalesce(r.kind,'FINISH_START') = 'FINISH_START'
+    AND p.status <> 'done'
+}
+RETURN t.id AS id
 """
 BLOCKED_Q = """
 MATCH (t:Task {status:'todo'})
@@ -160,12 +167,12 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     tasks = new_tasks
     repo = Repo(TENANT)
     for t in tasks:
-        node = repo.add(
+        node = repo.add_task(
+            purpose_id=purpose.id,
             description=t["description"],
             business_value=t.get("business_value", 1.0),
             tokens_plan=t.get("tokens_plan", 0),
             purpose_relevance=t.get("purpose_relevance", 0.0),
-            purpose_id=purpose.id,
         )
         id_map[t["id"]] = node.id
     with Session(engine) as s:
