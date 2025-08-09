@@ -1,7 +1,7 @@
-# AI‑Org Prototype **2.0**  
+# AI‑Org Prototype **2.0**
 Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware • Prometheus‑Instrumented
 
-> End‑to‑End Skeleton, das ganze Software‑Projekte mittels LLM‑Agenten plant, baut, testet und ausliefert.  
+> End‑to‑End Skeleton, das ganze Software‑Projekte mittels LLM‑Agenten plant, baut, testet und ausliefert.
 > **Stack:** Python 3.11 · FastAPI · Celery · SQLModel/Alembic · Neo4j 5 · Redis 7 · Prometheus/Grafana · React 18 / Vite / Tailwind · Node 20
 
 ---
@@ -19,7 +19,7 @@ Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware
 
 ---
 
-## 🚀 1 | Quick Start (Local Dev)
+## 🚀 1 | Quick Start (Local Dev / Docker)
 
 
 ```bash
@@ -31,28 +31,27 @@ cd ai_org_prototype
 python -m venv .venv && source .venv/bin/activate  # Win: .venv\Scripts\activate
 pip install -e backend[dev]
 
-# Container infra (Redis, Postgres, Neo4j, Prom/Grafana)
+# Container-Infrastruktur (Backend, Orchestrator, Worker, Redis, Postgres, Neo4j)
 docker compose -f ops/persistent.yml up -d
-docker compose -f ops/graph.yml up -d
 docker compose -f ops/monitoring.yml up -d  # prometheus + grafana
 
-# DB migration & demo seed
+# DB migration & demo seed (nur erforderlich bei manuellem Start ohne Docker)
 alembic -c backend/ai_org_backend/alembic.ini upgrade head
 python scripts/seed_graph.py --tenant demo
 ```
 
-2. Budget konfigurieren  
+2. Budget konfigurieren
 Der Tokenpreis wird in `backend/ai_org_backend/settings.py` als `TOKEN_PRICE` definiert. Jeder
 Mandant erhält beim ersten Start `settings.default_budget` USD (Redis Hash `budget:{tenant}`).
 
-3. Celery-Worker starten
+3. Celery-Worker starten *(bei Docker Compose bereits gestartet)*
 ```bash
 celery -A ai_org_backend.tasks.celery_app \
        worker -Q demo:dev,demo:ux_ui,demo:qa,demo:telemetry \
        -l INFO -P solo
 ```
 
-4. Orchestrator & Scheduler
+4. Orchestrator & Scheduler *(bei Docker Compose bereits gestartet)*
 ```bash
 python -m ai_org_backend.orchestrator.scheduler
 ```
