@@ -46,11 +46,12 @@ services:
       context: ../backend/ai_org_backend   # Ordner mit Dockerfile & requirements.txt
     image: local/ai_backend:latest
     command: >
-      celery -A ai_org_prototype.celery worker
+      celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:architect
              -l INFO -P solo
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - CELERY_APP=ai_org_backend.tasks.celery_app
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASS=s3cr3tP@ss
@@ -62,11 +63,12 @@ services:
     build: { context: ../backend/ai_org_backend }
     image: local/ai_backend:latest
     command: >
-      celery -A ai_org_prototype.celery worker
+      celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:insight
              -l INFO -P solo
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - CELERY_APP=ai_org_backend.tasks.celery_app
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASS=s3cr3tP@ss
@@ -78,11 +80,12 @@ services:
     build: { context: ../backend/ai_org_backend }
     image: local/ai_backend:latest
     command: >
-      celery -A ai_org_prototype.celery worker
+      celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:dev,demo:qa,demo:ux_ui,demo:telemetry
              -l INFO -P solo
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - CELERY_APP=ai_org_backend.tasks.celery_app
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASS=s3cr3tP@ss
