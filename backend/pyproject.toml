@@ -19,10 +19,13 @@ dependencies = [
   "openai==0.27.0",
   "PyJWT",
   "python-multipart",
+  "psycopg2-binary",
+  "uvicorn",
+  "alembic"
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "black", "alembic"]
+dev = ["pytest", "ruff", "black"]
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]
