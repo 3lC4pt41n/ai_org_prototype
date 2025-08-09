@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from sqlmodel import Session, select
 from ai_org_backend.tasks.celery_app import celery
 from fastapi import FastAPI, Depends
+# Expose Repo here so existing imports keep working:
+from .repo import Repo  # noqa: F401
 from fastapi.middleware.cors import CORSMiddleware
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.agents import router as agent_router
@@ -21,7 +23,6 @@ from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
-from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
 from neo4j import GraphDatabase
 import redis
@@ -60,55 +61,6 @@ else:  # create unregistered dummies
 
 # ──────────────── SQLModel tables ─────────────────────────────
 
-
-# ──────────────── Repo helper (mirrors Neo4j) ─────────────────
-class Repo:
-    def __init__(self, tenant: str):
-        self.tid = tenant
-
-    def add(
-        self,
-        description: str,
-        business_value: float = 1.0,
-        tokens_plan: int = 0,
-        purpose_relevance: float = 0.0,
-        purpose_id: str | None = None,
-    ) -> Task:
-        with Session(engine) as s:
-            t = Task(
-                tenant_id=self.tid,
-                purpose_id=purpose_id,
-                description=description,
-                business_value=business_value,
-                tokens_plan=tokens_plan,
-                purpose_relevance=purpose_relevance,
-            )
-            s.add(t)
-            s.commit()
-            s.refresh(t)
-
-        with driver.session() as g:
-            g.run(
-                """MERGE (t:Task {id:$id})
-                   SET t.desc=$d, t.status='todo'""",
-                id=t.id,
-                d=description,
-            )
-        return t
-
-    def update(self, task_id: str, **kw):
-        with Session(engine) as s:
-            task = s.get(Task, task_id)
-            for k, v in kw.items():
-                setattr(task, k, v)
-            s.commit()
-        if "status" in kw:
-            with driver.session() as g:
-                g.run(
-                    "MATCH (t:Task {id:$id}) SET t.status=$st",
-                    id=task_id,
-                    st=str(kw["status"]),
-                )
 
 # ──────────────── Budget utils ───────────────────────────────
 def budget_left(tenant: str = "demo") -> float:
@@ -173,7 +125,8 @@ if os.getenv("DISABLE_METRICS") != "1":
 # CRUD endpoints (minimal)
 @app.post("/task")
 async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tenant)):
-    t = Repo(current_tenant.id).add(
+    t = Repo(current_tenant.id).add_task(
+        purpose_id=d.get("purpose_id"),
         description=d.get("description", "blank"),
         business_value=d.get("business_value", 1),
         tokens_plan=d.get("tokens_plan", 0),
