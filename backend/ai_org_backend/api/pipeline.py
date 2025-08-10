@@ -1,17 +1,20 @@
-from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
-from ai_org_backend.services.storage import vector_store
-from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
-from ai_org_backend.db import engine
-from ai_org_backend.models import Purpose, Task, TaskDependency, Artifact, Tenant
 import sys
+from pathlib import Path
+
+from ai_org_backend.api.dependencies import get_current_tenant
+from ai_org_backend.db import engine
+from ai_org_backend.main import Repo
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.services.storage import save_artefact, vector_store
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
+
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 from scripts.seed_graph import ingest  # noqa: E402
-from ai_org_backend.api.dependencies import get_current_tenant
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
@@ -23,9 +26,7 @@ def get_graph(current_tenant: Tenant = Depends(get_current_tenant)):
     with Session(engine) as session:
         tasks = session.exec(select(Task).where(Task.tenant_id == tenant_id)).all()
         deps = session.exec(
-            select(TaskDependency).where(
-                TaskDependency.from_task.has(tenant_id=tenant_id)
-            )
+            select(TaskDependency).where(TaskDependency.from_task.has(tenant_id=tenant_id))
         ).all()
         tasks_data = [t.model_dump() for t in tasks]
         dependencies_data = [{"from_id": d.from_id, "to_id": d.to_id} for d in deps]
@@ -45,15 +46,17 @@ def list_artifacts(current_tenant: Tenant = Depends(get_current_tenant)):
         ).all()
         result = []
         for art in artifacts:
-            result.append({
-                "id": art.id,
-                "task_id": art.task_id,
-                "task_desc": art.task.description if art.task else None,
-                "repo_path": art.repo_path,
-                "media_type": art.media_type,
-                "created_at": art.created_at.isoformat(),
-                "url": f"/artifact/{art.id}"
-            })
+            result.append(
+                {
+                    "id": art.id,
+                    "task_id": art.task_id,
+                    "task_desc": art.task.description if art.task else None,
+                    "repo_path": art.repo_path,
+                    "media_type": art.media_type,
+                    "created_at": art.created_at.isoformat(),
+                    "url": f"/artifact/{art.id}",
+                }
+            )
     return result
 
 
@@ -78,25 +81,78 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         existing_desc_map = {t.description: t.id for t in existing_tasks}
     if existing_tasks:
         raise HTTPException(status_code=400, detail="Purpose already has tasks")
-    # Generate blueprint and task plan via Architect and Planner agents
+
+    # 1) Generate requirements via Product Owner agent
+    try:
+        from ai_org_backend.agents.product_owner import run_requirements
+
+        prd_content = run_requirements(purpose)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {e}")
+
+    # Persist PRD task and artefact
+    with Session(engine) as session:
+        prd_task_obj = Task(
+            tenant_id=tenant_id,
+            purpose_id=purpose.id,
+            description="Product Requirements Document",
+            business_value=0.0,
+            tokens_plan=0,
+            purpose_relevance=1.0,
+        )
+        session.add(prd_task_obj)
+        session.commit()
+        session.refresh(prd_task_obj)
+
+    save_artefact(
+        prd_task_obj.id,
+        prd_content.encode("utf-8"),
+        filename="requirements/product_requirements.md",
+    )
+    Repo(tenant_id).update(
+        prd_task_obj.id, status="done", owner="ProductOwner", notes="PRD completed"
+    )
+
+    # 2) Generate blueprint and task plan via Architect and Planner agents
     try:
         from ai_org_backend.agents.architect import run_architect
         from ai_org_backend.agents.planner import run_planner
+
         blueprint = run_architect(purpose)
         tasks_plan = run_planner(blueprint)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Seed generation failed: {e}")
+
     if not tasks_plan or not isinstance(tasks_plan, list):
         raise HTTPException(status_code=500, detail="No tasks generated")
+
     # Insert repository initialization task if not present
-    if not any(str(t.get("description", "")).lower().startswith("initialize repository") for t in tasks_plan):
-        tasks_plan.insert(0, {
-            "id": "repo_init",
-            "description": "Initialize repository scaffolding",
-            "business_value": 1.0,
+    if not any(
+        str(t.get("description", "")).lower().startswith("initialize repository")
+        for t in tasks_plan
+    ):
+        tasks_plan.insert(
+            0,
+            {
+                "id": "repo_init",
+                "description": "Initialize repository scaffolding",
+                "business_value": 1.0,
+                "tokens_plan": 0,
+                "purpose_relevance": 0.0,
+            },
+        )
+
+    # Append Architecture Blueprint task
+    tasks_plan.append(
+        {
+            "id": "blueprint",
+            "description": "Architecture Blueprint",
+            "business_value": 0.0,
             "tokens_plan": 0,
-            "purpose_relevance": 0.0
-        })
+            "purpose_relevance": 0.0,
+        }
+    )
+
     # Filter out duplicates (if any)
     new_tasks = []
     id_map: dict[str, str] = {}
@@ -107,6 +163,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         else:
             new_tasks.append(t)
     tasks_plan = new_tasks
+
     # Save new tasks in database
     with Session(engine) as session:
         for t in tasks_plan:
@@ -116,30 +173,41 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
                 description=t["description"],
                 business_value=t.get("business_value", 1.0),
                 tokens_plan=t.get("tokens_plan", 0),
-                purpose_relevance=t.get("purpose_relevance", 0.0)
+                purpose_relevance=t.get("purpose_relevance", 0.0),
             )
             session.add(task_obj)
             session.flush()  # obtain task_obj.id
             id_map[t["id"]] = task_obj.id
         session.commit()
+
         # Create dependency relations
         for t in tasks_plan:
             dep = t.get("depends_on") or t.get("depends_on_id")
             if dep and dep in id_map:
                 session.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
-        # Ensure all new tasks depend on repo_init (if present)
+
+        # Ensure proper task order dependencies
         repo_id = id_map.get("repo_init")
-        if repo_id:
+        blueprint_id = id_map.get("blueprint")
+        if blueprint_id and repo_id:
+            session.add(TaskDependency(from_id=prd_task_obj.id, to_id=blueprint_id))
+            session.add(TaskDependency(from_id=blueprint_id, to_id=repo_id))
+            for slug, tid in id_map.items():
+                if slug not in ("repo_init", "blueprint"):
+                    session.add(TaskDependency(from_id=repo_id, to_id=tid))
+        elif repo_id:
             for slug, tid in id_map.items():
                 if slug != "repo_init":
                     session.add(TaskDependency(from_id=repo_id, to_id=tid))
         session.commit()
+
     # Update Neo4j graph
     try:
         ingest(tenant_id)
     except Exception as e:
         print(f"[WARN] Neo4j ingest failed: {e}")
-    return {"blueprint": blueprint}
+
+    return {"requirements": prd_content, "blueprint": blueprint}
 
 
 @router.get("/artifact/{artifact_id}")
@@ -167,8 +235,11 @@ def download_project_archive(current_tenant: Tenant = Depends(get_current_tenant
     if archive_path.exists():
         archive_path.unlink()
     from shutil import make_archive
+
     make_archive(str(archive_path.with_suffix("")), "zip", root_dir=base_dir)
-    return FileResponse(archive_path, media_type="application/zip", filename=f"{tenant_id}_project.zip")
+    return FileResponse(
+        archive_path, media_type="application/zip", filename=f"{tenant_id}_project.zip"
+    )
 
 
 @router.get("/context")
@@ -194,9 +265,7 @@ def get_context(task_id: str, current_tenant: Tenant = Depends(get_current_tenan
                 except Exception:
                     content = ""
                 snippet_text = content[:500] + ("..." if len(content) > 500 else "")
-        snippets.append({
-            "source": source,
-            "snippet": snippet_text,
-            "score": getattr(res, "score", None)
-        })
+        snippets.append(
+            {"source": source, "snippet": snippet_text, "score": getattr(res, "score", None)}
+        )
     return {"task_id": task_id, "snippets": snippets}
