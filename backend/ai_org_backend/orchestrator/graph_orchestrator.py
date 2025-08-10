@@ -6,18 +6,15 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-from networkx import DiGraph
-
+from ai_org_backend.db import engine
+from ai_org_backend.models import Task, TaskDependency
+from ai_org_backend.orchestrator.inspector import alert, todo_count
+from ai_org_backend.services.storage import register_artefact
 from dotenv import load_dotenv
 from jinja2 import Template
 from neo4j import GraphDatabase
-
-from ai_org_backend.orchestrator.inspector import alert, todo_count
-from ai_org_backend.models import Task, TaskDependency
-from sqlmodel import select, Session
-from ai_org_backend.db import engine
-from ai_org_backend.services.storage import register_artefact
-
+from networkx import DiGraph
+from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -56,6 +53,7 @@ RETURN length(p) AS l, [n IN nodes(p)|n.id] AS ids
 ORDER BY l DESC LIMIT 1
 """
 
+
 def cypher(query: str) -> List[Dict[str, Any]]:
     with driver.session() as g:
         return g.run(query).data()
@@ -64,6 +62,7 @@ def cypher(query: str) -> List[Dict[str, Any]]:
 def _load_tmpl(name: str) -> Template:
     path = PROMPT_DIR / name
     return Template(path.read_text(encoding="utf-8", errors="replace"))
+
 
 TMPL_ARCH = _load_tmpl("architect.j2")
 TMPL_PLAN = _load_tmpl("planner.j2")
@@ -77,7 +76,7 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
         return json.loads(m.group(1).strip())
     try:
         lo, hi = txt.index("["), txt.rindex("]")
-        return json.loads(txt[lo: hi + 1])
+        return json.loads(txt[lo : hi + 1])
     except Exception:
         pass
     rows = [ln for ln in txt.splitlines() if ln.lstrip().startswith("|")]
@@ -106,6 +105,7 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     print(f"[SEED] Seeding started for purpose '{purpose_name}' (tenant '{TENANT}')")
     # Determine or create Purpose for seeding
     from ai_org_backend.models import Purpose
+
     with Session(engine) as session:
         purpose = session.exec(
             select(Purpose).where(Purpose.name == purpose_name, Purpose.tenant_id == TENANT)
@@ -116,37 +116,70 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             session.commit()
             session.refresh(purpose)
 
-    # Generate tasks via LLM agents
+    # Generate Product Requirements via Product Owner agent
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.agents.planner import run_planner
+    from ai_org_backend.agents.product_owner import run_requirements
+    from ai_org_backend.main import Repo
+
+    try:
+        prd_content = run_requirements(purpose)
+    except Exception as e:
+        alert(f"Seed run failed (requirements): {e}", "seed")
+        return
+
+    # Persist Requirements task and artefact
+    prd_task = Repo(TENANT).add_task(
+        purpose_id=purpose.id,
+        description="Product Requirements Document",
+        business_value=0.0,
+        tokens_plan=0,
+        purpose_relevance=1.0,
+    )
+    register_artefact(
+        prd_task.id,
+        prd_content.encode("utf-8"),
+        filename="requirements/product_requirements.md",
+    )
+    Repo(TENANT).update(prd_task.id, status="done", owner="ProductOwner", notes="PRD completed")
+
+    # Generate architecture blueprint and task plan
     try:
         blueprint = run_architect(purpose)
         plan = run_planner(blueprint)
     except Exception as e:
-        alert(f"Seed run failed: {e}", "seed")
+        alert(f"Seed run failed (architecture): {e}", "seed")
         return
     tasks = plan if isinstance(plan, list) else []
     if not tasks:
         alert("Seed LLM returned no tasks", "seed")
         return
     # Insert repository initialization task if not already present
-    if not any(t for t in tasks if str(t.get("description", "")).lower().startswith("initialize repository")):
-        tasks.insert(0, {
-            "id": "repo_init",
-            "description": "Initialize repository scaffolding",
-            "business_value": 1.0,
+    if not any(
+        t
+        for t in tasks
+        if str(t.get("description", "")).lower().startswith("initialize repository")
+    ):
+        tasks.insert(
+            0,
+            {
+                "id": "repo_init",
+                "description": "Initialize repository scaffolding",
+                "business_value": 1.0,
+                "tokens_plan": 0,
+                "purpose_relevance": 0.0,
+            },
+        )
+    # Add tasks for the Architecture Blueprint
+    tasks.append(
+        {
+            "id": "blueprint",
+            "description": "Architecture Blueprint",
+            "business_value": 0.0,
             "tokens_plan": 0,
-            "purpose_relevance": 0.0
-        })
-    # Add a task to capture the Architecture Blueprint
-    tasks.append({
-        "id": "blueprint",
-        "description": "Architecture Blueprint",
-        "business_value": 0.0,
-        "tokens_plan": 0,
-        "purpose_relevance": 0.0
-    })
-    from ai_org_backend.main import Repo
+            "purpose_relevance": 0.0,
+        }
+    )
     # Avoid duplicate tasks (idempotent seeding)
     with Session(engine) as session:
         existing_tasks = session.exec(
@@ -183,25 +216,28 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         # Ensure all new tasks depend on the repo_init task (if present)
         repo_id = id_map.get("repo_init")
         if repo_id:
-            # Make repo_init depend on the architecture blueprint task if present
             blueprint_tid = id_map.get("blueprint")
+            requirements_tid = prd_task.id
             if blueprint_tid:
+                s.add(TaskDependency(from_id=requirements_tid, to_id=blueprint_tid))
                 s.add(TaskDependency(from_id=blueprint_tid, to_id=repo_id))
-            # All other tasks (except repo_init and blueprint) depend on repo_init
             for slug, tid in id_map.items():
                 if slug not in ("repo_init", "blueprint"):
                     s.add(TaskDependency(from_id=repo_id, to_id=tid))
         s.commit()
-    # Persist the architecture blueprint as an artifact and mark the task as done
+    # Persist the architecture blueprint as an artifact and mark its task as done
     blueprint_id = id_map.get("blueprint")
     if blueprint_id:
-        register_artefact(blueprint_id, blueprint.encode("utf-8"), filename="blueprints/architecture_blueprint.md")
+        register_artefact(
+            blueprint_id,
+            blueprint.encode("utf-8"),
+            filename="blueprints/architecture_blueprint.md",
+        )
         repo.update(blueprint_id, status="done", owner="Architect")
     from ai_org_backend.scripts.seed_graph import ingest
+
     ingest(TENANT)
-    print(
-        f"[SEED] Seeding completed: added {len(tasks)} tasks for purpose '{purpose.name}'."
-    )
+    print(f"[SEED] Seeding completed: added {len(tasks)} tasks for purpose '{purpose.name}'.")
 
 
 def _build_graph(session, tenant_id: str) -> DiGraph:
@@ -212,12 +248,9 @@ def _build_graph(session, tenant_id: str) -> DiGraph:
         g.add_node(t.id, obj=t)
 
     deps = session.exec(
-        select(TaskDependency).where(
-            TaskDependency.from_task.has(tenant_id=tenant_id)
-        )
+        select(TaskDependency).where(TaskDependency.from_task.has(tenant_id=tenant_id))
     ).all()
     for dep in deps:
         g.add_edge(dep.from_id, dep.to_id, kind=dep.dependency_type)
 
     return g
-
