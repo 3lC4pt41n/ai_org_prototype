@@ -110,7 +110,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
             it = _create_task(tenant_id, purpose_id, "Integration Tests", owner="QA-Integration")
             _depends_on_all_non_special(it.id, purpose_id)
             try:
-                integration_task.delay(tenant_id, it.id)
+                integration_task.apply_async((tenant_id, it.id), queue=f"{tenant_id}:qa")
                 logging.info("[TestsHook] Started Integration Tests for purpose=%s", purpose_id)
             except Exception as e:
                 logging.error("[TestsHook] Cannot enqueue integration: %s", e)
@@ -131,7 +131,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     s.commit()
             if str(e2e.status) == "todo":
                 try:
-                    e2e_task.delay(tenant_id, e2e.id)
+                    e2e_task.apply_async((tenant_id, e2e.id), queue=f"{tenant_id}:qa")
                     logging.info("[TestsHook] Started E2E for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue e2e: %s", e)
@@ -149,13 +149,15 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                 s.commit()
             if str(perf.status) == "todo":
                 try:
-                    performance_task.delay(tenant_id, perf.id)
+                    performance_task.apply_async(
+                        (tenant_id, perf.id), queue=f"{tenant_id}:telemetry"
+                    )
                     logging.info("[TestsHook] Started Perf for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue perf: %s", e)
             if str(sec.status) == "todo":
                 try:
-                    security_task.delay(tenant_id, sec.id)
+                    security_task.apply_async((tenant_id, sec.id), queue=f"{tenant_id}:telemetry")
                     logging.info("[TestsHook] Started Security for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue security: %s", e)

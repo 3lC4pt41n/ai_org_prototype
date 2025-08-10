@@ -1,0 +1,43 @@
+services:
+  ai-app:
+    command: uvicorn ai_org_backend.main:app --reload --host 0.0.0.0 --port 9102
+    volumes:
+      - ./backend/ai_org_backend:/app/ai_org_backend:ro
+    environment:
+      - ENV=development
+
+  orchestrator:
+    # command: sleep infinity
+    volumes:
+      - ./backend/ai_org_backend:/app/ai_org_backend:ro
+
+  celery-architect:
+    volumes:
+      - ./backend/ai_org_backend:/app/ai_org_backend:ro
+  celery-insight:
+    volumes:
+      - ./backend/ai_org_backend:/app/ai_org_backend:ro
+  celery-dev:
+    volumes:
+      - ./backend/ai_org_backend:/app/ai_org_backend:ro
+
+  frontend:
+    profiles: ["prod"]
+
+  frontend-dev:
+    profiles: ["dev"]
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./:/app:rw
+      - /app/node_modules
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm --filter web dev"
+    ports:
+      - "5173:5173"
+    depends_on:
+      ai-app:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
