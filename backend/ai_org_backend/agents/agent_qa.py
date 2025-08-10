@@ -29,7 +29,7 @@ MAX_AGENT_RETRIES = 2
 def agent_qa(tid: str, task_id: str) -> None:
     """Generate a QA test report for the task using OpenAI."""
     logging.info(f"[QAAgent] Starting QA review for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("qa").time():
+    with TASK_LAT.labels("qa", tid).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -72,7 +72,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     logging.warning(f"[QAAgent] Dev artefact missing for task {dev_task_id}, skipping QA for task {task_id}")
                     Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
                     PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels("qa", "failed").inc()
+                    TASK_CNT.labels(tid, "qa", "failed").inc()
                     return
                 snippets = []
                 for artefact in artifacts:
@@ -124,13 +124,13 @@ def agent_qa(tid: str, task_id: str) -> None:
                     logging.warning(f"[QAAgent] No readable code artifacts for task {dev_task_id}, skipping QA for task {task_id}")
                     Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
                     PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels("qa", "failed").inc()
+                    TASK_CNT.labels(tid, "qa", "failed").inc()
                     return
             else:
                 logging.warning(f"[QAAgent] No preceding dev task found for task {task_id}, skipping QA")
                 Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev task")
                 PROM_TASK_FAILED.labels(tid).inc()
-                TASK_CNT.labels("qa", "failed").inc()
+                TASK_CNT.labels(tid, "qa", "failed").inc()
                 return
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
@@ -170,7 +170,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                 else:
                     Repo(tid).update(task_id, status="failed", owner="QA", notes=error_msg)
                     PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels("qa", "failed").inc()
+                    TASK_CNT.labels(tid, "qa", "failed").inc()
                     return
         # QA-Report nur bei Erfolg speichern
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
@@ -308,5 +308,5 @@ def agent_qa(tid: str, task_id: str) -> None:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
         logging.error(f"[QAAgent] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels("qa", "done").inc()
+    TASK_CNT.labels(tid, "qa", "done").inc()
     logging.info(f"[QAAgent] Task {task_id} completed by QA agent (tokens used: {tokens_used})")

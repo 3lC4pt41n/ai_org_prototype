@@ -29,6 +29,11 @@ PROM_TASK_FAILED = Counter(
     "Number of tasks that failed",
     ["tenant"]
 )
+PROM_TASK_TODO = Gauge(
+    "ai_tasks_todo",
+    "Number of tasks pending",
+    ["tenant"],
+)
 insights_generated_total = Counter(
     "ai_insights_total",
     "Insights generated",
@@ -37,9 +42,11 @@ insights_generated_total = Counter(
 
 def todo_count(tenant: str) -> int:
     with Session(engine) as s:
-        return (
+        cnt = (
             s.exec(select(Task).where(Task.tenant_id == tenant, Task.status == TaskStatus.TODO))
         ).count()
+    PROM_TASK_TODO.labels(tenant).set(cnt)
+    return cnt
 
 
 def budget_left(tenant: str) -> float:

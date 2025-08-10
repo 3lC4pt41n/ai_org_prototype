@@ -23,7 +23,7 @@ PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
 def agent_repo(tenant_id: str, task_id: str) -> None:
     """Generate initial project repository scaffolding (folders, files, CI stubs) and save as artefacts."""
     logging.info(f"[repo_composer] Starting repo scaffolding for Task {task_id} (tenant {tenant_id})")
-    with TASK_LAT.labels("repo").time():
+    with TASK_LAT.labels("repo", tenant_id).time():
         # Retrieve architecture plan from task or related artefact
         architecture_plan = ""
         with SessionLocal() as db:
@@ -89,12 +89,12 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         if error_msg:
             Repo(tenant_id).update(task_id, status="failed", owner="Repo", notes=error_msg)
             PROM_TASK_FAILED.labels(tenant_id).inc()
-            TASK_CNT.labels("repo", "failed").inc()
+            TASK_CNT.labels(tenant_id, "repo", "failed").inc()
             return
         Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created", tokens_actual=tokens_used)
     try:
         debit(tenant_id, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
         logging.error(f"[repo_composer] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels("repo", "done").inc()
+    TASK_CNT.labels(tenant_id, "repo", "done").inc()
     logging.info(f"[repo_composer] Completed repo scaffolding for Task {task_id}: {files_created} file(s) saved")
