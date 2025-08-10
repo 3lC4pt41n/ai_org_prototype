@@ -22,7 +22,7 @@ PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
 def agent_ux_ui(tid: str, task_id: str) -> None:
     """Generate a wireframe design for the task using OpenAI."""
     logging.info(f"[UXAgent] Generating UX/UI design for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("ux_ui").time():
+    with TASK_LAT.labels("ux_ui", tid).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -89,7 +89,7 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 else:
                     Repo(tid).update(task_id, status="failed", owner="UX/UI", notes=error_msg)
                     PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels("ux_ui", "failed").inc()
+                    TASK_CNT.labels(tid, "ux_ui", "failed").inc()
                     return
         # Artefakt nur bei Erfolg speichern
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.md")
@@ -103,5 +103,5 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
         debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
     except Exception as e:
         logging.error(f"[UXAgent] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels("ux_ui", "done").inc()
+    TASK_CNT.labels(tid, "ux_ui", "done").inc()
     logging.info(f"[UXAgent] Task {task_id} completed by UX/UI agent (tokens used: {tokens_used})")

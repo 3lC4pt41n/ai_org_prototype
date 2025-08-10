@@ -30,7 +30,7 @@ PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
 def agent_dev(tid: str, task_id: str) -> None:
     """Generate code for the given task using OpenAI."""
     logging.info(f"[DevAgent] Generating code for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("dev").time():
+    with TASK_LAT.labels("dev", tid).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -138,7 +138,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                         task_id, status="failed", owner="Dev", notes=error_msg
                     )
                     PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels("dev", "failed").inc()
+                    TASK_CNT.labels(tid, "dev", "failed").inc()
                     return
         # Artefakt nur bei erfolgreichem LLM-Output speichern
         overwrite_flag = "allow_overwrite" in (task_obj.notes or "")
@@ -244,7 +244,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                         )
             except Exception as e:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
-    TASK_CNT.labels("dev", "done").inc()
+    TASK_CNT.labels(tid, "dev", "done").inc()
     logging.info(
         f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})"
     )
