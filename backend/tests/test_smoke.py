@@ -2,27 +2,37 @@ import importlib
 import os
 import sys
 import types
+
 from fastapi.testclient import TestClient
 
 openai_stub = types.ModuleType("openai")
+
+
 class DummyChat:
     @staticmethod
     def create(*args, **kwargs):
         class _Msg:
             content = "ok"
+
         class _Choice:
             message = _Msg()
+
         return types.SimpleNamespace(choices=[_Choice()])
+
 
 openai_stub.ChatCompletion = DummyChat
 openai_stub.OpenAIError = Exception
 sys.modules.setdefault("openai", openai_stub)
 
 backoff_stub = types.ModuleType("backoff")
+
+
 def _decorator(*args, **kwargs):
     def wrap(func):
         return func
+
     return wrap
+
 
 backoff_stub.on_exception = _decorator
 backoff_stub.expo = lambda *a, **kw: 0
@@ -33,11 +43,11 @@ if os.path.exists("test.db"):
     os.remove("test.db")
 
 main = importlib.import_module("ai_org_backend.main")
-from sqlmodel import SQLModel  # noqa: E402
 from ai_org_backend import models  # noqa: E402
 from ai_org_backend.db import SessionLocal  # noqa: E402
 from ai_org_backend.models import Artifact, Task  # noqa: E402
-from ai_org_backend.services.billing import credit, balance  # noqa: E402
+from ai_org_backend.services.billing import balance, credit  # noqa: E402
+from sqlmodel import SQLModel  # noqa: E402
 
 SQLModel.metadata.create_all(main.engine)
 
@@ -72,6 +82,6 @@ def test_budget_gate_and_artifact(tmp_path):
         )
         db.commit()
 
-    arts = client.get("/api/artifacts", headers={"Authorization": f"Bearer {TOKEN}"}).json()
+    arts = client.get("/artifacts", headers={"Authorization": f"Bearer {TOKEN}"}).json()
     assert len(arts) == 1
     assert balance(TENANT) >= 10.0

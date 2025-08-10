@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@ui/Card";
 import { Gauge, History, Target, PlayCircle, FileText, Package } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -27,6 +28,9 @@ export default function AdminDashboard() {
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [allowResearch, setAllowResearch] = useState<boolean>(false);
+  const navigate = useNavigate();
+  const [lastCount, setLastCount] = useState(0);
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
 
   const statusInfo: Record<string, { label: string; color: string; tooltip: string }> = {
     todo: { label: "Todo", color: "bg-yellow-500 text-black", tooltip: "Task is not started yet." },
@@ -42,12 +46,13 @@ export default function AdminDashboard() {
     const controller = new AbortController();
 
     const tick = () =>
-      Promise.all([getJson("/"), getJson("/backlog"), getJson("/api/artifacts")])
+      Promise.all([getJson("/"), getJson("/backlog"), getJson("/artifacts")])
         .then(([statusData, backlogData, artifactsData]) => {
           setBudget(statusData.budget_left);
           setBudgetTotal(statusData.budget_total);
           setBacklog(backlogData);
           setArtifacts(artifactsData);
+          setLastCount(artifactsData.length);
         })
         .catch(() => {
           toast.error("Failed to load data. Please try again later.");
@@ -70,6 +75,29 @@ export default function AdminDashboard() {
       .then((d) => setAllowResearch(!!d.allow_web_research))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      getJson("/artifacts")
+        .then((arts) => {
+          if (arts.length > lastCount) {
+            const latest = arts[0];
+            if (latest.name.includes("standup")) {
+              setAlertMsg("✅ A new Standup Report is available.");
+            } else if (latest.name.includes("planning-adjustment")) {
+              setAlertMsg(
+                "⚠️ A plan adjustment was made to address project risks."
+              );
+            } else {
+              setAlertMsg("ℹ️ New project report available.");
+            }
+            setLastCount(arts.length);
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [lastCount]);
 
   useEffect(() => {
     if (budgetTotal != null && budget != null) {
@@ -145,8 +173,11 @@ export default function AdminDashboard() {
         getJson("/backlog")
           .then((b) => setBacklog(b))
           .catch(() => {});
-        getJson("/api/artifacts")
-          .then((a) => setArtifacts(a))
+        getJson("/artifacts")
+          .then((a) => {
+            setArtifacts(a);
+            setLastCount(a.length);
+          })
           .catch(() => {});
       })
       .catch((e) => {
@@ -156,6 +187,19 @@ export default function AdminDashboard() {
 
   return (
     <>
+      {alertMsg && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 px-4 py-3 mb-4">
+          <p className="font-medium">
+            {alertMsg}{" "}
+            <button
+              onClick={() => navigate("/reports")}
+              className="underline text-blue-600"
+            >
+              View details
+            </button>
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
         <Card className="bg-slate-900 text-white">
           <CardContent className="p-6 flex flex-col gap-2 items-start">

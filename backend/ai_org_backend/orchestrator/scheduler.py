@@ -4,9 +4,12 @@ import asyncio
 import logging
 import time
 
+from sqlmodel import Session, select
+
 from ai_org_backend.db import engine
 from ai_org_backend.main import (  # import orchestrator dependencies
     BUDGET_GA,
+    DEFAULT_BUDGET,
     TOKEN_PRICE_PER_1000,
     Repo,
     celery,
@@ -30,7 +33,6 @@ from ai_org_backend.orchestrator.inspector import (
     todo_count,
 )
 from ai_org_backend.orchestrator.router import classify_role
-from sqlmodel import Session, select
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -70,6 +72,10 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
 
 async def orchestrator() -> None:
     last = time.time()
+    LAST_DONE_COUNT = 0
+    near_budget_alert_sent = False
+    alerted_fail_modules: set[str] = set()
+    alerted_retry_modules: set[str] = set()
     while True:
         # Pre-dispatch budget availability check
         try:
@@ -124,6 +130,68 @@ async def orchestrator() -> None:
                 f"budget_blocked:{budget_blocked:<2} budget:{budget_left(TENANT):.2f}$"
             )
             last = time.time()
+            # Anomaly detection: alert on high failure or retry rates
+            with Session(engine) as session:
+                for owner in ["Dev", "UX/UI", "QA"]:
+                    total = session.exec(
+                        select(Task).where(
+                            Task.tenant_id == TENANT,
+                            Task.owner == owner,
+                            Task.status.in_(["done", "failed"]),
+                        )
+                    ).count()
+                    fails = session.exec(
+                        select(Task).where(
+                            Task.tenant_id == TENANT,
+                            Task.owner == owner,
+                            Task.status == "failed",
+                        )
+                    ).count()
+                    retries = session.exec(
+                        select(Task).where(
+                            Task.tenant_id == TENANT,
+                            Task.owner == owner,
+                            Task.status == "done",
+                            Task.retries > 0,
+                        )
+                    ).count()
+                    if (
+                        total >= 5
+                        and fails / total > 0.3
+                        and fails >= 3
+                        and owner not in alerted_fail_modules
+                    ):
+                        alert(
+                            f"High failure rate in {owner} tasks: {fails} of {total} failed",
+                            "warn",
+                        )
+                        alerted_fail_modules.add(owner)
+                    if retries >= 3 and owner not in alerted_retry_modules:
+                        alert(
+                            f"Frequent retries in {owner} tasks: "
+                            f"{retries} tasks needed multiple attempts",
+                            "warn",
+                        )
+                        alerted_retry_modules.add(owner)
+            if (
+                budget_left(TENANT) < DEFAULT_BUDGET * 0.1
+                and budget_left(TENANT) > 0
+                and not near_budget_alert_sent
+            ):
+                alert(
+                    f"Budget low: only ${budget_left(TENANT):.2f} remaining",
+                    "warn",
+                )
+                near_budget_alert_sent = True
+        done_count = 0
+        with Session(engine) as session:
+            done_count = session.exec(
+                select(Task).where(Task.tenant_id == TENANT, Task.status == TaskStatus.DONE)
+            ).count()
+        if done_count - LAST_DONE_COUNT >= 10:
+            celery.send_task("agent.project_manager", args=[TENANT], queue=f"{TENANT}:qa")
+            celery.send_task("agent.adjust_plan", args=[TENANT], queue=f"{TENANT}:qa")
+            LAST_DONE_COUNT = done_count
         if budget_left(TENANT) < 1:
             alert("Budget exhausted", "budget")
         await asyncio.sleep(2)

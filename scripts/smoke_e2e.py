@@ -27,7 +27,7 @@ def main(tenant: str, purpose: str) -> int:
         time.sleep(3)
 
     # Artefakte abrufen
-    arts = requests.get(f"{API}/api/artifacts", params={"tenant": tenant}).json()
+    arts = requests.get(f"{API}/artifacts", params={"tenant": tenant}).json()
     if not arts:
         raise SystemExit("No artefacts produced!")
     print(f"🎉 {len(arts)} artefacts produced – smoke test PASS")
