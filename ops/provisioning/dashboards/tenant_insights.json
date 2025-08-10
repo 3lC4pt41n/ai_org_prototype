@@ -1,0 +1,67 @@
+{
+  "uid": "AIOrgInsights",
+  "title": "Tenant Insights",
+  "tags": ["ai_org"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "annotations": {"list": []},
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "type": "query",
+        "hide": 2,
+        "datasource": {"type": "prometheus", "uid": "prom"},
+        "definition": "label_values(ai_budget_left_usd, tenant)",
+        "refresh": 2,
+        "current": {"text": "demo", "value": "demo", "selected": false}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Budget Left",
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "targets": [{"expr": "ai_budget_left_usd{tenant=\"$tenant\"}"}]
+    },
+    {
+      "type": "stat",
+      "title": "Tasks Queued",
+      "id": 2,
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "targets": [{"expr": "ai_tasks_todo{tenant=\"$tenant\"}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tasks Completed by Role",
+      "id": 3,
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "targets": [
+        {
+          "expr": "sum by (role) (ai_tasks_total{tenant=\"$tenant\",status=\"done\"})",
+          "legendFormat": "{{role}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 Task Latency by Role",
+      "id": 4,
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prom"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, role) (ai_task_latency_sec_bucket{tenant=\"$tenant\"}))",
+          "legendFormat": "{{role}}"
+        }
+      ]
+    }
+  ]
+}
