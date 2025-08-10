@@ -1,9 +1,9 @@
 """Celery application instance for ai_org_backend tasks."""
 
-from celery import Celery
-from celery.signals import task_prerun, task_failure, before_task_publish
-from dotenv import load_dotenv
 from ai_org_backend import config
+from celery import Celery
+from celery.signals import before_task_publish, task_failure, task_prerun
+from dotenv import load_dotenv
 
 # Load environment variables so configuration values are available when the
 # module is imported by the Celery command line interface.
@@ -12,6 +12,9 @@ load_dotenv()
 
 celery = Celery(__name__, broker=config.REDIS_URL, backend=config.REDIS_URL)
 celery.conf.task_acks_late = True
+# Route tasks dynamically based on tenant and task type
+celery.conf.task_routes = ("ai_org_backend.tasks.celery_app.dynamic_router",)
+celery.conf.task_create_missing_queues = True
 
 
 @before_task_publish.connect
@@ -31,14 +34,10 @@ def enforce_budget(sender=None, body=None, headers=None, **extra):
             return
         tenant_id, t_id = args[0], args[1]
 
-        from ai_org_backend.orchestrator.inspector import (
-            budget_left,
-            alert,
-            PROM_BUDGET_BLOCKED,
-        )
-        from ai_org_backend.main import Repo, TOKEN_PRICE_PER_1000
         from ai_org_backend.db import SessionLocal
+        from ai_org_backend.main import TOKEN_PRICE_PER_1000, Repo
         from ai_org_backend.models import Task
+        from ai_org_backend.orchestrator.inspector import PROM_BUDGET_BLOCKED, alert, budget_left
 
         with SessionLocal() as session:
             task_obj = session.get(Task, t_id)
@@ -57,9 +56,7 @@ def enforce_budget(sender=None, body=None, headers=None, **extra):
 
 
 @task_prerun.connect
-def set_task_status_doing(
-    sender=None, task_id=None, task=None, args=None, kwargs=None, **extra
-):
+def set_task_status_doing(sender=None, task_id=None, task=None, args=None, kwargs=None, **extra):
     if args and len(args) >= 2:
         tenant_id, t_id = args[0], args[1]
         try:
@@ -91,3 +88,32 @@ def set_task_status_failed(
             PROM_TASK_FAILED.labels(tenant_id).inc()
         except Exception as e:
             print(f"Failed to set status 'failed' for task {t_id}: {e}")
+
+
+def dynamic_router(task_name: str, args, kwargs, options, task=None, **unused):
+    """Route tasks to tenant-specific queues based on tenant_id and task type."""
+    if not args:
+        return options
+    tenant_id = args[0]
+    if not isinstance(tenant_id, str):
+        return options
+    queue_suffix = None
+    if task_name.startswith("agent."):
+        if task_name in {"agent.integration", "agent.e2e"}:
+            queue_suffix = "qa"
+        elif task_name in {"agent.performance", "agent.security"}:
+            queue_suffix = "telemetry"
+        else:
+            queue_suffix = "qa"
+    elif "insight" in task_name:
+        queue_suffix = "insight"
+    elif "architect" in task_name:
+        queue_suffix = "architect"
+    elif task_name.startswith("ai_org_backend.tasks.llm_tasks"):
+        if task_name.endswith("dev_agent"):
+            queue_suffix = "dev"
+        elif task_name.endswith("ux_ui_agent"):
+            queue_suffix = "ux_ui"
+    if queue_suffix:
+        options["queue"] = f"{tenant_id}:{queue_suffix}"
+    return options
