@@ -19,8 +19,10 @@ from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.root import router as root_router
+from ai_org_backend.api.reviews import router as reviews_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
+import ai_org_backend.hooks.review_hook  # noqa: F401
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
 from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
@@ -115,6 +117,7 @@ app.include_router(tmpl_router)
 app.include_router(agent_router)
 app.include_router(pipeline_router)
 app.include_router(settings_router)
+app.include_router(reviews_router)
 app.include_router(root_router)
 
 if os.getenv("DISABLE_METRICS") != "1":
