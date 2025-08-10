@@ -1,3 +1,13 @@
 -r ai_org_backend/requirements.txt
 redis>=5.0.8
 prometheus-client>=0.20.0
+# --- Testing & QA extensions (safe to ignore if preinstalled) ---
+pytest>=7.4
+pytest-asyncio>=0.23
+playwright>=1.45
+pytest-playwright>=0.4.4
+locust>=2.20
+bandit>=1.7
+pip-audit>=2.7
+# requests is used by generated integration tests
+requests>=2.32

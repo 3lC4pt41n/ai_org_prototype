@@ -1,0 +1,27 @@
+{# prompts/integration_tests.j2 #}
+You are an expert **Integration Test Author**.
+Goal: Create robust **pytest** integration tests that exercise the system across backend and (optionally) UI.
+
+Context:
+- Purpose: {{ purpose_name }}
+- Acceptance hints come from PRD (if present).
+- Architectural constraints come from the blueprint.
+- Base URLs (may be empty): API={{ api_base_url or "n/a" }}, UI={{ ui_base_url or "n/a" }}
+
+Guidelines:
+- Use **pytest** and **@pytest.mark.integration** on every test.
+- Prefer black-box checks: call public HTTP APIs, verify end-to-end behaviors.
+- If UI_BASE_URL is provided, add one optional test that **skips** when Playwright is not available.
+- Keep tests deterministic; avoid sleeps except for small waits with timeouts.
+- Keep a single file output. Import `requests` for HTTP, `pytest` for assertions.
+- If the system lacks a specific endpoint yet, add a **xfail** test with a clear reason.
+
+Output:
+- Produce one valid Python file content only (no backticks).
+- Filename idea (the caller will choose): `test_integration_generated.py`
+
+Inputs (verbatim):
+--- PRD ---
+{{ prd_md }}
+--- BLUEPRINT ---
+{{ blueprint_md }}
