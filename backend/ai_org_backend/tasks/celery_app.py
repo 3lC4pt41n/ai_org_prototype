@@ -103,6 +103,10 @@ def dynamic_router(task_name: str, args, kwargs, options, task=None, **unused):
             queue_suffix = "qa"
         elif task_name in {"agent.performance", "agent.security"}:
             queue_suffix = "telemetry"
+        elif task_name == "agent.code_review":
+            queue_suffix = "qa.review"
+        elif task_name == "agent.refactor":
+            queue_suffix = "qa.refactor"
         else:
             queue_suffix = "qa"
     elif "insight" in task_name:

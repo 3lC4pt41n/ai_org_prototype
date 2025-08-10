@@ -51,6 +51,8 @@ class Task(SQLModel, table=True):
     # ───────────── Retry support ─────────────
     # how often this task wurde bereits automatisch erneut versucht
     retries: int = Field(default=0, ge=0)
+
+    issues_found: int = Field(default=0, ge=0)
     
     # Timestamps
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)

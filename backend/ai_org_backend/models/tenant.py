@@ -31,6 +31,8 @@ class Tenant(SQLModel, table=True):
         default=False,
         description="If true, agents may access the public web."
     )
+    enable_code_review: bool = Field(default=True)
+    enable_refactor: bool = Field(default=True)
 
     # FIXED: Import List from typing explicitly, no __future__ annotations
     tasks: List["Task"] = Relationship(back_populates="tenant")
