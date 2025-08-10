@@ -78,3 +78,62 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  integration-tests:
+    name: Integration & E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend/ai_org_backend
+          file: backend/ai_org_backend/Dockerfile
+          target: prod
+          push: false
+          tags: local/ai_backend:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Build test image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend/ai_org_backend
+          file: backend/ai_org_backend/Dockerfile
+          target: test
+          push: false
+          tags: local/ai_backend:test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: frontend/Dockerfile
+          target: prod
+          push: false
+          tags: local/ai_frontend:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Run Integration & Playwright tests
+        run: |
+          docker compose up --profile test --build --abort-on-container-exit --exit-code-from test-runner
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

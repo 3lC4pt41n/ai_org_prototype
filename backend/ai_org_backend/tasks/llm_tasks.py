@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jinja2 import Template
-
-from ai_org_backend.utils.llm import chat_completion, chat
-from celery import shared_task
 from ai_org_backend.orchestrator.inspector import insights_generated_total
+from ai_org_backend.utils.llm import chat, chat_completion
+from celery import shared_task
+from jinja2 import Template
 
 PROMPT_DIR = Path(__file__).resolve().parents[2] / "prompts"
 TMPL_DEV = Template((PROMPT_DIR / "dev.j2").read_text(encoding="utf-8"))
@@ -25,7 +24,7 @@ def generate_dev_code(**ctx: str) -> str:
     return chat_completion(prompt)
 
 
-@shared_task(name="ai_org_backend.tasks.llm_tasks.insight_agent", queue="insight")
+@shared_task(name="ai_org_backend.tasks.llm_tasks.insight_agent")
 def insight_agent(tenant: str, task_id: str) -> None:
     """Generate insights for a task via OpenAI and store artefact."""
     prompt_file = PROMPT_DIR / "analyst.j2"
@@ -47,8 +46,9 @@ def insight_agent(tenant: str, task_id: str) -> None:
         txt = f"ERROR: {exc}"
 
     from ai_org_backend.services.storage import register_artefact
+
     register_artefact(task_id, txt.encode(), filename=f"{task_id}_insight.txt")
     from ai_org_backend.main import Repo
+
     Repo(tenant).update(task_id, status="done", owner="Insight", notes="analysis")
     insights_generated_total.inc()
-
