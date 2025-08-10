@@ -7,6 +7,7 @@ export default function Nav() {
       <Link to="/graph" className="hover:underline">Graph</Link>
       <Link to="/pipeline" className="hover:underline">Pipeline</Link>
       <Link to="/studio" className="hover:underline">Studio</Link>
+      <Link to="/insights" className="hover:underline">Insights</Link>
     </nav>
   )
 }

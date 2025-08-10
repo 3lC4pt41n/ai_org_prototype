@@ -57,6 +57,8 @@ services:
       - NEO4J_PASS=s3cr3tP@ss
       - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
       - QDRANT_URL=http://qdrant:6333
+      - CELERY_WORKER_SEND_TASK_EVENTS=true
+      - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,6 +82,8 @@ services:
       - NEO4J_PASS=s3cr3tP@ss
       - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
       - QDRANT_URL=http://qdrant:6333
+      - CELERY_WORKER_SEND_TASK_EVENTS=true
+      - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,6 +107,8 @@ services:
       - NEO4J_PASS=s3cr3tP@ss
       - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
       - QDRANT_URL=http://qdrant:6333
+      - CELERY_WORKER_SEND_TASK_EVENTS=true
+      - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,6 +164,48 @@ services:
       qdrant:
         condition: service_healthy
 
+  celery-exporter:
+    image: danihodovic/celery-exporter:latest
+    restart: unless-stopped
+    environment:
+      - CE_BROKER_URL=redis://:ai_redis_pw@redis:6379/0
+    ports:
+      - "9808:9808"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - ai-app
+      - celery-exporter
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
   qdrant:
     image: qdrant/qdrant:v1.15.1
     ports:
@@ -174,3 +222,5 @@ volumes:
   pgdata:
   neo4j_data:
   qdrant_storage:
+  prometheus_data:
+  grafana_data:

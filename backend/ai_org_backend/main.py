@@ -45,15 +45,15 @@ driver  = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 # ──────────────── Metrics Prometheus ──────────────────────────
 if os.getenv("DISABLE_METRICS") != "1":
-    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role"])
-    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["role", "status"])
+    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role", "tenant"])
+    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["tenant", "role", "status"])
     BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"])
 else:  # create unregistered dummies
     TASK_LAT = Histogram(
-        "ai_task_latency_sec", "Task latency", ["role"], registry=None
+        "ai_task_latency_sec", "Task latency", ["role", "tenant"], registry=None
     )
     TASK_CNT = Counter(
-        "ai_tasks_total", "Tasks done", ["role", "status"], registry=None
+        "ai_tasks_total", "Tasks done", ["tenant", "role", "status"], registry=None
     )
     BUDGET_GA = Gauge(
         "ai_budget_left_usd", "Budget left", ["tenant"], registry=None
@@ -87,7 +87,7 @@ from ai_org_backend.agents.agent_qa import agent_qa  # noqa: E402
 @celery.task(name="agent.telemetry")
 def agent_telemetry(tid: str, task_id: str):
     Repo(tid).update(task_id, status="done", owner="Telemetry", notes="metrics emitted")
-    TASK_CNT.labels("telemetry", "done").inc()
+    TASK_CNT.labels(tid, "telemetry", "done").inc()
 
 
 AGENTS = {
