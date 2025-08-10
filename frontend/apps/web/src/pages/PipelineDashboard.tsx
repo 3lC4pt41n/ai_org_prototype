@@ -51,7 +51,7 @@ export default function PipelineDashboard() {
   }, []);
 
   const refreshData = () => {
-    return Promise.all([getJson("/api/graph"), getJson("/api/artifacts")]).then(
+    return Promise.all([getJson("/api/graph"), getJson("/artifacts")]).then(
       ([graphData, artifactsData]) => {
         const nodes = graphData.tasks.map((task: any) => ({
           id: task.id,

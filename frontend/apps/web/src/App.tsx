@@ -7,6 +7,7 @@ import PipelineDashboard from "./pages/PipelineDashboard";
 import Nav from "./components/Nav";
 import Login from "./pages/Login";
 import Insights from "./pages/Insights";
+import ReportsPage from "./pages/ReportsPage";
 
 export default function App() {
   const token = localStorage.getItem("token");
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/pipeline" element={<PipelineDashboard />} />
             <Route path="/studio" element={<TemplateStudio />} />
             <Route path="/insights" element={<Insights />} />
+            <Route path="/reports" element={<ReportsPage />} />
           </Routes>
         </>
       ) : (
