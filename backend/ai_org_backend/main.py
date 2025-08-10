@@ -3,47 +3,51 @@
 from __future__ import annotations
 
 import os
-from typing import Dict
 from contextlib import asynccontextmanager
+from typing import Dict
 
+import redis
 from dotenv import load_dotenv
-from sqlmodel import Session, select
-from ai_org_backend.tasks.celery_app import celery
-from fastapi import FastAPI, Depends
-# Expose Repo here so existing imports keep working:
-from .repo import Repo  # noqa: F401
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from ai_org_backend.api.templates import router as tmpl_router
-from ai_org_backend.api.agents import router as agent_router
-from ai_org_backend.api.pipeline import router as pipeline_router
-from ai_org_backend.api.auth import router as auth_router
-from ai_org_backend.api.settings import router as settings_router
-from ai_org_backend.api.root import router as root_router
-from ai_org_backend.api.reviews import router as reviews_router
-from ai_org_backend.api.dependencies import get_current_tenant
-from ai_org_backend.db import engine
+from neo4j import GraphDatabase
+from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from sqlmodel import Session, select
+
 import ai_org_backend.hooks.review_hook  # noqa: F401
+import ai_org_backend.hooks.tests_hook  # noqa: F401
+from ai_org_backend.api.agents import router as agent_router
+from ai_org_backend.api.auth import router as auth_router
+from ai_org_backend.api.dependencies import get_current_tenant
+from ai_org_backend.api.pipeline import router as pipeline_router
+from ai_org_backend.api.reviews import router as reviews_router
+from ai_org_backend.api.root import router as root_router
+from ai_org_backend.api.settings import router as settings_router
+from ai_org_backend.api.templates import router as tmpl_router
+from ai_org_backend.db import engine
+
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
-from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
-from neo4j import GraphDatabase
-import redis
+from ai_org_backend.tasks.celery_app import celery
+
+# Expose Repo here so existing imports keep working:
+from .repo import Repo  # noqa: F401
 
 # ──────────────── ENV / constants ─────────────────────────────
 load_dotenv()
 
-DB_URL        = os.getenv("DATABASE_URL", "sqlite:///ai_org.db")
-REDIS_URL     = os.getenv("REDIS_URL", "redis://:ai_redis_pw@localhost:6379/0")
-NEO4J_URL     = os.getenv("NEO4J_URL", "bolt://localhost:7687")
-NEO4J_USER    = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASS    = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
-DEFAULT_BUDGET= float(os.getenv("DEFAULT_BUDGET", 20))
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///ai_org.db")
+REDIS_URL = os.getenv("REDIS_URL", "redis://:ai_redis_pw@localhost:6379/0")
+NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
+DEFAULT_BUDGET = float(os.getenv("DEFAULT_BUDGET", 20))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 # Price per 1k tokens (USD)
 TOKEN_PRICE_PER_1000 = float(os.getenv("TOKEN_PRICE_PER_1000", "0.0005"))
 
-pool    = redis.from_url(REDIS_URL, decode_responses=True)
-driver  = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
+pool = redis.from_url(REDIS_URL, decode_responses=True)
+driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 # ──────────────── Metrics Prometheus ──────────────────────────
 if os.getenv("DISABLE_METRICS") != "1":
@@ -51,15 +55,9 @@ if os.getenv("DISABLE_METRICS") != "1":
     TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["tenant", "role", "status"])
     BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"])
 else:  # create unregistered dummies
-    TASK_LAT = Histogram(
-        "ai_task_latency_sec", "Task latency", ["role", "tenant"], registry=None
-    )
-    TASK_CNT = Counter(
-        "ai_tasks_total", "Tasks done", ["tenant", "role", "status"], registry=None
-    )
-    BUDGET_GA = Gauge(
-        "ai_budget_left_usd", "Budget left", ["tenant"], registry=None
-    )
+    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role", "tenant"], registry=None)
+    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["tenant", "role", "status"], registry=None)
+    BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"], registry=None)
 
 # ──────────────── SQLModel tables ─────────────────────────────
 
@@ -68,22 +66,25 @@ else:  # create unregistered dummies
 def budget_left(tenant: str = "demo") -> float:
     return float(pool.hget("budget", tenant) or DEFAULT_BUDGET)
 
+
 def debit(tenant: str, amount: float):
     left = max(budget_left(tenant) - amount, 0)
     pool.hset("budget", tenant, left)
     BUDGET_GA.labels(tenant).set(left)
 
+
 # ──────────────── Celery setup ───────────────────────────────
 # (Celery app initialized in ai_org_backend.tasks.celery_app)
 
 # import artefact helper
-from ai_org_backend.agents import repo_composer  # ensure repo_composer agent is loaded  # noqa: E402
-
+from ai_org_backend.agents import (  # ensure repo_composer agent is loaded  # noqa: E402
+    repo_composer,
+)
 
 # ──────────────── Agent tasks (imported) ─────────────
 from ai_org_backend.agents.agent_dev import agent_dev  # noqa: E402
-from ai_org_backend.agents.agent_ux_ui import agent_ux_ui  # noqa: E402
 from ai_org_backend.agents.agent_qa import agent_qa  # noqa: E402
+from ai_org_backend.agents.agent_ux_ui import agent_ux_ui  # noqa: E402
 
 
 @celery.task(name="agent.telemetry")
@@ -97,20 +98,19 @@ AGENTS = {
     "ux_ui": agent_ux_ui,
     "qa": agent_qa,
     "telemetry": agent_telemetry,
-    "repo": repo_composer.agent_repo,   # Register new repo_composer agent
+    "repo": repo_composer.agent_repo,  # Register new repo_composer agent
 }
+
 
 # ──────────────── FastAPI + startup ─────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
 
+
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
-    allow_methods=["*"],
-    allow_headers=["*"]
+    CORSMiddleware, allow_origins=[FRONTEND_ORIGIN], allow_methods=["*"], allow_headers=["*"]
 )
 app.include_router(auth_router)
 app.include_router(tmpl_router)
@@ -136,6 +136,7 @@ async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tena
         purpose_relevance=d.get("purpose_relevance", 0),
     )
     return t.model_dump()
+
 
 @app.get("/backlog")
 async def backlog(current_tenant: Tenant = Depends(get_current_tenant)):
