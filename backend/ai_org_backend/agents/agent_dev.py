@@ -6,7 +6,7 @@ from pathlib import Path
 from jinja2 import Template
 
 from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT
+from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.services.storage import save_artefact, driver
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.db import SessionLocal
@@ -244,6 +244,10 @@ def agent_dev(tid: str, task_id: str) -> None:
                         )
             except Exception as e:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
+    try:
+        debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+    except Exception as e:
+        logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tid, "dev", "done").inc()
     logging.info(
         f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})"
