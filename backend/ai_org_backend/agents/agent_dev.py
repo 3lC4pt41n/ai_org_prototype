@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import json
+import re
 from pathlib import Path
 
 from jinja2 import Template
@@ -17,6 +19,7 @@ from ai_org_backend.orchestrator.inspector import (
     PROM_TASK_FAILED,
     insights_generated_total,
 )
+from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
 
 # Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
 MAX_AGENT_RETRIES = 2
@@ -142,12 +145,63 @@ def agent_dev(tid: str, task_id: str) -> None:
                     return
         # Artefakt nur bei erfolgreichem LLM-Output speichern
         overwrite_flag = "allow_overwrite" in (task_obj.notes or "")
-        save_artefact(
-            task_id,
-            content.encode("utf-8"),
-            filename=f"{task_id}.py",
-            allow_overwrite=overwrite_flag,
-        )
+        files: list[tuple[str, str]] = []
+        code_texts: list[str] = []
+        try:
+            data = json.loads(content)
+            if isinstance(data, dict):
+                fname = data.get("filename") or data.get("path")
+                code_text = data.get("content", "")
+                if fname:
+                    files.append((fname, code_text))
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        fname = item.get("filename") or item.get("path")
+                        code_text = item.get("content", "")
+                        if fname:
+                            files.append((fname, code_text))
+        except Exception:
+            logging.warning(
+                f"[DevAgent] Non-JSON output for task {task_id}; applying heuristics"
+            )
+        if not files:
+            code_text = strip_code_fences(content)
+            ext = infer_extension(code_text)
+            fname = f"{task_id}{ext}"
+            files.append((fname, code_text))
+        saved_files: list[str] = []
+        for fname, code_text in files:
+            code_text = code_text or content
+            code_texts.append(code_text)
+            ext = Path(fname).suffix or infer_extension(code_text)
+            base_map = {
+                ".py": "backend",
+                ".html": "frontend",
+                ".ts": "frontend",
+                ".tsx": "frontend",
+                ".jsx": "frontend",
+                ".js": "frontend",
+                ".css": "styles",
+                ".scss": "styles",
+            }
+            base = base_map.get(ext, "backend")
+            if not fname.startswith(f"{base}/") and not Path(fname).is_absolute():
+                fname = f"{base}/{fname}"
+            file_path = Path(fname)
+            if file_path.parent and str(file_path.parent) != ".":
+                target_dir = Path("workspace") / tid / file_path.parent
+                target_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(
+                f"[DevAgent] Saving generated code to '{fname}' for task {task_id}"
+            )
+            save_artefact(
+                task_id,
+                code_text.encode("utf-8"),
+                filename=fname,
+                allow_overwrite=overwrite_flag,
+            )
+            saved_files.append(fname)
         tokens_used = 0
         try:
             tokens_used = (
@@ -165,8 +219,9 @@ def agent_dev(tid: str, task_id: str) -> None:
             notes="code generated",
             tokens_actual=tokens_used,
         )
+        combined_code = "\n".join(code_texts)
         followups = []
-        if "```" not in content:
+        if not code_texts:
             logging.info(
                 f"[DevAgent] Output was a list for task {task_id}; splitting into sub-tasks"
             )
@@ -177,10 +232,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                     if desc:
                         followups.append(desc)
         else:
-            # Andernfalls nach 'TODO:'-Kommentaren im Code suchen
-            import re
-
-            for match in re.finditer(r"TODO[:\s]+(.+)", content):
+            for match in re.finditer(r"TODO[:\s]+(.+)", combined_code):
                 desc = match.group(1).strip().rstrip(".:")
                 if desc:
                     followups.append(desc)
