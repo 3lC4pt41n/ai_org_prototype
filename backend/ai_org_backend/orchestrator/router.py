@@ -6,15 +6,27 @@ from jinja2 import Template
 from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.utils.llm import chat_completion
 from ai_org_backend.main import AGENTS
+from ai_org_backend.orchestrator.role_rules import heuristic_role, normalize_role
 
 # Include repo agent for bootstrapping
 AGENT_ROLES = list(AGENTS.keys())  # Now includes 'repo' role
 
 
 def classify_role(desc: str) -> str:
+    """
+    Robust role classification with keyword heuristics + LLM fallback.
+    1) Try deterministic keyword heuristics (EN/DE) for obvious cases.
+    2) If no match, ask the LLM and normalize the result.
+    3) Fall back to 'dev' if still unknown.
+    """
     # Return "dev" by default if description is empty or whitespace
     if not desc or not desc.strip():
         return "dev"
+
+    # 1) Heuristic pre-pass
+    heuristic = heuristic_role(desc)
+    if heuristic:
+        return heuristic
 
     # Prepare LLM prompt using Jinja2 template with all available roles
     tmpl_path = Path(__file__).resolve().parents[3] / "prompts" / "orchestrator.j2"
@@ -45,8 +57,8 @@ def classify_role(desc: str) -> str:
             first_line = result_str.splitlines()[0]
             if first_line:
                 role = first_line.strip().split()[0]
-    role = role.lower()
-    if role not in AGENT_ROLES:
+    role = normalize_role(role)
+    if not role or role not in AGENT_ROLES:
         alert(f"Unknown role '{role}', defaulting to dev", "router")
         return "dev"
     return role
