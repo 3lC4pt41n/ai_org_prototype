@@ -8,11 +8,12 @@ creates fix tasks on critical findings.
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.test_exec import run_bandit, run_pip_audit
 from ai_org_backend.tasks.celery_app import celery
@@ -93,7 +94,17 @@ def security_task(tenant_id: str, task_id: str) -> None:
                 notes="See reports/security_report.md",
             )
             s.add(fix)
+            s.flush()
+            s.add(TaskDependency(from_id=task_id, to_id=fix.id, dependency_type="FINISH_START"))
             s.commit()
+            try:
+                from scripts.seed_graph import ingest
+
+                ingest(tenant_id)
+            except Exception as e:
+                logging.error(
+                    f"[SecurityAgent] Neo4j ingest failed for new task {fix.id}: {e}"
+                )
         else:
             t.status = "done"
             t.owner = "QA-Sec"
