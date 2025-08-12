@@ -6,11 +6,12 @@ Generates a small Locustfile, executes a short headless run, evaluates p95 laten
 
 from __future__ import annotations
 
+import logging
 import os
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.test_exec import run_locust
 from ai_org_backend.tasks.celery_app import celery
@@ -96,4 +97,14 @@ def performance_task(tenant_id: str, task_id: str) -> None:
                 notes=f"Observed p95={p95_ms}ms > {p95_budget_ms}ms. See performance_report.txt",
             )
             s.add(fix)
+            s.flush()
+            s.add(TaskDependency(from_id=task_id, to_id=fix.id, dependency_type="FINISH_START"))
             s.commit()
+            try:
+                from scripts.seed_graph import ingest
+
+                ingest(tenant_id)
+            except Exception as e:
+                logging.error(
+                    f"[PerformanceAgent] Neo4j ingest failed for new task {fix.id}: {e}"
+                )
