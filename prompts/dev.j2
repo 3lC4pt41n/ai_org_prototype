@@ -41,8 +41,8 @@ Please address this issue in the new attempt.
 5. Append **`// TODO:`** markers for follow-ups that should become separate tasks.
 
 ### Output Format 🎯
-Provide the result inside a fenced code block with the appropriate language tag.
-Example:
-```python
-# your solution
-```
+Provide the result as a JSON object with keys:
+- "filename": the desired file path (including extension and any folder)
+- "content": the file content (code)
+
+Do not include any text outside the JSON object.
