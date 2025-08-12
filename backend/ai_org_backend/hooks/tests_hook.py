@@ -110,31 +110,73 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         sec = by_desc.get("security scan")
         ref_task = by_desc.get("refactor codebase")
 
-        # Stage 0: After all dev tasks done -> Code Review
-        if tenant and tenant.enable_code_review:
-            if code_rev is None:
-                if _all_non_test_done(purpose_id):
-                    code_rev = _create_task(
+        # Check for any existing tasks containing "Code Review" or "Refactor"
+        if code_rev is None:
+            for t in tasks:
+                if "code review" in (t.description or "").lower():
+                    code_rev = t
+                    break
+        if ref_task is None:
+            for t in tasks:
+                if "refactor" in (t.description or "").lower():
+                    ref_task = t
+                    break
+
+        # Stage 0: When project >90% complete -> schedule Code Review and Refactor tasks
+        done_count = 0
+        total_count = 0
+        for t in tasks:
+            d = (t.description or "").strip().lower()
+            if d not in SPECIAL:
+                total_count += 1
+                if str(t.status) == "done":
+                    done_count += 1
+        # Trigger final QA tasks if completion ratio > 90%
+        if total_count > 0 and done_count / total_count >= 0.9:
+            if tenant and tenant.enable_code_review and code_rev is None:
+                code_rev = _create_task(
+                    tenant_id,
+                    purpose_id,
+                    "Code Review",
+                    owner="QA-Review",
+                )
+                _depends_on_all_non_special(code_rev.id, purpose_id)
+                try:
+                    code_review_task.apply_async((tenant_id, code_rev.id), queue=f"{tenant_id}:qa.review")
+                    logging.info("[TestsHook] Started Code Review for purpose=%s", purpose_id)
+                except Exception as e:
+                    logging.error("[TestsHook] Cannot enqueue code review: %s", e)
+                # Also schedule Refactor task if not already present
+                if tenant.enable_refactor and ref_task is None:
+                    ref_task = _create_task(
                         tenant_id,
                         purpose_id,
-                        "Code Review",
-                        owner="QA-Review",
+                        "Refactor Codebase",
+                        owner="QA-Refactor",
                     )
-                    _depends_on_all_non_special(code_rev.id, purpose_id)
+                    _depends_on_all_non_special(ref_task.id, purpose_id)
                     try:
-                        code_review_task.apply_async(
-                            (tenant_id, code_rev.id),
-                            queue=f"{tenant_id}:qa.review",
-                        )
-                        logging.info(
-                            "[TestsHook] Started Code Review for purpose=%s",
-                            purpose_id,
-                        )
+                        refactor_task.apply_async((tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor")
+                        logging.info("[TestsHook] Started Refactor for purpose=%s", purpose_id)
                     except Exception as e:
-                        logging.error("[TestsHook] Cannot enqueue code review: %s", e)
-                    return
-            elif str(code_rev.status) != "done":
+                        logging.error("[TestsHook] Cannot enqueue refactor: %s", e)
                 return
+            if tenant and tenant.enable_code_review and code_rev is not None and str(code_rev.status) != "done":
+                # Wait for Code Review to finish before proceeding
+                return
+            if tenant and tenant.enable_refactor and ref_task is None:
+                ref_task = _create_task(
+                    tenant_id,
+                    purpose_id,
+                    "Refactor Codebase",
+                    owner="QA-Refactor",
+                )
+                _depends_on_all_non_special(ref_task.id, purpose_id)
+                try:
+                    refactor_task.apply_async((tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor")
+                    logging.info("[TestsHook] Started Refactor for purpose=%s", purpose_id)
+                except Exception as e:
+                    logging.error("[TestsHook] Cannot enqueue refactor: %s", e)
 
         # Stage 1: When all non-test tasks done -> create/run Integration
         if _all_non_test_done(purpose_id) and (
@@ -194,34 +236,6 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     logging.info("[TestsHook] Started Security for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue security: %s", e)
-
-            # Stage 4: After Perf + Sec done -> Refactor suggestions
-            if (
-                tenant
-                and tenant.enable_refactor
-                and str(perf.status) == "done"
-                and str(sec.status) == "done"
-            ):
-                if ref_task is None:
-                    ref_task = _create_task(
-                        tenant_id, purpose_id, "Refactor Codebase", owner="QA-Refactor"
-                    )
-                    s.add(TaskDependency(from_id=perf.id, to_id=ref_task.id))
-                    s.add(TaskDependency(from_id=sec.id, to_id=ref_task.id))
-                    s.commit()
-                if str(ref_task.status) == "todo":
-                    try:
-                        refactor_task.apply_async(
-                            (tenant_id, ref_task.id),
-                            queue=f"{tenant_id}:qa.refactor",
-                        )
-                        logging.info(
-                            "[TestsHook] Started Refactor for purpose=%s",
-                            purpose_id,
-                        )
-                    except Exception as e:
-                        logging.error("[TestsHook] Cannot enqueue refactor: %s", e)
-
 
 def update_with_tests(self, task_id: str, **fields):
     """Wrap Repo.update to observe state transitions and schedule testing stages."""
