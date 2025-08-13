@@ -234,7 +234,7 @@ services:
       target: prod
     image: local/ai_frontend:latest
     ports:
-      - "3000:80"
+      - "5173:80"
     depends_on:
       ai-app:
         condition: service_healthy
