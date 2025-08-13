@@ -25,7 +25,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "black"]
+dev = [
+  "pytest",
+  "ruff",
+  "black",
+  "bandit",
+  "pip-audit",
+  "playwright",
+  "pytest-playwright",
+  "locust",
+  "pytest-asyncio",
+]
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]
