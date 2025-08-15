@@ -7,14 +7,19 @@ from dotenv import load_dotenv
 
 # Load environment variables so configuration values are available when the
 # module is imported by the Celery command line interface.
-load_dotenv()
+load_dotenv()  # load .env so config values (REDIS_URL, etc.) are set
 
 
-celery = Celery(__name__, broker=config.REDIS_URL, backend=config.REDIS_URL)
+# Initialize Celery app with a clear name and broker/backend config
+celery = Celery("ai_org_backend", broker=config.REDIS_URL, backend=config.REDIS_URL)
 celery.conf.task_acks_late = True
 # Route tasks dynamically based on tenant and task type
 celery.conf.task_routes = ("ai_org_backend.tasks.celery_app.dynamic_router",)
 celery.conf.task_create_missing_queues = True
+# Alias the Celery app as `app` for Celery CLI autodiscovery
+app = celery
+
+celery.autodiscover_tasks(packages=["ai_org_backend.agents"])
 
 
 @before_task_publish.connect

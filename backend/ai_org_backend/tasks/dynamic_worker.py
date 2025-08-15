@@ -3,7 +3,7 @@ import time
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Tenant
-from celery import current_app as celery_app
+from ai_org_backend.tasks.celery_app import celery
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -35,7 +35,7 @@ def launch_worker(queue_groups: list[str]):
                 queues.append("celery")
     queue_list = ",".join(queues)
     print(f"[dynamic_worker] Starting worker for queues: {queue_list}")
-    celery_app.worker_main(
+    celery.worker_main(
         [
             "worker",
             "--loglevel=INFO",
