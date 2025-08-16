@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
-from jinja2 import Template
 from celery import shared_task
+
+from .utils import load_template
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
@@ -18,7 +18,7 @@ from ai_org_backend.services.storage import save_artefact
 ARCHITECT_RUNS = prom_counter("ai_architect_runs_total", "Architect executions")
 ARCHITECT_LATENCY = prom_hist("ai_architect_latency_seconds", "Architect latency")
 
-PROMPT_TMPL = Template(Path("prompts/architect.j2").read_text())
+PROMPT_TMPL = load_template("architect.j2")
 
 
 def run_architect(purpose: Purpose, task: str | None = None) -> str:

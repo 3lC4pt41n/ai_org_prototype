@@ -10,13 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # -------- python deps ----------
-COPY requirements.txt .
+COPY backend/ai_org_backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # -------- project source -------
-COPY . /app/ai_org_backend
-COPY alembic.ini /app
-COPY alembic /app/alembic
+COPY backend/ai_org_backend /app/ai_org_backend
+COPY backend/ai_org_backend/alembic.ini /app
+COPY backend/ai_org_backend/alembic /app/alembic
+COPY prompts /app/prompts
 
 # Stelle sicher, dass Alembic-Migrationsordner am erwarteten Pfad existiert
 RUN mkdir -p /app/backend/ai_org_backend && mv /app/alembic /app/backend/ai_org_backend/

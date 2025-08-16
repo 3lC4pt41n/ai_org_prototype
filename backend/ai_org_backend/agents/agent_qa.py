@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
@@ -17,8 +17,7 @@ from ai_org_backend.metrics import prom_counter
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 
 # Load prompt template for QA agent
-_TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "qa.j2"
-PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
+PROMPT_TMPL = load_template("qa.j2")
 QA_ARTIFACT_COUNTER = prom_counter("ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts")
 
 # Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
