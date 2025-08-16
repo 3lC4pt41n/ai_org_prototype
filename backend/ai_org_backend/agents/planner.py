@@ -4,10 +4,10 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 
-from jinja2 import Template
 from jsonschema import validate
+
+from .utils import load_template
 
 from ai_org_backend.utils.llm import chat
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -15,7 +15,7 @@ from ai_org_backend.metrics import prom_counter, prom_hist
 
 PLANNER_RUNS = prom_counter("ai_planner_runs_total", "Planner executions")
 PLANNER_LATENCY = prom_hist("ai_planner_latency_seconds", "Planner latency")
-PROMPT_TMPL = Template(Path("prompts/planner.j2").read_text())
+PROMPT_TMPL = load_template("planner.j2")
 
 # Maximal erlaubte Wiederholungen bei ungültigem LLM-Output (insgesamt 3 Versuche)
 MAX_AGENT_RETRIES = 2

@@ -8,9 +8,8 @@ Runs the tests and raises fix tasks on failure.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -23,7 +22,7 @@ from ai_org_backend.tasks.celery_app import celery
 RUNS = prom_counter("ai_e2e_runs_total", "E2E agent executions")
 LAT = prom_hist("ai_e2e_latency_seconds", "E2E agent latency")
 
-TEMPLATE = Template(Path("prompts/e2e_tests.j2").read_text(encoding="utf-8"))
+TEMPLATE = load_template("e2e_tests.j2")
 
 
 def _load_latest_prd(s, purpose_id: str) -> str:

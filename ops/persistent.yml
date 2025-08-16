@@ -43,7 +43,9 @@ services:
   # ───────────── Celery-Worker ───────────
   celery-architect:
     build:
-      context: ../backend/ai_org_backend   # Ordner mit Dockerfile & requirements.txt
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_architect:latest
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
@@ -68,7 +70,10 @@ services:
         condition: service_healthy
 
   celery-insight:
-    build: { context: ../backend/ai_org_backend }
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_insight:latest
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
@@ -93,7 +98,10 @@ services:
         condition: service_healthy
 
   celery-dev:
-    build: { context: ../backend/ai_org_backend }
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_dev:latest
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
@@ -121,7 +129,10 @@ services:
 
   # ───────────── Application ───────────
   ai-app:
-    build: { context: ../backend/ai_org_backend }
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_app:latest
     command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 8000
     environment:
@@ -144,7 +155,10 @@ services:
         condition: service_started
 
   orchestrator:
-    build: { context: ../backend/ai_org_backend }
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_orchestrator:latest
     command: >
       /bin/sh -c 'alembic -c /app/alembic.ini upgrade head && python -m ai_org_backend.orchestrator.scheduler'
