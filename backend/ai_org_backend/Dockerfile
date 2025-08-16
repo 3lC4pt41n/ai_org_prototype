@@ -26,5 +26,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnss3 libatk1.0 libdrm2 libxkbcommon0 libxcb1 libx11-6 libxcomposite1 \
         libxdamage1 libxext6 libxfixes3 libxrandr2 libgtk-3-0 libgbm1 \
     && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir playwright==1.37.0 locust==2.17.5 bandit==1.7.5 pip-audit==2.4.4
-RUN playwright install --with-deps chromium
+# ---- Test/QA toolchain (optional; enabled by default) ------------------------
+ARG WITH_TEST_EXTRAS=true
+ARG PLAYWRIGHT_VERSION=1.37.0
+ARG LOCUST_VERSION=2.20.1          # 2.20.2 is yanked; 2.17.5 never existed on PyPI
+ARG BANDIT_VERSION=1.7.5
+ARG PIP_AUDIT_VERSION=2.4.4
+
+RUN if [ "$WITH_TEST_EXTRAS" = "true" ]; then \
+      pip install --no-cache-dir \
+        "playwright==${PLAYWRIGHT_VERSION}" \
+        "locust==${LOCUST_VERSION}" \
+        "bandit==${BANDIT_VERSION}" \
+        "pip-audit==${PIP_AUDIT_VERSION}" \
+      && playwright install --with-deps chromium; \
+    else \
+      echo "Skipping test/QA extras (WITH_TEST_EXTRAS=false)"; \
+    fi
