@@ -3,7 +3,7 @@ FROM python:3.11-slim AS base
 
 # -------- system deps ----------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential libpq-dev curl \
+        build-essential libpq-dev curl git \
     && rm -rf /var/lib/apt/lists/*
 
 # -------- workdir --------------
@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/ai_org_backend
 COPY alembic.ini /app
 COPY alembic /app/alembic
+
+# Stelle sicher, dass Alembic-Migrationsordner am erwarteten Pfad existiert
+RUN mkdir -p /app/backend/ai_org_backend && mv /app/alembic /app/backend/ai_org_backend/
 
 FROM base AS prod
 CMD ["python", "-m", "ai_org_backend.main"]
