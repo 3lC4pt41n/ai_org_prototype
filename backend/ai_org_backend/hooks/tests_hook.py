@@ -13,15 +13,9 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from ai_org_backend.agents.e2e import e2e_task
-from ai_org_backend.agents.integration import integration_task
-from ai_org_backend.agents.performance import performance_task
-from ai_org_backend.agents.security import security_task
-from ai_org_backend.agents.code_review import code_review_task
-from ai_org_backend.agents.refactor import refactor_task
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.main import Repo as _Repo
 from ai_org_backend.models import Task, TaskDependency, Tenant
+from ai_org_backend.repo import Repo as _Repo
 
 _orig_update = _Repo.update
 
@@ -91,6 +85,13 @@ def _all_non_test_done(purpose_id: str) -> bool:
 
 
 def _maybe_schedule_tests(changed_task_id: str) -> None:
+    from ai_org_backend.agents.code_review import code_review_task
+    from ai_org_backend.agents.e2e import e2e_task
+    from ai_org_backend.agents.integration import integration_task
+    from ai_org_backend.agents.performance import performance_task
+    from ai_org_backend.agents.refactor import refactor_task
+    from ai_org_backend.agents.security import security_task
+
     with SessionLocal() as s:
         changed = s.get(Task, changed_task_id)
         if not changed or str(changed.status) != "done":
@@ -142,7 +143,9 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                 )
                 _depends_on_all_non_special(code_rev.id, purpose_id)
                 try:
-                    code_review_task.apply_async((tenant_id, code_rev.id), queue=f"{tenant_id}:qa.review")
+                    code_review_task.apply_async(
+                        (tenant_id, code_rev.id), queue=f"{tenant_id}:qa.review"
+                    )
                     logging.info("[TestsHook] Started Code Review for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue code review: %s", e)
@@ -156,12 +159,19 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     )
                     _depends_on_all_non_special(ref_task.id, purpose_id)
                     try:
-                        refactor_task.apply_async((tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor")
+                        refactor_task.apply_async(
+                            (tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor"
+                        )
                         logging.info("[TestsHook] Started Refactor for purpose=%s", purpose_id)
                     except Exception as e:
                         logging.error("[TestsHook] Cannot enqueue refactor: %s", e)
                 return
-            if tenant and tenant.enable_code_review and code_rev is not None and str(code_rev.status) != "done":
+            if (
+                tenant
+                and tenant.enable_code_review
+                and code_rev is not None
+                and str(code_rev.status) != "done"
+            ):
                 # Wait for Code Review to finish before proceeding
                 return
             if tenant and tenant.enable_refactor and ref_task is None:
@@ -173,7 +183,9 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                 )
                 _depends_on_all_non_special(ref_task.id, purpose_id)
                 try:
-                    refactor_task.apply_async((tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor")
+                    refactor_task.apply_async(
+                        (tenant_id, ref_task.id), queue=f"{tenant_id}:qa.refactor"
+                    )
                     logging.info("[TestsHook] Started Refactor for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue refactor: %s", e)
@@ -236,6 +248,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     logging.info("[TestsHook] Started Security for purpose=%s", purpose_id)
                 except Exception as e:
                     logging.error("[TestsHook] Cannot enqueue security: %s", e)
+
 
 def update_with_tests(self, task_id: str, **fields):
     """Wrap Repo.update to observe state transitions and schedule testing stages."""

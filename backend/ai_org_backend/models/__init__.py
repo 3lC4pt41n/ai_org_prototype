@@ -1,13 +1,15 @@
-from .tenant import Tenant
-from .purpose import Purpose  
+from .artifact import Artifact
+from .artifact import Artifact as Artefact
+from .purpose import Purpose
 from .task import Task
 from .task_dependency import TaskDependency
-from .artifact import Artifact
+from .tenant import Tenant
 
 __all__ = [
     "Tenant",
-    "Purpose", 
+    "Purpose",
     "Task",
     "TaskDependency",
-    "Artifact"
+    "Artifact",
+    "Artefact",
 ]
