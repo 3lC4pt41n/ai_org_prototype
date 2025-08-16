@@ -13,7 +13,7 @@ Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware
 |**Graph Orchestrator 2.0** | Neo4j als Source of Truth, LLM‑basiertes Role‑Routing, Prom‑Metriken (blocked tasks, critical path, alert‑counter) |
 |**Erweitertes Task‑Modell** | Business‑Wert, Token KPI (Plan + Actual), Purpose‑Relevance, Multi‑Tenant FK |
 |**Budget‑Gate** | Redis‑Hash `budget:{tenant}` + Celery‑Hook (Abbruch wenn Budget < 1 USD) |
-|**Monitoring‑Stack** | Prometheus :9102 (FastAPI) + Celery exporter; fertig provisionierte Grafana‑Dashboards |
+|**Monitoring‑Stack** | Prometheus :8000 (FastAPI) + Celery exporter; fertig provisionierte Grafana‑Dashboards |
 |**React Admin‑Dashboard** | Budget‑Gauge, Backlog‑Table, React‑Flow‑Graph (Bubble‑Size = Value, Color = Status) |
 |**Monorepo** | Frontend‑Workspaces (`apps/web`, `packages/ui`, `packages/api-client`), Backend `ai_org_backend` |
 
@@ -61,6 +61,10 @@ python -m ai_org_backend.orchestrator.scheduler
 cd frontend && pnpm i
 pnpm --filter ./apps/web dev  # http://localhost:5173
 ```
+
+> ⚠️ Das Docker-Compose-Setup mappt das Frontend ebenfalls auf Port 5173.
+> Wenn du die Container startest, beende ggf. deinen lokalen `pnpm dev`
+> oder ändere das Mapping (z.B. `8080:80`), um Port-Konflikte zu vermeiden.
 
 ### UI-Workflow
 | Bereich | Beschreibung |
@@ -132,7 +136,7 @@ GET	/api/graph	Graph‑JSON (Nodes + Edges) für Frontend
 📈 5 | Monitoring
 Prometheus scraped Targets
 
-FastAPI :9102 (uvicorn start)
+FastAPI :8000 (uvicorn start)
 
 Celery Worker :5555 (via env exporter)
 

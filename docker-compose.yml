@@ -62,7 +62,7 @@ services:
       dockerfile: Dockerfile
       target: prod
     image: local/ai_backend:latest
-    command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 9102
+    command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 8000
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
       - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
@@ -71,7 +71,7 @@ services:
       - NEO4J_PASS=s3cr3tP@ss
       - QDRANT_URL=http://qdrant:6333
     ports:
-      - "9102:9102"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,7 +82,7 @@ services:
       qdrant:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9102/ || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -178,6 +178,8 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASS=s3cr3tP@ss
       - QDRANT_URL=http://qdrant:6333
+      - API_BASE_URL=http://ai-app:8000
+      - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
