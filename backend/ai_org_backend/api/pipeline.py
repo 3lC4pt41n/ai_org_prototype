@@ -3,8 +3,8 @@ from pathlib import Path
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.main import Repo
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.repo import Repo
 from ai_org_backend.services.storage import save_artefact, vector_store
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
