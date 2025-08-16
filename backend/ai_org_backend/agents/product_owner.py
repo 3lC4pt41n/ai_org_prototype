@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Purpose
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
-from jinja2 import Template
+
+from .utils import load_template
 
 PRODUCT_REQ_RUNS = prom_counter(
     "ai_product_requirements_runs_total", "Product Requirements agent executions"
@@ -16,7 +16,7 @@ PRODUCT_REQ_LATENCY = prom_hist(
     "ai_product_requirements_latency_seconds", "Product Requirements agent latency"
 )
 
-PROMPT_TMPL = Template(Path("prompts/requirements.j2").read_text(encoding="utf-8"))
+PROMPT_TMPL = load_template("requirements.j2")
 
 
 def run_requirements(purpose: Purpose) -> str:

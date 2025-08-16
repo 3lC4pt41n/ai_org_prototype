@@ -7,10 +7,9 @@ Produces a Markdown artefact. **Does not** mark the task done — the user
 must approve via the Reviews API to unblock downstream tasks.
 """
 import logging
-from pathlib import Path
 from typing import Optional
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Purpose, Task
@@ -24,8 +23,7 @@ from ai_org_backend.metrics import prom_counter, prom_hist
 REVIEW_RUNS = prom_counter("ai_review_runs_total", "Review agent executions")
 REVIEW_LAT = prom_hist("ai_review_latency_seconds", "Review agent latency")
 
-_TMPL_PATH = Path("prompts") / "review.j2"
-PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
+PROMPT_TMPL = load_template("review.j2")
 
 
 def _call_llm(messages, tenant_id: Optional[str]) -> Optional[dict]:
