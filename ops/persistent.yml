@@ -208,6 +208,26 @@ services:
     depends_on:
       - prometheus
 
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      target: prod
+    image: local/ai_frontend:latest
+    ports:
+      - "5173:80"
+    depends_on:
+      ai-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ../logs/nginx:/var/log/nginx
+    profiles: ["ui"]
+
   qdrant:
     image: qdrant/qdrant:v1.15.1
     ports:
