@@ -1,0 +1,4 @@
+profiles: ["test"]
+services:
+  celery-dev:
+    image: local/ai_backend:test
