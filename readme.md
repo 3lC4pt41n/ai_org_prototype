@@ -29,16 +29,20 @@ cd ai_org_prototype
 
 # Python ≥ 3.11
 python -m venv .venv && source .venv/bin/activate  # Win: .venv\Scripts\activate
-pip install -e backend[dev]
+pip install -e backend[dev]  # inkl. QA-Tools
 
 # Container-Infrastruktur (Backend, Orchestrator, Worker, Redis, Postgres, Neo4j)
-docker compose -f ops/persistent.yml up -d
-docker compose -f ops/monitoring.yml up -d  # prometheus + grafana
+docker compose -f ops/persistent.yml up -d                      # API http://localhost:8000
+docker compose -f ops/persistent.yml --profile ui up -d         # optionales Frontend http://localhost:5173
+docker compose -f ops/monitoring.yml up -d                      # prometheus + grafana
 
 # DB migration & demo seed (nur erforderlich bei manuellem Start ohne Docker)
 alembic -c backend/ai_org_backend/alembic.ini upgrade head
 python scripts/seed_graph.py --tenant demo
 ```
+
+Backend API: http://localhost:8000
+Docker-Frontend (`--profile ui`): http://localhost:5173
 
 2. Budget konfigurieren
 Der Tokenpreis wird in `backend/ai_org_backend/settings.py` als `TOKEN_PRICE` definiert. Jeder
@@ -48,8 +52,10 @@ Mandant erhält beim ersten Start `settings.default_budget` USD (Redis Hash `bud
 ```bash
 celery -A ai_org_backend.tasks.celery_app \
        worker -Q demo:dev,demo:ux_ui,demo:qa,demo:qa.review,demo:qa.refactor,demo:telemetry \
-       -l INFO -P solo
+        -l INFO -P solo
 ```
+
+> QA-Tasks laufen nur, wenn die benötigten Tools installiert sind (z.B. via `backend[dev]`); andernfalls wird ein Skip-Grund geloggt.
 
 4. Orchestrator & Scheduler *(bei Docker Compose bereits gestartet)*
 ```bash
@@ -60,9 +66,10 @@ python -m ai_org_backend.orchestrator.scheduler
 ```bash
 cd frontend && pnpm i
 pnpm --filter ./apps/web dev  # http://localhost:5173
+# oder Docker: docker compose -f ops/persistent.yml --profile ui up -d
 ```
 
-> ⚠️ Das Docker-Compose-Setup mappt das Frontend ebenfalls auf Port 5173.
+> ⚠️ Das Docker-Compose-Setup (Profil `ui`) mappt das Frontend auf Port 5173.
 > Wenn du die Container startest, beende ggf. deinen lokalen `pnpm dev`
 > oder ändere das Mapping (z.B. `8080:80`), um Port-Konflikte zu vermeiden.
 
@@ -87,6 +94,12 @@ pnpm --filter ./apps/web dev  # http://localhost:5173
 ```bash
 pytest -q backend/tests/test_smoke.py
 ```
+### Integration-Test (Docker Compose)
+```bash
+docker compose --profile test up --build test-runner
+```
+> Baut Images und führt einen Playwright-Check gegen `http://frontend` aus. Bei Erfolg beendet sich der Container mit Code 0 und die Dienste fahren herunter.
+
 🗂 2 | Code‑Struktur (Backend + Frontend)
 text
 Kopieren
