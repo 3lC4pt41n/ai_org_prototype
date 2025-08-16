@@ -1,6 +1,6 @@
 services:
   ai-app:
-    command: uvicorn ai_org_backend.main:app --reload --host 0.0.0.0 --port 9102
+    command: uvicorn ai_org_backend.main:app --reload --host 0.0.0.0 --port 8000
     volumes:
       - ./backend/ai_org_backend:/app/ai_org_backend:ro
     environment:

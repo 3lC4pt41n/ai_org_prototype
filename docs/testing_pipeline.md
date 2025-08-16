@@ -18,8 +18,8 @@ Each task produces artifacts in `workspace/<tenant>/reports/...` and marks itsel
 
 ## URLs and thresholds
 Configure via env:
-- `API_BASE_URL` – e.g., `http://backend:8000`
-- `UI_BASE_URL` – e.g., `http://frontend:5173`
+- `API_BASE_URL` – e.g., `http://ai-app:8000`
+- `UI_BASE_URL` – e.g., `http://frontend`
 - `PERF_HOST` (fallback: `API_BASE_URL`), `PERF_USERS`, `PERF_SPAWN`, `PERF_TIME`, `PERF_P95_BUDGET_MS`
 
 ## Degradation
