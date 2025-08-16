@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import mimetypes
-from datetime import datetime as dt
-import os
 import logging
+import mimetypes
+import os
 import shutil
 import subprocess
 import time
+from datetime import datetime as dt
 from pathlib import Path
 from typing import Optional
 
@@ -15,8 +15,9 @@ from neo4j import GraphDatabase
 from sqlmodel import Session
 
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Task
 from ai_org_backend.metrics import prom_counter
+from ai_org_backend.models import Artifact, Task
+
 from .vector_store import VectorStore
 
 WORKSPACE = Path.cwd() / "workspace"
@@ -36,8 +37,19 @@ ARTIFACT_UPDATES = prom_counter(
 # retry settings for vector persistence
 VECTOR_STORE_RETRIES = 3
 
-if not (WORKSPACE / ".git").exists():
-    subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
+# Git-Repository im Workspace initialisieren, falls möglich
+if WORKSPACE.exists():
+    if not (WORKSPACE / ".git").exists():
+        try:
+            subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Git repository initialization failed: %s", exc
+            )
+else:
+    logging.getLogger(__name__).warning(
+        "Workspace directory %s not found, skipping Git init", WORKSPACE
+    )
 
 
 def _sha256(p: Path) -> str:
@@ -173,10 +185,10 @@ def register_artefact(
     if original_exists and allow_overwrite and vector_store.client:
         try:
             from qdrant_client.models import (
-                Filter,
                 FieldCondition,
-                MatchValue,
+                Filter,
                 FilterSelector,
+                MatchValue,
             )
 
             vector_store.client.set_payload(
@@ -245,10 +257,10 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
         try:
             # Remove points by artifact_id (all chunks) using Qdrant filter
             from qdrant_client.models import (
-                Filter,
                 FieldCondition,
-                MatchValue,
+                Filter,
                 FilterSelector,
+                MatchValue,
             )
 
             vector_store.client.delete(
