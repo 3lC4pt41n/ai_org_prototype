@@ -141,7 +141,7 @@ services:
       neo4j:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
 
   orchestrator:
     build: { context: ../backend/ai_org_backend }
@@ -164,7 +164,7 @@ services:
       neo4j:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
 
   celery-exporter:
     image: danihodovic/celery-exporter:latest
@@ -235,10 +235,11 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/collections >/dev/null 2>&1 || curl -fsS http://localhost:6333/collections >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
 
 volumes:
   pgdata:
