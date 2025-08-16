@@ -198,6 +198,18 @@ async def orchestrator() -> None:
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+
+    # Alembic-Initialisierung: Falls Migrations-Ordner fehlt, mit Hinweis abbrechen
+    if not (
+        os.path.isdir(os.path.join(os.getcwd(), "alembic"))
+        or os.path.isdir(
+            os.path.join(os.path.dirname(__file__), os.pardir, "alembic")
+        )
+    ):
+        print("Alembic folder missing – please run 'alembic init alembic' to create it.")
+        sys.exit(1)
     import asyncio
 
     asyncio.run(orchestrator())

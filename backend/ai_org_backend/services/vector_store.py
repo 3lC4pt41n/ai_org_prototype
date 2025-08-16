@@ -11,11 +11,11 @@ try:  # pragma: no cover - optional dependency during tests
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
         Distance,
-        VectorParams,
-        PointStruct,
-        Filter,
         FieldCondition,
+        Filter,
         MatchValue,
+        PointStruct,
+        VectorParams,
     )
 except Exception:  # pragma: no cover
     QdrantClient = None  # type: ignore
@@ -36,10 +36,22 @@ class VectorStore:
             try:
                 self.client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
                 if not self.client.collection_exists(self.collection_name):
-                    self.client.create_collection(
-                        collection_name=self.collection_name,
-                        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-                    )
+                    try:
+                        self.client.create_collection(
+                            collection_name=self.collection_name,
+                            vectors_config=VectorParams(
+                                size=1536, distance=Distance.COSINE
+                            ),
+                        )
+                    except Exception as exc:
+                        # Falls die Collection bereits existiert (HTTP 409), Fehler ignorieren
+                        if "already exists" in str(exc):
+                            logging.getLogger(__name__).info(
+                                "Qdrant collection '%s' already exists, skipping creation",
+                                self.collection_name,
+                            )
+                        else:
+                            raise
             except Exception as exc:  # pragma: no cover
                 logging.getLogger(__name__).warning("Qdrant init failed: %s", exc)
                 self.client = None
