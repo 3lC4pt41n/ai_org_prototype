@@ -39,7 +39,7 @@ RUN if [ "$WITH_TEST_EXTRAS" = "true" ]; then \
         "locust==${LOCUST_VERSION}" \
         "bandit==${BANDIT_VERSION}" \
         "pip-audit==${PIP_AUDIT_VERSION}" \
-      && playwright install --with-deps chromium; \
+      && playwright install --with chromium; \
     else \
       echo "Skipping test/QA extras (WITH_TEST_EXTRAS=false)"; \
     fi
