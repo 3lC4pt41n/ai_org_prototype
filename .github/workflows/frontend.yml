@@ -18,20 +18,21 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Enable pnpm (corepack)
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.4.0 --activate
-          pnpm --version
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
 
       - name: Install deps
         working-directory: frontend
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
-      - name: Build web
-        working-directory: frontend
-        run: pnpm --filter ./apps/web build
+      - name: Build
+        working-directory: frontend/apps/web
+        run: pnpm build
 
       - name: Web artefacts size
         run: du -h frontend/apps/web/dist || true
