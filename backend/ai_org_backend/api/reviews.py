@@ -1,17 +1,11 @@
-from __future__ import annotations
-"""
-Reviews API
------------
-Allows explicit approval of the Architecture & Domain Review task.
-This unblocks dependencies (e.g., repo init and all tasks behind it).
-"""
+from ai_org_backend.api.dependencies import get_current_tenant
+from ai_org_backend.db import engine
+from ai_org_backend.models import Task, Tenant
+from ai_org_backend.repo import Repo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
-from ai_org_backend.db import engine
-from ai_org_backend.models import Task, Tenant
-from ai_org_backend.api.auth import get_current_tenant
-from ai_org_backend.main import Repo
+"""Endpoints for approving Architecture & Domain Review tasks."""
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 

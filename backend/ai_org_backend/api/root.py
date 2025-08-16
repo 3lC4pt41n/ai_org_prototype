@@ -1,11 +1,11 @@
+import os
 from pathlib import Path
-
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
-from sqlmodel import Session, select
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Task
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+from sqlmodel import Session, select
 
 from ..services import budget
 from .dependencies import get_current_tenant
@@ -14,8 +14,9 @@ router = APIRouter()
 
 
 @router.get("/")
-def root(current=Depends(get_current_tenant)):
-    tid = current.id
+def root():
+    """Public health endpoint with budget info for default tenant."""
+    tid = os.getenv("DEFAULT_TENANT", "demo")
     return {
         "status": "alive",
         "budget_left": budget.get_left(tid),
