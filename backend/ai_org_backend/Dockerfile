@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxdamage1 libxext6 libxfixes3 libxrandr2 libgtk-3-0 libgbm1 \
     && rm -rf /var/lib/apt/lists/*
 # ---- Test/QA toolchain (optional; enabled by default) ------------------------
-ARG WITH_TEST_EXTRAS=false
+ARG WITH_TEST_EXTRAS=true
 ARG PLAYWRIGHT_VERSION=1.37.0
 ARG LOCUST_VERSION=2.20.1          # 2.20.2 is yanked; 2.17.5 never existed on PyPI
 ARG BANDIT_VERSION=1.7.5
