@@ -8,9 +8,8 @@ executes them, stores results, and raises fix tasks on failure.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -23,7 +22,7 @@ from ai_org_backend.tasks.celery_app import celery
 RUNS = prom_counter("ai_integration_runs_total", "Integration agent executions")
 LAT = prom_hist("ai_integration_latency_seconds", "Integration agent latency")
 
-TEMPLATE = Template(Path("prompts/integration_tests.j2").read_text(encoding="utf-8"))
+TEMPLATE = load_template("integration_tests.j2")
 
 
 def _load_latest_text_artifact(s, purpose_id: str, path_suffix: str) -> str:

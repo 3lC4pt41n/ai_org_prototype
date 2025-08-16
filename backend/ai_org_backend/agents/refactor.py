@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import List
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -25,8 +25,7 @@ REFACTOR_LAT = prom_hist(
     "ai_refactor_latency_seconds", "Refactor agent latency"
 )
 
-_TMPL_PATH = Path("prompts") / "refactor.j2"
-REFACTOR_PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
+REFACTOR_PROMPT_TMPL = load_template("refactor.j2")
 
 
 @celery.task(name="agent.refactor")

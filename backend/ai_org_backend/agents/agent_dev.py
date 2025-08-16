@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from jinja2 import Template
+from .utils import load_template
 
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
@@ -25,8 +25,7 @@ from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
 MAX_AGENT_RETRIES = 2
 
 # Load prompt template for Dev agent
-_TMPL_PATH = Path(__file__).resolve().parents[3] / "prompts" / "dev.j2"
-PROMPT_TMPL = Template(_TMPL_PATH.read_text(encoding="utf-8"))
+PROMPT_TMPL = load_template("dev.j2")
 
 
 @celery.task(name="agent.dev")
