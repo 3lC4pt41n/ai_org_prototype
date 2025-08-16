@@ -1,0 +1,41 @@
+name: Frontend • Build
+
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/ci-frontend.yml'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Setup Node first (no cache config here; pnpm/action-setup handles pnpm cache)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install pnpm and enable caching based on the lockfile
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      # (Optional but helpful) Show toolchain
+      - run: node -v && pnpm -v
+
+      # Install deps for monorepo workspaces
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # If your web app lives at apps/web, build from there; otherwise keep at repo root
+      - name: Build
+        working-directory: frontend
+        run: pnpm --filter ./apps/web build
