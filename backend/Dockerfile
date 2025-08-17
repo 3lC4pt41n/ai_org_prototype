@@ -28,3 +28,6 @@ COPY scripts /app/scripts
 # Alembic: zentrale, service-übergreifende Location
 COPY ai_org_backend/alembic.ini /app/alembic.ini
 COPY ai_org_backend/alembic /app/alembic
+COPY ai_org_backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
