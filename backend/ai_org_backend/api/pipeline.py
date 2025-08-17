@@ -14,7 +14,12 @@ from sqlmodel import Session, select
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
-from scripts.seed_graph import ingest  # noqa: E402
+# Robust import of the seed graph helper:
+# Prefer the in-package path, but support legacy top-level "scripts" if present.
+try:
+    from ai_org_backend.scripts.seed_graph import ingest  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    from scripts.seed_graph import ingest  # type: ignore  # noqa: E402
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
