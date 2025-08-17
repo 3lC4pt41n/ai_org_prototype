@@ -15,6 +15,8 @@ anyio==4.9.0
     #   httpx
     #   openai
     #   starlette
+backoff==2.2.1
+    # via ai_org_backend (backend/pyproject.toml)
 beautifulsoup4==4.12.3
     # via ai_org_backend (backend/pyproject.toml)
 billiard==4.2.1
@@ -87,7 +89,10 @@ kombu==5.5.4
 lxml==5.2.2
     # via
     #   ai_org_backend (backend/pyproject.toml)
+    #   lxml-html-clean
     #   readability-lxml
+lxml-html-clean==0.2.2
+    # via ai_org_backend (backend/pyproject.toml)
 mako==1.3.10
     # via alembic
 markupsafe==3.0.2

@@ -26,7 +26,8 @@ dependencies = [
   "beautifulsoup4>=4.12.3",
   "duckduckgo-search>=5.3.1",
   "lxml>=5.2.2",
-  "readability-lxml>=0.8.1"
+  "readability-lxml>=0.8.1",
+  "lxml_html_clean>=0.2.0,<0.3"
 ]
 
 [project.optional-dependencies]
