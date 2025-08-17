@@ -12,3 +12,11 @@ line-length = 100
 select = ["E", "F", "W", "I"]
 ignore = []
 target-version = "py311"
+
+[tool.poetry.dependencies]
+# (bestehende Einträge unverändert lassen)
+python-multipart = "^0.0.9"
+backoff = "^2.2.1"
+PyJWT = "^2.8.0"
+# stellt das Modulpfad-Target "lxml.html.clean" für readability bereit
+lxml_html_clean = "^0.2.0"
