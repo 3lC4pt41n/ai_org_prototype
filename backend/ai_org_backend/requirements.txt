@@ -131,6 +131,8 @@ PyJWT==2.10.1
     # via ai_org_backend (backend/pyproject.toml)
 python-dateutil==2.9.0.post0
     # via celery
+python-multipart==0.0.9
+    # required by FastAPI to parse Form(...) and UploadFile
 python-dotenv==1.1.1
     # via
     #   ai_org_backend (backend/pyproject.toml)
