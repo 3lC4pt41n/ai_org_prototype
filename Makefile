@@ -14,8 +14,8 @@ help:
 > @echo "  ci           - Lint + Typcheck + Tests (wie im CI)"
 
 install-dev:
-> pip install -r backend/requirements.txt
-> pip install -r backend/requirements-dev.txt
+> pip install -r backend/ai_org_backend/requirements.txt
+> pip install -e backend[dev]
 > playwright install chromium
 > pre-commit install
 
