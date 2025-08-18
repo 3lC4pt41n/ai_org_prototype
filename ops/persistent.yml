@@ -73,16 +73,32 @@ services:
         condition: service_healthy
 
   celery-insight:
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_insight:latest
-    restart: unless-stopped
-    depends_on:
-      - redis
-      - postgres
+    command: >
+      celery -A ai_org_backend.tasks.celery_app worker
+             -Q demo:insight
+             -l INFO -P solo
     environment:
-      DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
-      ALEMBIC_CONFIG: /app/alembic.ini
-      PYTHONPATH: /app
-    command: ["celery", "-A", "ai_org_backend.celery_app", "flower", "--address=0.0.0.0", "--port", "5555"]
+      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - CELERY_APP=ai_org_backend.tasks.celery_app
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASS=s3cr3tP@ss
+      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - QDRANT_URL=http://qdrant:6333
+      - CELERY_WORKER_SEND_TASK_EVENTS=true
+      - CELERY_TASK_SEND_SENT_EVENT=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
 
   celery-dev:
     build:
@@ -116,18 +132,30 @@ services:
 
   # ───────────── Application ───────────
   ai-app:
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_app:latest
-    restart: unless-stopped
-    depends_on:
-      - postgres
-      - redis
+    command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 8000
     environment:
-      DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
-      ALEMBIC_CONFIG: /app/alembic.ini
-      PYTHONPATH: /app
+      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASS=s3cr3tP@ss
+      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - QDRANT_URL=http://qdrant:6333
     ports:
-      - "8000:8000"
-    command: ["uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+      - 8000:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
   orchestrator:
     image: local/ai_backend_orchestrator:latest
     restart: unless-stopped
@@ -146,7 +174,7 @@ services:
       - type: volume
         source: orchestrator-data
         target: /var/lib/ai-org
-    command: ["uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["/app/docker-entrypoint.sh", "uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
