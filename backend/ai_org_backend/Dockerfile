@@ -11,16 +11,21 @@ WORKDIR /app
 
 # -------- python deps ----------
 COPY backend/ai_org_backend/requirements.txt .
+# Provide a sane runtime environment and point Alembic to the bundled config
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app \
+    ALEMBIC_CONFIG=/app/alembic.ini
 RUN pip install --no-cache-dir -r requirements.txt
 
 # -------- project source -------
 COPY backend/ai_org_backend /app/ai_org_backend
-COPY backend/ai_org_backend/alembic.ini /app
+COPY backend/ai_org_backend/alembic.ini /app/alembic.ini
 COPY backend/ai_org_backend/alembic /app/alembic
+COPY backend/ai_org_backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY prompts /app/prompts
-
-# Stelle sicher, dass Alembic-Migrationsordner am erwarteten Pfad existiert
-RUN mkdir -p /app/backend/ai_org_backend && mv /app/alembic /app/backend/ai_org_backend/
+RUN chmod +x /app/docker-entrypoint.sh
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 FROM base AS prod
 CMD ["python", "-m", "ai_org_backend.main"]
