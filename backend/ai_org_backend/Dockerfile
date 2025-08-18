@@ -20,7 +20,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ai_org_backend /app/ai_org_backend
 COPY backend/ai_org_backend/alembic.ini /app/alembic.ini
 COPY backend/ai_org_backend/alembic /app/alembic
+COPY backend/ai_org_backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY prompts /app/prompts
+# Zeilenenden normalisieren und EntryPoint installieren
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && install -m 0755 /app/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+
+ENV ALEMBIC_CONFIG=/app/alembic.ini \
+    PYTHONPATH=/app
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 FROM base AS prod
 CMD ["python", "-m", "ai_org_backend.main"]
