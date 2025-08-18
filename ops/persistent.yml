@@ -185,8 +185,8 @@ services:
         condition: service_started
 
     volumes:
-      - ./alembic:/app/alembic:ro
-      - ./alembic.ini:/app/alembic.ini:ro
+      - ./backend/ai_org_backend/alembic:/app/alembic:ro
+      - ./backend/ai_org_backend/alembic.ini:/app/alembic.ini:ro
     command: |-
       sh -lc "
         echo '==> Migrations done'
