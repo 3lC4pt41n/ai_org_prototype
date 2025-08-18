@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ai
-      POSTGRES_DB: ai_org
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -17,13 +17,13 @@ services:
 
   redis:
     image: redis:7
-    command: redis-server --save 60 1 --loglevel warning --requirepass ai_redis_pw
+    command: /bin/sh -c "redis-server --save 60 1 --loglevel warning --requirepass $REDIS_PASSWORD"
     ports:
       - "6379:6379"
     environment:
-      REDIS_PASS: ai_redis_pw
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "ai_redis_pw", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $REDIS_PASSWORD ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,14 +46,14 @@ services:
   neo4j:
     image: neo4j:5
     environment:
-      - NEO4J_AUTH=neo4j/s3cr3tP@ss
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASS}
     ports:
       - "7687:7687"
       - "7474:7474"
     volumes:
       - neo4j_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p s3cr3tP@ss 'RETURN 1'"]
+      test: ["CMD-SHELL", "cypher-shell -u $NEO4J_USER -p $NEO4J_PASS 'RETURN 1'"]
       interval: 10s
       timeout: 10s
       retries: 6
@@ -66,11 +66,11 @@ services:
     image: local/ai_backend:latest
     command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 8000
     environment:
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
     ports:
       - "8000:8000"
@@ -100,11 +100,11 @@ services:
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
       - TENANT=demo
     depends_on:
@@ -127,11 +127,11 @@ services:
     command: celery -A ai_org_backend.tasks.celery_app:app worker --loglevel=INFO
     environment:
       - WORKER_GROUP=architect
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
@@ -152,11 +152,11 @@ services:
     command: celery -A ai_org_backend.tasks.celery_app:app worker --loglevel=INFO
     environment:
       - WORKER_GROUP=insight
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
@@ -177,11 +177,11 @@ services:
     command: celery -A ai_org_backend.tasks.celery_app:app worker --loglevel=INFO
     environment:
       - WORKER_GROUP=dev
-      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
-      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASS=s3cr3tP@ss
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
       - API_BASE_URL=http://ai-app:8000
       - UI_BASE_URL=http://frontend
@@ -198,7 +198,7 @@ services:
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     environment:
-      - CE_BROKER_URL=redis://:ai_redis_pw@redis:6379/0
+      - CE_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
     ports:
       - "9808:9808"
     depends_on:
@@ -221,8 +221,8 @@ services:
     image: grafana/grafana:10.4.2
     container_name: grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer

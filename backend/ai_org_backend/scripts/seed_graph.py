@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 # ───── Neo4j-Konfiguration ──────────────────────────────────────────
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASS = os.getenv("NEO4J_PASS")
 driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 CLEAN_CYPHER = "MATCH (t:Task) DETACH DELETE t"

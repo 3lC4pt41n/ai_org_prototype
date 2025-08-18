@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import types
+import uuid
 
 from fastapi.testclient import TestClient
 
@@ -51,9 +52,10 @@ SQLModel.metadata.drop_all(main.engine)
 SQLModel.metadata.create_all(main.engine)
 
 client = TestClient(main.app)
-r = client.post("/api/register", json={"email": "t@e.st", "password": "pw"})
+password = uuid.uuid4().hex[:8]
+r = client.post("/api/register", json={"email": "t@e.st", "password": password})
 TENANT = r.json()["id"]
-login = client.post("/api/login", data={"username": "t@e.st", "password": "pw"})
+login = client.post("/api/login", data={"username": "t@e.st", "password": password})
 TOKEN = login.json()["access_token"]
 
 
