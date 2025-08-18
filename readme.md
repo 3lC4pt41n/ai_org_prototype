@@ -36,9 +36,8 @@ docker compose -f ops/persistent.yml up -d                      # API http://loc
 docker compose -f ops/persistent.yml --profile ui up -d         # optionales Frontend http://localhost:5173
 docker compose -f ops/monitoring.yml up -d                      # prometheus + grafana
 
-# DB migration & demo seed (nur erforderlich bei manuellem Start ohne Docker)
+# DB migration (nur erforderlich bei manuellem Start ohne Docker)
 alembic -c backend/ai_org_backend/alembic.ini upgrade head
-python scripts/seed_graph.py --tenant demo
 ```
 
 Backend API: http://localhost:8000
@@ -122,7 +121,7 @@ frontend/packages/
    └─ api-client/       # OpenAPI‑Hooks (axios)
 ops/                    # docker‑compose + Helm blueprints
 prompts/                # Jinja2 Agent-Prompts
-scripts/                # seed_graph.py etc.
+scripts/                # helper scripts
 📊 3 | Erweitertes Task‑Schema
 Feld	Typ	Beschreibung
 id	str PK	8‑char UID
