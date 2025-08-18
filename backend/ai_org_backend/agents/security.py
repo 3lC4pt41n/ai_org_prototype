@@ -29,8 +29,12 @@ def security_task(tenant_id: str, task_id: str) -> None:
     start = time.time()
     # Run bandit
     b_rc, b_out, b_err = run_bandit(target_dir="backend")
-    # Run pip-audit (try root requirements fallback)
-    req = "backend/requirements.txt" if os.path.exists("backend/requirements.txt") else None
+    # Run pip-audit (use compiled requirements if present)
+    req = (
+        "backend/ai_org_backend/requirements.txt"
+        if os.path.exists("backend/ai_org_backend/requirements.txt")
+        else None
+    )
     a_rc, a_out, a_err = run_pip_audit(requirements_file=req)
 
     report = {
