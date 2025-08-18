@@ -160,8 +160,9 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_orchestrator:latest
+    working_dir: /app/backend/ai_org_backend  # <- Hinzufügen
     command: >
-      /bin/sh -c 'alembic -c /app/alembic.ini upgrade head && python -m ai_org_backend.orchestrator.scheduler'
+      /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
       - NEO4J_URL=bolt://neo4j:7687
