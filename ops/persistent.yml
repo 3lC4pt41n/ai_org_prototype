@@ -156,25 +156,41 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+
   orchestrator:
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
     image: local/ai_backend_orchestrator:latest
-    restart: unless-stopped
-    depends_on:
-      - postgres
-      - redis
+    working_dir: /app
     environment:
-      # DB-URL aus deiner Umgebung/Secrets setzen:
-      DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
-      # Alembic soll explizit diese INI verwenden
-      ALEMBIC_CONFIG: /app/alembic.ini
-      PYTHONPATH: /app
-    # Wichtig: KEINE bind-mounts mehr für alembic.ini oder /app/alembic
+      - PYTHONPATH=/app
+      - ALEMBIC_CONFIG=/app/alembic.ini
+      - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASS=s3cr3tP@ss
+      - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
+      - QDRANT_URL=http://qdrant:6333
+      - TENANT=demo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
     volumes:
-      # falls du weitere Mounts brauchst, hier — aber NICHT alembic/alembic.ini
-      - type: volume
-        source: orchestrator-data
-        target: /var/lib/ai-org
-    command: ["/app/docker-entrypoint.sh", "uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+      - ./backend/ai_org_backend/alembic:/app/alembic:ro
+      - ./backend/ai_org_backend/alembic.ini:/app/alembic.ini:ro
+    command: |-
+      sh -lc "
+        echo '==> Migrations done'
+      "
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
@@ -258,4 +274,3 @@ volumes:
   qdrant_storage:
   prometheus_data:
   grafana_data:
-  orchestrator-data:
