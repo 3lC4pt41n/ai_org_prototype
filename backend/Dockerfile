@@ -23,8 +23,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Application source
 COPY . /app/ai_org_backend
-# Top-level scripts-Package für `from scripts.seed_graph import ingest`
-COPY scripts /app/scripts
 # Alembic: zentrale, service-übergreifende Location
 COPY ai_org_backend/alembic.ini /app/alembic.ini
 COPY ai_org_backend/alembic /app/alembic

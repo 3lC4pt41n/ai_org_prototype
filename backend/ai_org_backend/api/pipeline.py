@@ -1,25 +1,15 @@
-import sys
 from pathlib import Path
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.repo import Repo
+from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services.storage import save_artefact, vector_store
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
-
-ROOT = Path(__file__).resolve().parents[3]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
-# Robust import of the seed graph helper:
-# Prefer the in-package path, but support legacy top-level "scripts" if present.
-try:
-    from ai_org_backend.scripts.seed_graph import ingest  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from scripts.seed_graph import ingest  # type: ignore  # noqa: E402
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
