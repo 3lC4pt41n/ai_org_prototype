@@ -101,10 +101,8 @@ def performance_task(tenant_id: str, task_id: str) -> None:
             s.add(TaskDependency(from_id=task_id, to_id=fix.id, dependency_type="FINISH_START"))
             s.commit()
             try:
-                from scripts.seed_graph import ingest
+                from ai_org_backend.scripts.seed_graph import ingest
 
                 ingest(tenant_id)
             except Exception as e:
-                logging.error(
-                    f"[PerformanceAgent] Neo4j ingest failed for new task {fix.id}: {e}"
-                )
+                logging.error(f"[PerformanceAgent] Neo4j ingest failed for new task {fix.id}: {e}")
