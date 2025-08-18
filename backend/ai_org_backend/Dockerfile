@@ -11,11 +11,9 @@ WORKDIR /app
 
 # -------- python deps ----------
 COPY backend/ai_org_backend/requirements.txt .
-# Provide a sane runtime environment and point Alembic to the bundled config
+# Provide a sane runtime environment
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app \
-    ALEMBIC_CONFIG=/app/alembic.ini
+    PIP_NO_CACHE_DIR=1
 RUN pip install --no-cache-dir -r requirements.txt
 
 # -------- project source -------
@@ -24,8 +22,14 @@ COPY backend/ai_org_backend/alembic.ini /app/alembic.ini
 COPY backend/ai_org_backend/alembic /app/alembic
 COPY backend/ai_org_backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY prompts /app/prompts
-RUN chmod +x /app/docker-entrypoint.sh
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# Zeilenenden normalisieren und EntryPoint installieren
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && install -m 0755 /app/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+
+ENV ALEMBIC_CONFIG=/app/alembic.ini \
+    PYTHONPATH=/app
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 FROM base AS prod
 CMD ["python", "-m", "ai_org_backend.main"]
