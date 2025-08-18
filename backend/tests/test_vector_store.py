@@ -1,10 +1,9 @@
 import sys
 import types
-
-from sqlmodel import SQLModel, Session
 from types import SimpleNamespace
 
 from ai_org_backend.models import Task
+from sqlmodel import Session, SQLModel
 
 
 def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
@@ -12,11 +11,16 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
 
     # Stub OpenAI before importing storage module
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = types.SimpleNamespace(create=lambda *a, **kw: {"data": [{"embedding": [0.0]}]})
+    openai_stub.Embedding = types.SimpleNamespace(
+        create=lambda *a, **kw: {"data": [{"embedding": [0.0]}]}
+    )
     openai_stub.OpenAIError = Exception
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+psycopg2://postgres:ai@localhost:5432/ai_org_test"
+    )
 
     monkeypatch.setattr(
         "ai_org_backend.metrics.prom_counter",
@@ -31,6 +35,8 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
     monkeypatch.setattr(storage, "WORKSPACE", tmp_path / "ws")
     storage.WORKSPACE.mkdir()
 
+    SQLModel.metadata.create_all(storage.engine)
+    SQLModel.metadata.drop_all(storage.engine)
     SQLModel.metadata.create_all(storage.engine)
     with Session(storage.engine) as session:
         session.add(Task(id="t1", tenant_id="demo", description="x", status="done"))

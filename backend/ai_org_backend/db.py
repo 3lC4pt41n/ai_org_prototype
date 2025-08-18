@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import os
+
+from dotenv import load_dotenv
 from sqlmodel import Session, create_engine
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///ai_org.db")
+load_dotenv()
+
+DB_URL = os.getenv("DATABASE_URL", None)
+if not DB_URL:
+    user = os.getenv("POSTGRES_USER", "postgres")
+    password = os.getenv("POSTGRES_PASSWORD", "ai")
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    db_name = os.getenv("POSTGRES_DB", "ai_org")
+    DB_URL = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
 engine = create_engine(DB_URL, echo=False)
 
 

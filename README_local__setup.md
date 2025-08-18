@@ -1,7 +1,7 @@
-# AI_org – Lokales Setup (Docker Compose)  
+# AI_org – Lokales Setup (Docker Compose)
 **Version:** Community Edition · **Modus:** Lokale Entwicklung & Demo
 
-> Dieses README fasst den *AI_org Local Setup Guide (Docker Compose)* als kompaktes, praxisnahes How‑to zusammen.  
+> Dieses README fasst den *AI_org Local Setup Guide (Docker Compose)* als kompaktes, praxisnahes How‑to zusammen.
 > Ziel: In wenigen Minuten lokal lauffähig – mit Backend (FastAPI), Agenten (Celery), Redis, Neo4j, Qdrant sowie optionalem UI.
 
 ---
@@ -58,15 +58,15 @@ docker compose ps
 
 ## Überblick: Architektur & Dienste
 
-- **Backend API (FastAPI)** – läuft typischerweise auf **http://localhost:9102**.  
+- **Backend API (FastAPI)** – läuft typischerweise auf **http://localhost:9102**.
   Stellt REST‑Endpunkte bereit (z. B. Task anlegen, Backlog einsehen) und orchestriert Agenten.
 - **Celery Worker / Beat** – führt Agenten‑Tasks asynchron aus.
 - **Redis 7** – Queue & Cache.
-- **Neo4j** – Graphdatenbank für Task↔Artifact‑Beziehungen.  
+- **Neo4j** – Graphdatenbank für Task↔Artifact‑Beziehungen.
   Browser: **http://localhost:7474**, Bolt: **bolt://localhost:7687**.
-- **Qdrant** – Vektor‑Datenbank für semantische Suche (Langzeitgedächtnis).  
+- **Qdrant** – Vektor‑Datenbank für semantische Suche (Langzeitgedächtnis).
   REST: **http://localhost:6333**.
-- **Prometheus / Grafana** (optional) – Monitoring (z. B. `/metrics` vom Backend).  
+- **Prometheus / Grafana** (optional) – Monitoring (z. B. `/metrics` vom Backend).
 - **Frontend (Vite/React/Tailwind)** (optional) – typischer Dev‑Port **5173**.
 
 > Die Container und Ports variieren je nach Compose‑Profil; das persistente Setup in `ops/persistent.yml` richtet stabile Volumes und Ports ein.
@@ -79,7 +79,7 @@ Erstelle eine `.env` (z. B. aus `.env.example`) und pflege u. a.:
 
 ```dotenv
 # Backend & Orchestrierung
-DATABASE_URL=sqlite:///ai_org.db         # oder Postgres, falls konfiguriert
+DATABASE_URL=postgresql+psycopg2://postgres:ai@localhost:5432/ai_org  # PostgreSQL-Verbindungs-URL für die Datenbank
 REDIS_URL=redis://:ai_redis_pw@localhost:6379/0
 NEO4J_URL=bolt://localhost:7687
 NEO4J_USER=neo4j
@@ -98,6 +98,7 @@ DISABLE_METRICS=0
 ```
 
 > **Tipp:** Für Postgres‑Betrieb die entsprechenden DSN/Secrets einsetzen und das Compose‑Profil aktivieren (siehe `ops/persistent.yml`).
+> **Tipp:** Stelle sicher, dass die DB-Verbindung korrekt konfiguriert ist (Standard-Zugangsdaten siehe `ops/persistent.yml` bzw. `.env.example`). Bei abweichenden Credentials müssen `DATABASE_URL` bzw. `POSTGRES_*` Variablen angepasst werden.
 
 ---
 
@@ -168,9 +169,9 @@ pnpm dev
 
 Das Compose‑Setup mountet u. a. folgende persistente Verzeichnisse/Volumes:
 
-- `workspace/` – Ablage für generierte Artefakte (vom Backend verwaltet).  
-- `neo4j_data/` – Datenverzeichnis von Neo4j.  
-- `qdrant_storage/` – Persistenz der Vektordaten.  
+- `workspace/` – Ablage für generierte Artefakte (vom Backend verwaltet).
+- `neo4j_data/` – Datenverzeichnis von Neo4j.
+- `qdrant_storage/` – Persistenz der Vektordaten.
 - ggf. `postgres_data/` – falls Postgres aktiviert ist.
 
 > Das Backend commitet Artefakte zusätzlich in ein Git‑Repo im `workspace/`‑Baum und verknüpft sie im Neo4j‑Graphen.
@@ -179,21 +180,21 @@ Das Compose‑Setup mountet u. a. folgende persistente Verzeichnisse/Volumes:
 
 ## Troubleshooting
 
-- **Backend nicht erreichbar / Health schlägt fehl**  
-  → Logs prüfen: `docker compose -f ops/persistent.yml logs -f backend`  
+- **Backend nicht erreichbar / Health schlägt fehl**
+  → Logs prüfen: `docker compose -f ops/persistent.yml logs -f backend`
   → `.env` prüfen (DB/Redis/Neo4j/Qdrant URLs & Credentials).
 
-- **Celery verarbeitet keine Tasks**  
-  → Redis läuft? `docker compose ps`  
+- **Celery verarbeitet keine Tasks**
+  → Redis läuft? `docker compose ps`
   → Worker‑Logs ansehen: `docker compose -f ops/persistent.yml logs -f worker`
 
-- **Neo4j Login fehlgeschlagen**  
+- **Neo4j Login fehlgeschlagen**
   → Nutzer/Passwort aus `.env` verwenden, ggf. Container einmal neu starten.
 
-- **Qdrant liefert 404/Verbindungsfehler**  
+- **Qdrant liefert 404/Verbindungsfehler**
   → URL prüfen (`QDRANT_URL`). In Compose standardmäßig: `http://qdrant:6333` (im Container‑Netz) bzw. `http://localhost:6333` (Host).
 
-- **UI zeigt keine Daten**  
+- **UI zeigt keine Daten**
   → Backend läuft auf `http://localhost:9102`? CORS aktiviert? WebSocket‑Endpunkte erreichbar?
 
 ---
@@ -215,5 +216,5 @@ docker compose -f ops/persistent.yml up -d backend
 ---
 
 ### Quellen
-Dieses README ist eine kuratierte, deutschsprachige Zusammenfassung des Dokuments  
+Dieses README ist eine kuratierte, deutschsprachige Zusammenfassung des Dokuments
 **„AI_org Local Setup Guide (Docker Compose)“** (Stand: lokal mitgelieferte PDF).

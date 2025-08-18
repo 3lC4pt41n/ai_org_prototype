@@ -6,16 +6,9 @@ import os
 from contextlib import asynccontextmanager
 from typing import Dict
 
-import redis
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from neo4j import GraphDatabase
-from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
-from sqlmodel import Session, select
-
 import ai_org_backend.hooks.review_hook  # noqa: F401
 import ai_org_backend.hooks.tests_hook  # noqa: F401
+import redis
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.dependencies import get_current_tenant
@@ -29,14 +22,18 @@ from ai_org_backend.db import engine
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
 from ai_org_backend.tasks.celery_app import celery
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from neo4j import GraphDatabase
+from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from sqlmodel import Session, select
 
 # Expose Repo here so existing imports keep working:
 from .repo import Repo  # noqa: F401
 
 # ──────────────── ENV / constants ─────────────────────────────
 load_dotenv()
-
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///ai_org.db")
 REDIS_URL = os.getenv("REDIS_URL", "redis://:ai_redis_pw@localhost:6379/0")
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
