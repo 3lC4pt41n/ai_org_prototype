@@ -1,3 +1,0 @@
-# enforce LF for scripts + python
-*.sh text eol=lf
-*.py text eol=lf
