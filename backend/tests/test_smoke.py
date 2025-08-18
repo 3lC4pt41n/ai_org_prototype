@@ -38,9 +38,7 @@ backoff_stub.on_exception = _decorator
 backoff_stub.expo = lambda *a, **kw: 0
 sys.modules.setdefault("backoff", backoff_stub)
 os.environ["DISABLE_METRICS"] = "1"
-os.environ["DATABASE_URL"] = "sqlite:///test.db"
-if os.path.exists("test.db"):
-    os.remove("test.db")
+os.environ["DATABASE_URL"] = "postgresql+psycopg2://postgres:ai@localhost:5432/ai_org_test"
 
 main = importlib.import_module("ai_org_backend.main")
 from ai_org_backend import models  # noqa: E402
@@ -49,6 +47,7 @@ from ai_org_backend.models import Artifact, Task  # noqa: E402
 from ai_org_backend.services.billing import balance, credit  # noqa: E402
 from sqlmodel import SQLModel  # noqa: E402
 
+SQLModel.metadata.drop_all(main.engine)
 SQLModel.metadata.create_all(main.engine)
 
 client = TestClient(main.app)
