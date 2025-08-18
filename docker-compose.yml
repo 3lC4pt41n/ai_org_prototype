@@ -97,7 +97,7 @@ services:
       target: prod
     image: local/ai_backend:latest
     command: >
-      /bin/sh -c "alembic -c /app/alembic.ini upgrade head && python -m ai_org_backend.orchestrator.scheduler"
+      /bin/sh -c "python -m ai_org_backend.orchestrator.scheduler"
     environment:
       - REDIS_URL=redis://:ai_redis_pw@redis:6379/0
       - DATABASE_URL=postgresql://postgres:ai@postgres:5432/ai_org
