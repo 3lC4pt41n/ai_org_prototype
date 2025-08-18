@@ -136,7 +136,7 @@ purpose_relevance	float	0‑1; wichtiger = größerer Bubble
 depends_on	str FK	☺ DAG‑Kante
 created_at	datetime	ISO‑UTC
 
-SQLite für Dev, Postgres → Alembic‑Migrations.
+PostgreSQL (in Dev und Prod) → Datenbank über Alembic‑Migrationen verwaltet.
 
 🔌 4 | REST API (Auszug)
  Methode 	 Pfad 	 Beschreibung 

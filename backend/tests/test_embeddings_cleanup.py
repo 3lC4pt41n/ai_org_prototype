@@ -1,14 +1,17 @@
 import sys
 import types
 from types import SimpleNamespace
-from sqlmodel import SQLModel, Session
+
+from sqlmodel import Session, SQLModel
 
 
 def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     """When overwriting an artifact, old vectors are marked obsolete and new vector persists."""
     # Stub OpenAI embedding API
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = SimpleNamespace(create=lambda *args, **kwargs: {"data": [{"embedding": [0.0]}]})
+    openai_stub.Embedding = SimpleNamespace(
+        create=lambda *args, **kwargs: {"data": [{"embedding": [0.0]}]}
+    )
     openai_stub.OpenAIError = Exception
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
@@ -69,6 +72,9 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     monkeypatch.setenv("QDRANT_URL", "http://localhost")
     monkeypatch.setenv("QDRANT_API_KEY", "")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+psycopg2://postgres:ai@localhost:5432/ai_org_test"
+    )
 
     # Import storage after stubbing dependencies
     import importlib
@@ -86,6 +92,8 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     storage.vector_store.client = DummyQdrantClient()
 
     # Initialize an in-memory database and create a dummy task
+    SQLModel.metadata.create_all(storage.engine)
+    SQLModel.metadata.drop_all(storage.engine)
     SQLModel.metadata.create_all(storage.engine)
     with Session(storage.engine) as session:
         from ai_org_backend.models import Task
@@ -120,4 +128,3 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     assert new_payload.get("sha")
     # The version should reset to 1 for the new artifact (new artifact_id used)
     assert new_payload.get("version") == 1
-
