@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 class Config(BaseSettings):
     """Application environment configuration."""
 
-    redis_url: str = "redis://:ai_redis_pw@localhost:6379/0"
+    redis_url: str
     qdrant_url: str | None = None
     qdrant_api_key: str | None = None
     # Testing sandbox configuration

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from celery import Celery
 import os
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://:ai_redis_pw@localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
 celery_app = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
 
 router = APIRouter(prefix='/api/agent', tags=['agents'])
