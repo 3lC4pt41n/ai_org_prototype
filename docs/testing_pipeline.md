@@ -41,6 +41,6 @@ Then develop as normal; once your feature tasks complete, the test stages chain 
 - **Robust bei fehlenden Tools:** Playwright/Locust/Bandit/pip‑audit werden **nicht erzwungen** – Tests werden sauber übersprungen und dokumentiert.
 - **Artefakte überall:** Testdateien und Reports landen unter `workspace/<tenant>/tests/...` und `workspace/<tenant>/reports/...` (über `save_artefact`).
 - **Folge‑Tasks:** Bei Failures legt der Agent **Fix‑Tickets** an, mit kompakten Fehlerlogs in `notes`.
-- **Compose ready:** Ich habe die Python‑Deps in `backend/requirements.txt` ergänzt; du kannst deinen Worker‑Container einmal rebuilden, um Playwright/Locust etc. reinzubekommen. (Wenn du willst, liefere ich dir als nächsten Schritt eine `docker-compose.override.yml`, die Browser vorinstalliert.)
+  - **Compose ready:** Die Python‑Deps liegen jetzt im `backend`‑Extra `backend[dev]`; installiere sie mit `pip install -e backend[dev]` oder rebuild deinen Worker‑Container, um Playwright/Locust etc. reinzubekommen. (Wenn du willst, liefere ich dir als nächsten Schritt eine `docker-compose.override.yml`, die Browser vorinstalliert.)
 
 ---
