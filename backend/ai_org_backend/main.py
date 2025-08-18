@@ -34,10 +34,10 @@ from .repo import Repo  # noqa: F401
 
 # ──────────────── ENV / constants ─────────────────────────────
 load_dotenv()
-REDIS_URL = os.getenv("REDIS_URL", "redis://:ai_redis_pw@localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASS = os.getenv("NEO4J_PASS", "s3cr3tP@ss")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASS = os.getenv("NEO4J_PASS")
 DEFAULT_BUDGET = float(os.getenv("DEFAULT_BUDGET", 20))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 # Price per 1k tokens (USD)

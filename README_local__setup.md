@@ -80,7 +80,8 @@ Erstelle eine `.env` (z. B. aus `.env.example`) und pflege u. a.:
 ```dotenv
 # Backend & Orchestrierung
 DATABASE_URL=postgresql+psycopg2://postgres:ai@localhost:5432/ai_org  # PostgreSQL-Verbindungs-URL für die Datenbank
-REDIS_URL=redis://:ai_redis_pw@localhost:6379/0
+REDIS_PASSWORD=ai_redis_pw
+REDIS_URL=redis://:${REDIS_PASSWORD}@localhost:6379/0
 NEO4J_URL=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASS=s3cr3tP@ss

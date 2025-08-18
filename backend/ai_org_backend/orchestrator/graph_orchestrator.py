@@ -25,7 +25,7 @@ PROMPT_DIR = Path(__file__).resolve().parents[3] / "prompts"
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
     NEO4J_URL,
-    auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASS", "s3cr3tP@ss")),
+    auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASS")),
 )
 
 # A task is "ready" iff it is 'todo' AND has no incoming FINISH_START

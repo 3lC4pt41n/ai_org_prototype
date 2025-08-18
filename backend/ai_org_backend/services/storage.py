@@ -26,7 +26,7 @@ WORKSPACE.mkdir(exist_ok=True)
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
     NEO4J_URL,
-    auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASS", "s3cr3tP@ss")),
+    auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASS")),
 )
 
 vector_store = VectorStore()

@@ -8,7 +8,7 @@ from ai_org_backend.db import engine
 from ai_org_backend.models import Tenant
 import jwt
 
-SECRET_KEY = os.getenv("JWT_SECRET", "secret")
+SECRET_KEY = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
