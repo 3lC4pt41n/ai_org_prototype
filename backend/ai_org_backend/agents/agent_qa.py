@@ -3,22 +3,24 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .utils import load_template
-
-from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
+from ai_org_backend.db import SessionLocal
+from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
+from ai_org_backend.metrics import prom_counter
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.testing import run_tests
-from ai_org_backend.db import SessionLocal
-from sqlmodel import select
-from ai_org_backend.models import Task, Purpose, TaskDependency, Artifact
+from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
-from ai_org_backend.metrics import prom_counter
-from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from sqlmodel import select
+
+from .utils import load_template
 
 # Load prompt template for QA agent
 PROMPT_TMPL = load_template("qa.j2")
-QA_ARTIFACT_COUNTER = prom_counter("ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts")
+QA_ARTIFACT_COUNTER = prom_counter(
+    "ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts"
+)
 
 # Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
 MAX_AGENT_RETRIES = 2
@@ -63,12 +65,23 @@ def agent_qa(tid: str, task_id: str) -> None:
                 )
             ctx["memory_snippets"] = memory_snippets
             # Attach code artefact snippet from preceding Dev task if available
-            dep = session.exec(select(TaskDependency).where(TaskDependency.to_id == task_id, TaskDependency.dependency_type == "FINISH_START")).first()
+            dep = session.exec(
+                select(TaskDependency).where(
+                    TaskDependency.to_id == task_id,
+                    TaskDependency.dependency_type == "FINISH_START",
+                )
+            ).first()
             dev_task_id = dep.from_id if dep else None
             if dev_task_id:
-                artifacts = session.exec(select(Artifact).where(Artifact.task_id == dev_task_id)).all()
+                artifacts = session.exec(
+                    select(Artifact).where(Artifact.task_id == dev_task_id)
+                ).all()
                 if not artifacts:
-                    logging.warning(f"[QAAgent] Dev artefact missing for task {dev_task_id}, skipping QA for task {task_id}")
+                    logging.warning(
+                        "[QAAgent] Dev artefact missing for task %s, skipping QA for task %s",
+                        dev_task_id,
+                        task_id,
+                    )
                     Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels(tid, "qa", "failed").inc()
@@ -92,7 +105,12 @@ def agent_qa(tid: str, task_id: str) -> None:
                         snippet_lines = []
                         for ln in lines:
                             lstripped = ln.lstrip()
-                            if lstripped.startswith("def ") or lstripped.startswith("class ") or "TODO" in ln or "todo" in ln:
+                            if (
+                                lstripped.startswith("def ")
+                                or lstripped.startswith("class ")
+                                or "TODO" in ln
+                                or "todo" in ln
+                            ):
                                 snippet_lines.append(ln)
                         if not snippet_lines:
                             snippet_lines = lines[:50]
@@ -114,19 +132,36 @@ def agent_qa(tid: str, task_id: str) -> None:
                         snippet_lang = "json"
                     else:
                         snippet_lang = ""
-                    snippets.append({"filename": artefact.repo_path, "content": snippet_content, "language": snippet_lang})
+                    snippets.append(
+                        {
+                            "filename": artefact.repo_path,
+                            "content": snippet_content,
+                            "language": snippet_lang,
+                        }
+                    )
                 if snippets:
                     ctx["snippets"] = snippets
-                    logging.info(f"[QAAgent] Attached code snippets from task {dev_task_id} into QA prompt for task {task_id} ({len(snippets)} file(s))")
+                    logging.info(
+                        "[QAAgent] Added %d snippet(s) from task %s into QA prompt for task %s",
+                        len(snippets),
+                        dev_task_id,
+                        task_id,
+                    )
                     QA_ARTIFACT_COUNTER.inc(len(snippets))
                 else:
-                    logging.warning(f"[QAAgent] No readable code artifacts for task {dev_task_id}, skipping QA for task {task_id}")
+                    logging.warning(
+                        "[QAAgent] No readable code artifacts for task %s, skipping QA for task %s",
+                        dev_task_id,
+                        task_id,
+                    )
                     Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels(tid, "qa", "failed").inc()
                     return
             else:
-                logging.warning(f"[QAAgent] No preceding dev task found for task {task_id}, skipping QA")
+                logging.warning(
+                    f"[QAAgent] No preceding dev task found for task {task_id}, skipping QA"
+                )
                 Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev task")
                 PROM_TASK_FAILED.labels(tid).inc()
                 TASK_CNT.labels(tid, "qa", "failed").inc()
@@ -152,7 +187,10 @@ def agent_qa(tid: str, task_id: str) -> None:
             except Exception as exc:
                 error_msg = str(exc)
                 logging.error(
-                    f"[QAAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}"
+                    "[QAAgent] LLM generation failed for task %s (attempt %s): %s",
+                    task_id,
+                    attempt + 1,
+                    exc,
                 )
                 if attempt < MAX_AGENT_RETRIES:
                     Repo(tid).update(
@@ -160,9 +198,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                         retries=task_obj.retries + 1,
                         notes="LLM-Fehler: " + error_msg,
                     )
-                    err_note = (
-                        error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
-                    )
+                    err_note = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     ctx["error_note"] = err_note
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
@@ -175,18 +211,24 @@ def agent_qa(tid: str, task_id: str) -> None:
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
         tokens_used = 0
         try:
-            tokens_used = response.usage.total_tokens if response and hasattr(response, "usage") else 0
+            tokens_used = (
+                response.usage.total_tokens if response and hasattr(response, "usage") else 0
+            )
         except Exception:
             pass
         # Run any generated tests with pytest in an isolated workspace
         with SessionLocal() as session:
             test_artifacts = session.exec(
-                select(Artifact).where(Artifact.task_id == task_id, Artifact.repo_path.ilike("test%.py"))
+                select(Artifact).where(
+                    Artifact.task_id == task_id, Artifact.repo_path.ilike("test%.py")
+                )
             ).all()
 
         if test_artifacts:
             logging.info(
-                f"[QAAgent] Detected {len(test_artifacts)} test file(s) for task {task_id}, executing pytest"
+                "[QAAgent] Detected %d test file(s) for task %s, executing pytest",
+                len(test_artifacts),
+                task_id,
             )
             test_paths = []
             for art in test_artifacts:
@@ -195,7 +237,9 @@ def agent_qa(tid: str, task_id: str) -> None:
                     art_path = Path(*art_path.parts[1:])
                 test_paths.append(str(art_path))
             tests_passed, test_output, note = run_tests(tid, test_paths)
-            save_artefact(task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt")
+            save_artefact(
+                task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt"
+            )
             if tests_passed:
                 Repo(tid).update(
                     task_id,
@@ -217,13 +261,17 @@ def agent_qa(tid: str, task_id: str) -> None:
                     f"[QAAgent] Test failures detected for task {task_id}, creating fix task"
                 )
                 fail_lines = [
-                    line.strip() for line in test_output.splitlines() if line.strip().startswith("FAILED ")
+                    line.strip()
+                    for line in test_output.splitlines()
+                    if line.strip().startswith("FAILED ")
                 ]
                 if fail_lines:
                     if len(fail_lines) == 1:
                         new_desc = f"Fix failing test: {fail_lines[0][len('FAILED '):]}"
                     else:
-                        failures_list = "\n".join(f"- {line[len('FAILED '):]}" for line in fail_lines)
+                        failures_list = "\n".join(
+                            f"- {line[len('FAILED '):]}" for line in fail_lines
+                        )
                         new_desc = f"Fix failing tests:\n{failures_list}"
                 else:
                     new_desc = "Fix issues causing test failure"
@@ -231,10 +279,14 @@ def agent_qa(tid: str, task_id: str) -> None:
                     parent_task = session.get(Task, task_id)
                     orig_dev_task = session.get(Task, dev_task_id) if dev_task_id else None
                     biz_value = (
-                        orig_dev_task.business_value if orig_dev_task else parent_task.business_value
+                        orig_dev_task.business_value
+                        if orig_dev_task
+                        else parent_task.business_value
                     )
                     plan_tokens = (
-                        orig_dev_task.tokens_plan if orig_dev_task and orig_dev_task.tokens_plan else 0
+                        orig_dev_task.tokens_plan
+                        if orig_dev_task and orig_dev_task.tokens_plan
+                        else 0
                     ) or 500
                     fix_task = Task(
                         tenant_id=tid,
@@ -248,22 +300,29 @@ def agent_qa(tid: str, task_id: str) -> None:
                     session.add(fix_task)
                     session.flush()
                     session.add(
-                        TaskDependency(from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START")
+                        TaskDependency(
+                            from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START"
+                        )
                     )
                     session.commit()
                     new_task_id = fix_task.id
                 logging.info(
-                    f"[QAAgent] Created new Dev task {new_task_id} to address test failures from task {task_id}"
+                    "[QAAgent] Created new Dev task %s to address test failures from task %s",
+                    new_task_id,
+                    task_id,
                 )
                 try:
-                    from scripts.seed_graph import ingest
+                    from ai_org_backend.scripts.seed_graph import ingest
+
                     ingest(tid)
                 except Exception as e:
                     logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
         else:
             logging.warning(f"[QAAgent] No tests found for task {task_id}")
             no_test_msg = "no tests detected"
-            save_artefact(task_id, no_test_msg.encode("utf-8"), filename=f"{task_id}_test_results.txt")
+            save_artefact(
+                task_id, no_test_msg.encode("utf-8"), filename=f"{task_id}_test_results.txt"
+            )
             Repo(tid).update(
                 task_id,
                 status="failed",
@@ -274,7 +333,9 @@ def agent_qa(tid: str, task_id: str) -> None:
             with SessionLocal() as session:
                 parent_task = session.get(Task, task_id)
                 orig_dev_task = session.get(Task, dev_task_id) if dev_task_id else None
-                biz_value = orig_dev_task.business_value if orig_dev_task else parent_task.business_value
+                biz_value = (
+                    orig_dev_task.business_value if orig_dev_task else parent_task.business_value
+                )
                 plan_tokens = (
                     orig_dev_task.tokens_plan if orig_dev_task and orig_dev_task.tokens_plan else 0
                 ) or 500
@@ -291,15 +352,20 @@ def agent_qa(tid: str, task_id: str) -> None:
                 session.add(fix_task)
                 session.flush()
                 session.add(
-                    TaskDependency(from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START")
+                    TaskDependency(
+                        from_id=task_id, to_id=fix_task.id, dependency_type="FINISH_START"
+                    )
                 )
                 session.commit()
                 new_task_id = fix_task.id
             logging.info(
-                f"[QAAgent] Created new Dev task {new_task_id} to add missing tests for task {task_id}"
+                "[QAAgent] Created new Dev task %s to add missing tests for task %s",
+                new_task_id,
+                task_id,
             )
             try:
-                from scripts.seed_graph import ingest
+                from ai_org_backend.scripts.seed_graph import ingest
+
                 ingest(tid)
             except Exception as e:
                 logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
