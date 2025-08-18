@@ -80,6 +80,8 @@ services:
       - postgres
     environment:
       DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
+      ALEMBIC_CONFIG: /app/alembic.ini
+      PYTHONPATH: /app
     command: ["celery", "-A", "ai_org_backend.celery_app", "flower", "--address=0.0.0.0", "--port", "5555"]
 
   celery-dev:
@@ -121,6 +123,8 @@ services:
       - redis
     environment:
       DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
+      ALEMBIC_CONFIG: /app/alembic.ini
+      PYTHONPATH: /app
     ports:
       - "8000:8000"
     command: ["uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -133,13 +137,16 @@ services:
     environment:
       # DB-URL aus deiner Umgebung/Secrets setzen:
       DATABASE_URL: "postgresql+psycopg2://postgres:postgres@postgres:5432/postgres"
+      # Alembic soll explizit diese INI verwenden
+      ALEMBIC_CONFIG: /app/alembic.ini
+      PYTHONPATH: /app
     # Wichtig: KEINE bind-mounts mehr für alembic.ini oder /app/alembic
     volumes:
       # falls du weitere Mounts brauchst, hier — aber NICHT alembic/alembic.ini
       - type: volume
         source: orchestrator-data
         target: /var/lib/ai-org
-    command: /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
+    command: ["uvicorn", "ai_org_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
