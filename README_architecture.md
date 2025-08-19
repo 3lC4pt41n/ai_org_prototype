@@ -18,7 +18,7 @@ The AI Org Prototype follows a microservice-style architecture, with all compone
 
 - **Prometheus & Grafana (Monitoring)** – Optional monitoring stack for metrics. The FastAPI backend exposes metrics at /metrics (port 8000) and a Celery Exporter provides task queue metrics on port 9808. Prometheus (port 9090) scrapes these metrics and Grafana (port 3000) provides dashboards to visualize them. (These services are included by default in the provided Docker Compose setups.)
 
-- F**rontend UI (React)** – A single-page React 18 application (built with Vite + Tailwind) providing an admin dashboard to interact with the system. It allows creating new projects, viewing the task pipeline graph, monitoring budgets, and downloading artifacts. In development it runs on http://localhost:5173 via Vite dev server, or in production it’s served by an Nginx container on the same port. The frontend communicates with the FastAPI backend (ensure CORS is configured to allow the frontend origin in dev mode).
+- **Frontend UI (React)** – A single-page React 18 application (built with Vite + Tailwind) providing an admin dashboard to interact with the system. It allows creating new projects, viewing the task pipeline graph, monitoring budgets, and downloading artifacts. In development it runs on http://localhost:5173 via Vite dev server, or in production it’s served by an Nginx container on the same port. The frontend communicates with the FastAPI backend (ensure CORS is configured to allow the frontend origin in dev mode).
 
 ```mermaid
 flowchart LR
