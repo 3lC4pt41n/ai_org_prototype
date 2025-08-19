@@ -30,9 +30,9 @@ services:
   neo4j:
     image: neo4j:5
     environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASS:-s3cr3t}
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASS=${NEO4J_PASS:-s3cr3t}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASS:-s3cr3tP@ss}
+      #- NEO4J_USER=${NEO4J_USER:-neo4j}
+      #- NEO4J_PASS=${NEO4J_PASS:-s3cr3tP@ss}
     ports:
       - "7687:7687"   # Bolt
       - "7474:7474"   # Browser UI
