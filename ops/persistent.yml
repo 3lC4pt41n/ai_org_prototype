@@ -56,7 +56,6 @@ services:
              -Q demo:architect
              -l INFO -P solo
     environment:
-      - PYTHONPATH=/app
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_APP=ai_org_backend.tasks.celery_app
       - NEO4J_URL=bolt://neo4j:7687
@@ -169,6 +168,7 @@ services:
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
+      - PYTHONPATH=/app
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=${NEO4J_USER}
