@@ -17,12 +17,12 @@ services:
 
   redis:
     image: redis:7
-    command: /bin/sh -c "redis-server --save 60 1 --loglevel warning --requirepass $REDIS_PASSWORD"
+    command: sh -c 'if [ -n "$REDIS_PASSWORD" ]; then exec redis-server --save 60 1 --loglevel warning --requirepass "$REDIS_PASSWORD"; else exec redis-server --save 60 1 --loglevel warning; fi'
     ports: ["6379:6379"]
     environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $REDIS_PASSWORD ping"]
+      test: ["CMD-SHELL", 'if [ -n "$REDIS_PASSWORD" ]; then redis-cli -a "$REDIS_PASSWORD" ping; else redis-cli ping; fi']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,14 +30,16 @@ services:
   neo4j:
     image: neo4j:5
     environment:
-      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASS}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASS:-s3cr3t}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASS=${NEO4J_PASS:-s3cr3t}
     ports:
       - "7687:7687"   # Bolt
       - "7474:7474"   # Browser UI
     volumes:
       - neo4j_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u $NEO4J_USER -p $NEO4J_PASS 'RETURN 1'"]
+      test: ["CMD-SHELL", 'cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" "RETURN 1"']
       interval: 10s
       timeout: 10s
       retries: 6
