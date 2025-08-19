@@ -56,6 +56,7 @@ services:
              -Q demo:architect
              -l INFO -P solo
     environment:
+      - PYTHONPATH=/app
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_APP=ai_org_backend.tasks.celery_app
       - NEO4J_URL=bolt://neo4j:7687
