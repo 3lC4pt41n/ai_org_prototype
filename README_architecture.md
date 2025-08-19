@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
     subgraph Client
       UI["Frontend (React)"]
@@ -18,4 +19,5 @@ flowchart LR
       Exporter[[Celery Exporter]]
       Grafana[[Grafana]]
     end
+```
 
