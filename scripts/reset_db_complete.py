@@ -14,6 +14,8 @@ from sqlmodel import SQLModel, create_engine
 backend_dir = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
+# Alle Models importieren, damit SQLModel.metadata alle Tabellen enthält
+import ai_org_backend.models  # noqa: F401,E402  # Importiere sämtliche Modelle (z.B. Task, Tenant, Artifact, etc.)
 
 
 def reset_database():
@@ -32,6 +34,24 @@ def reset_database():
     engine = create_engine(db_url, echo=True)
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+    # Erweitere version_num-Spalte der Alembic-Versionstabelle (für längere Revisions-IDs)
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name='alembic_version'"
+            )
+        )
+        if result.first() is not None:
+            conn.execute(
+                text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)")
+            )
+            conn.commit()
+            print("✓ Spalte 'version_num' in alembic_version auf VARCHAR(64) erweitert")
+        else:
+            print("ℹ️  alembic_version-Tabelle nicht gefunden, Schritt übersprungen")
     print("✓ Dropped and recreated all tables with current schema")
 
 
