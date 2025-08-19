@@ -84,7 +84,7 @@ REDIS_PASSWORD=ai_redis_pw
 REDIS_URL=redis://:${REDIS_PASSWORD}@localhost:6379/0
 NEO4J_URL=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASS=s3cr3tP@ss
+NEO4J_PASS=s3cr3t
 
 # Vektor-Store
 QDRANT_URL=http://localhost:6333
