@@ -19,14 +19,3 @@ flowchart LR
       Grafana[[Grafana]]
     end
 
-    UI -- HTTP --> API
-    API -- reads/writes --> PG
-    API -- graph ops --> Neo4j
-    API -- vector search --> Qdrant
-    API -- enqueues tasks --> Redis
-    ORCH -- schedules --> Redis
-    CELERY -- pulls jobs --> Redis
-    CELERY -- updates --> PG & Neo4j & Qdrant
-    Prom -- scrape metrics --> API
-    Prom -- scrape metrics --> Exporter
-    Grafana -- queries --> Prom
