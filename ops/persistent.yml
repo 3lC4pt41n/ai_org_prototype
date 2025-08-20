@@ -63,6 +63,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
@@ -91,6 +92,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
     depends_on:
@@ -119,6 +121,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - API_BASE_URL=http://ai-app:8000
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
