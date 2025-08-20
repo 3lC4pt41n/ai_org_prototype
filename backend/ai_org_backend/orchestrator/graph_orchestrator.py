@@ -1,17 +1,19 @@
+import hashlib
 import json
 import os
 import re
 from typing import Any, Dict, List
+
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from networkx import DiGraph
+from sqlmodel import Session, select
 
 from ai_org_backend.agents.utils import load_template
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.services.storage import register_artefact
-from dotenv import load_dotenv
-from neo4j import GraphDatabase
-from networkx import DiGraph
-from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -90,14 +92,32 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
 
 
 def seed_if_empty(purpose_name: str = PURPOSE) -> None:
-    if todo_count(TENANT) > 0:
-        return
-    # Backlog is empty, initiate seeding
-    print(f"[SEED] Seeding started for purpose '{purpose_name}' (tenant '{TENANT}')")
-    # Determine or create Purpose for seeding
-    from ai_org_backend.models import Purpose
+    from ai_org_backend.models import Purpose, Tenant
 
     with Session(engine) as session:
+        # ── Safety net: create demo tenant automatically if missing ───────────────────────────────
+        tenant = session.get(Tenant, TENANT)
+        if tenant is None:
+            demo_pw = os.getenv("DEMO_PASSWORD", "demo")
+            demo_email = os.getenv("DEMO_EMAIL", "demo@localhost")
+            demo_hash = hashlib.sha256(demo_pw.encode("utf-8")).hexdigest()
+            tenant = Tenant(
+                id=TENANT,
+                name="Demo Tenant",
+                hashed_password=demo_hash,
+                email=demo_email,
+            )
+            session.add(tenant)
+            session.commit()
+
+        # Abort seeding if backlog already populated
+        if todo_count(TENANT) > 0:
+            return
+
+        # Backlog is empty, initiate seeding
+        print(f"[SEED] Seeding started for purpose '{purpose_name}' (tenant '{TENANT}')")
+
+        # Determine or create Purpose for seeding
         purpose = session.exec(
             select(Purpose).where(Purpose.name == purpose_name, Purpose.tenant_id == TENANT)
         ).first()
