@@ -51,7 +51,9 @@ def chat_with_tools(
 
     try:
         if _client is None:
-            raise RuntimeError("OpenAI client not initialised")
+            raise RuntimeError(
+                "OpenAI client not initialised. Please set the OPENAI_API_KEY environment variable."
+            )
         resp = _client.chat.completions.create(
             model=use_model,
             messages=messages,
