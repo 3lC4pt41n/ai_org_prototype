@@ -247,7 +247,7 @@ services:
   frontend:
     build:
       # Nur das Frontend als Kontext schicken (schneller & stabiler)
-      context: ./frontend
+      context: ../frontend
       dockerfile: Dockerfile
     profiles: ["ui"]
     ports:
