@@ -79,7 +79,7 @@ hpack==4.1.0
     # via h2
 httpcore==1.0.9
     # via httpx
-httpx[http2]==0.28.1
+httpx[http2]==0.27.2
     # via
     #   openai
     #   qdrant-client
