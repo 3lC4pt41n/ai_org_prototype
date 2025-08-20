@@ -51,6 +51,8 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_architect:latest
+    env_file:
+      - ../.env
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:architect
@@ -80,6 +82,8 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_insight:latest
+    env_file:
+      - ../.env
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:insight
@@ -109,6 +113,8 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_dev:latest
+    env_file:
+      - ../.env
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
              -Q demo:dev,demo:qa,demo:ux_ui,demo:telemetry
@@ -141,6 +147,8 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_app:latest
+    env_file:
+      - ../.env
     command: uvicorn ai_org_backend.main:app --host 0.0.0.0 --port 8000
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -149,6 +157,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
@@ -167,6 +176,8 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend_orchestrator:latest
+    env_file:
+      - ../.env
     working_dir: /app  # Im Arbeitsverzeichnis /app liegt alembic.ini
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
@@ -178,6 +189,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      # explizit injizieren – garantiert, auch ohne env_file
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TENANT=demo
     depends_on:
