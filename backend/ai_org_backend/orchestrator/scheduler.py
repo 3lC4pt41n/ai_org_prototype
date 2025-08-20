@@ -210,5 +210,12 @@ if __name__ == "__main__":
         print("Alembic folder missing – please run 'alembic init alembic' to create it.")
         sys.exit(1)
     import asyncio
-
+    # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
+    from ai_org_backend.orchestrator.graph_orchestrator import driver
+    try:
+        with driver.session() as session:
+            session.run("CREATE INDEX IF NOT EXISTS FOR (t:Task) ON (t.status)")
+            print("ℹ️ Ensured Neo4j index on Task(status) exists")
+    except Exception as e:
+        logging.error("Failed to create Neo4j index for Task(status): %s", e)
     asyncio.run(orchestrator())
