@@ -1,5 +1,6 @@
-# Ignoriere Abhängigkeitsordner und unnötige Dateien im Docker-Build-Kontext
+# Monorepo-Root: falls andere Services aus dem Root bauen, weiterhin schweren Ballast ignorieren
 node_modules
+**/node_modules
 .pnpm-store
 .git
 .gitignore
@@ -7,3 +8,4 @@ node_modules
 dist
 build
 .next
+out
