@@ -210,8 +210,31 @@ if __name__ == "__main__":
         print("Alembic folder missing – please run 'alembic init alembic' to create it.")
         sys.exit(1)
     import asyncio
+
+    # Früh prüfen: ist der OpenAI-Key vorhanden?
+    key_present = bool(
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("OPENAI_KEY")
+        or os.getenv("OPENAI_APIKEY")
+        or os.getenv("OPENAI_API_KEY_FILE")
+        or os.getenv("OPENAI_API_KEY_B64")
+    )
+    from ai_org_backend.services.llm_client import ensure_client
+
+    if not key_present:
+        print(
+            "FATAL: No OPENAI_API_KEY in container environment (or *_KEY/_APIKEY, *_KEY_FILE/B64)."
+        )
+        sys.exit(1)
+    try:
+        ensure_client()
+    except Exception as e:
+        print(f"FATAL: OpenAI client init failed: {e}")
+        sys.exit(1)
+
     # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
     from ai_org_backend.orchestrator.graph_orchestrator import driver
+
     try:
         with driver.session() as session:
             session.run("CREATE INDEX IF NOT EXISTS FOR (t:Task) ON (t.status)")
