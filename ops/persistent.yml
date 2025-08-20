@@ -246,9 +246,10 @@ services:
 
   frontend:
     build:
-      # nur das Frontend als Build-Kontext schicken (nicht das ganze Monorepo)
+      # Nur das Frontend als Kontext schicken (schneller & stabiler)
       context: ./frontend
       dockerfile: Dockerfile
+    profiles: ["ui"]
     ports:
       - "3000:80"
     depends_on:
@@ -261,7 +262,6 @@ services:
       retries: 3
     volumes:
       - ../logs/nginx:/var/log/nginx
-    profiles: ["ui"]
 
   qdrant:
     image: qdrant/qdrant:v1.15.1
