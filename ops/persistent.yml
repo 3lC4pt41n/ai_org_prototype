@@ -175,6 +175,7 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TENANT=demo
     depends_on:
       postgres:
