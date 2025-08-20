@@ -14,6 +14,7 @@ dependencies = [
   "pydantic-settings",
   "python-dotenv",
   "jinja2",
+  "jsonschema>=4.0.0",
   "networkx",
   "qdrant-client",
   "openai>=1.40.0",
