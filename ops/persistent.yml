@@ -249,7 +249,6 @@ services:
       context: ..
       dockerfile: frontend/Dockerfile
       target: prod
-    image: local/ai_frontend:latest
     ports:
       - "5173:80"
     depends_on:
