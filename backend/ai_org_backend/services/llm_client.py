@@ -2,22 +2,30 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Dict, List
 
 from openai import OpenAI
 
+from ai_org_backend.config import config
 from . import budget
 from .metrics_llm import LLM_CALLS, LLM_TOKENS, LLM_COST_USD, TENANT_BUDGET_LEFT
 
 try:  # pragma: no cover - import guard for tests that stub OpenAI
-    _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-except Exception:  # pragma: no cover - during tests stub may lack OpenAI
+    if config.openai_api_key is None:
+        # OpenAI API Key not configured
+        _client = None
+        logging.error(
+            "OpenAI API key not set. Please define OPENAI_API_KEY in environment or .env file."
+        )
+    else:
+        _client = OpenAI(api_key=config.openai_api_key)
+except Exception as e:  # pragma: no cover - during tests stub may lack OpenAI
     _client = None
+    logging.error(f"Failed to initialize OpenAI client: {e}")
 
-MODEL_DEFAULT = os.getenv("OPENAI_MODEL_DEFAULT", "o3")
-MODEL_PRO = os.getenv("OPENAI_MODEL_PRO", "o3-pro")
-MODEL_THINKING = os.getenv("OPENAI_MODEL_THINKING", "o3")
+MODEL_DEFAULT = config.openai_model_default
+MODEL_PRO = config.openai_model_pro
+MODEL_THINKING = config.openai_model_thinking
 
 
 def _is_thinking_model(model: str) -> bool:
@@ -52,7 +60,7 @@ def chat_with_tools(
     try:
         if _client is None:
             raise RuntimeError(
-                "OpenAI client not initialised. Please set the OPENAI_API_KEY environment variable."
+                "OpenAI client not initialized – no API key provided. Set OPENAI_API_KEY and restart the service."
             )
         resp = _client.chat.completions.create(
             model=use_model,
