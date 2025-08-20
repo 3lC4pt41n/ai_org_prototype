@@ -1,4 +1,9 @@
-__pycache__
-*.pyc
-.pytest_cache
-node_modules/
+# Ignoriere Abhängigkeitsordner und unnötige Dateien im Docker-Build-Kontext
+node_modules
+.pnpm-store
+.git
+.gitignore
+*.md
+dist
+build
+.next
