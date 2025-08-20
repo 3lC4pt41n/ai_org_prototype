@@ -246,11 +246,11 @@ services:
 
   frontend:
     build:
-      context: ..
-      dockerfile: frontend/Dockerfile
-      target: prod
+      # nur das Frontend als Build-Kontext schicken (nicht das ganze Monorepo)
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "5173:80"
+      - "3000:80"
     depends_on:
       ai-app:
         condition: service_healthy
