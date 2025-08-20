@@ -2,6 +2,7 @@ from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, Repo
 from ai_org_backend.models import Task
 from ai_org_backend.tasks.celery_app import celery
+from sqlmodel import func, select
 
 
 @celery.task(name="agent.adjust_plan")
@@ -12,21 +13,21 @@ def agent_adjust_plan(tenant_id: str) -> None:
     fail_count = retry_count = 0
     with SessionLocal() as session:
         for owner in ["Dev", "UX/UI", "QA"]:
-            f_cnt = (
-                session.query(Task)
-                .filter_by(tenant_id=tenant_id, owner=owner, status="failed")
-                .count()
-            )
-            r_cnt = (
-                session.query(Task)
-                .filter(
+            f_cnt = session.exec(
+                select(func.count(Task.id)).where(
+                    Task.tenant_id == tenant_id,
+                    Task.owner == owner,
+                    Task.status == "failed",
+                )
+            ).one()
+            r_cnt = session.exec(
+                select(func.count(Task.id)).where(
                     Task.tenant_id == tenant_id,
                     Task.owner == owner,
                     Task.retries > 0,
                     Task.status == "done",
                 )
-                .count()
-            )
+            ).one()
             if f_cnt >= 3 and f_cnt > fail_count:
                 fail_count, high_fail_module = f_cnt, owner
             if r_cnt >= 3 and r_cnt > retry_count:

@@ -3,16 +3,25 @@ from ai_org_backend.main import DEFAULT_BUDGET, TASK_CNT, Repo, budget_left
 from ai_org_backend.models import Task
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.tasks.celery_app import celery
+from sqlmodel import func, select
 
 
 @celery.task(name="agent.project_manager")
 def agent_project_manager(tenant_id: str) -> None:
     """Periodic Project Management summary – generates a standup report and triggers alerts."""
     with SessionLocal() as session:
-        total_tasks = session.query(Task).filter_by(tenant_id=tenant_id).count()
-        done_tasks = session.query(Task).filter_by(tenant_id=tenant_id, status="done").count()
-        failed_tasks = session.query(Task).filter_by(tenant_id=tenant_id, status="failed").count()
-        pending_tasks = session.query(Task).filter_by(tenant_id=tenant_id, status="todo").count()
+        total_tasks = session.exec(
+            select(func.count(Task.id)).where(Task.tenant_id == tenant_id)
+        ).one()
+        done_tasks = session.exec(
+            select(func.count(Task.id)).where(Task.tenant_id == tenant_id, Task.status == "done")
+        ).one()
+        failed_tasks = session.exec(
+            select(func.count(Task.id)).where(Task.tenant_id == tenant_id, Task.status == "failed")
+        ).one()
+        pending_tasks = session.exec(
+            select(func.count(Task.id)).where(Task.tenant_id == tenant_id, Task.status == "todo")
+        ).one()
     completion_rate = (done_tasks / total_tasks * 100) if total_tasks else 0
     budget_remaining = budget_left(tenant_id)
     report_lines = [
