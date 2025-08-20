@@ -1,0 +1,33 @@
+# --- Minimierter Build-Kontext für das Frontend ---
+# PNPM / npm / yarn Artefakte
+node_modules
+**/node_modules
+.pnpm-store
+.pnp.cjs
+.pnp.loader.mjs
+.yarn
+.yarnrc*
+package-lock.json
+npm-debug.log*
+yarn.lock
+pnpm-debug.log*
+
+# Build Outputs
+dist
+build
+.next
+out
+
+# VCS / Editor
+.git
+.gitignore
+.gitattributes
+.DS_Store
+.vscode
+.idea
+*.md
+README*
+
+# Tests / Snapshots
+coverage
+*.snap
