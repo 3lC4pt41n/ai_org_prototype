@@ -42,4 +42,4 @@ flowchart LR
       Grafana[[Grafana]]
     end
 ```
-
+*Diagram:* High-level architecture. The frontend UI calls the FastAPI backend; the backend uses Postgres/Neo4j/Qdrant for data, and schedules async tasks via Redis. Celery workers execute tasks and update the databases. Prometheus gathers metrics from the backend and Celery (via the exporter), and Grafana displays them.
