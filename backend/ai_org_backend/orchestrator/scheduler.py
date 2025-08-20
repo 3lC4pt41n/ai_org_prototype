@@ -4,8 +4,6 @@ import asyncio
 import logging
 import time
 
-from sqlmodel import Session, select
-
 from ai_org_backend.db import engine
 from ai_org_backend.main import (  # import orchestrator dependencies
     BUDGET_GA,
@@ -33,6 +31,7 @@ from ai_org_backend.orchestrator.inspector import (
     todo_count,
 )
 from ai_org_backend.orchestrator.router import classify_role
+from sqlmodel import Session, func, select
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -119,10 +118,10 @@ async def orchestrator() -> None:
             budget_blocked = 0
             with Session(engine) as session:
                 budget_blocked = session.exec(
-                    select(Task).where(
+                    select(func.count(Task.id)).where(
                         Task.tenant_id == TENANT, Task.status == TaskStatus.BUDGET_EXCEEDED
                     )
-                ).count()
+                ).one()
             PROM_BUDGET_BLOCKED.labels(TENANT).set(budget_blocked)
             print(
                 f"ℹ️ todo:{todo_count(TENANT):>3} "
@@ -134,27 +133,27 @@ async def orchestrator() -> None:
             with Session(engine) as session:
                 for owner in ["Dev", "UX/UI", "QA"]:
                     total = session.exec(
-                        select(Task).where(
+                        select(func.count(Task.id)).where(
                             Task.tenant_id == TENANT,
                             Task.owner == owner,
                             Task.status.in_(["done", "failed"]),
                         )
-                    ).count()
+                    ).one()
                     fails = session.exec(
-                        select(Task).where(
+                        select(func.count(Task.id)).where(
                             Task.tenant_id == TENANT,
                             Task.owner == owner,
                             Task.status == "failed",
                         )
-                    ).count()
+                    ).one()
                     retries = session.exec(
-                        select(Task).where(
+                        select(func.count(Task.id)).where(
                             Task.tenant_id == TENANT,
                             Task.owner == owner,
                             Task.status == "done",
                             Task.retries > 0,
                         )
-                    ).count()
+                    ).one()
                     if (
                         total >= 5
                         and fails / total > 0.3
@@ -186,8 +185,10 @@ async def orchestrator() -> None:
         done_count = 0
         with Session(engine) as session:
             done_count = session.exec(
-                select(Task).where(Task.tenant_id == TENANT, Task.status == TaskStatus.DONE)
-            ).count()
+                select(func.count(Task.id)).where(
+                    Task.tenant_id == TENANT, Task.status == TaskStatus.DONE
+                )
+            ).one()
         if done_count - LAST_DONE_COUNT >= 10:
             celery.send_task("agent.project_manager", args=[TENANT], queue=f"{TENANT}:qa")
             celery.send_task("agent.adjust_plan", args=[TENANT], queue=f"{TENANT}:qa")
@@ -204,9 +205,7 @@ if __name__ == "__main__":
     # Alembic-Initialisierung: Falls Migrations-Ordner fehlt, mit Hinweis abbrechen
     if not (
         os.path.isdir(os.path.join(os.getcwd(), "alembic"))
-        or os.path.isdir(
-            os.path.join(os.path.dirname(__file__), os.pardir, "alembic")
-        )
+        or os.path.isdir(os.path.join(os.path.dirname(__file__), os.pardir, "alembic"))
     ):
         print("Alembic folder missing – please run 'alembic init alembic' to create it.")
         sys.exit(1)

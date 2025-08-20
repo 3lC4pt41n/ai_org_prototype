@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge
-from sqlmodel import Session, select
-
 from ai_org_backend.db import engine
 from ai_org_backend.main import DEFAULT_BUDGET, pool
 from ai_org_backend.models import Task
 from ai_org_backend.models.task import TaskStatus
+from prometheus_client import Counter, Gauge
+from sqlmodel import Session, func, select
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
 PROM_TASK_BLOCKED = Gauge(
@@ -24,11 +23,7 @@ PROM_BUDGET_BLOCKED = Gauge(
     "Number of tasks blocked by budget",
     ["tenant"],
 )
-PROM_TASK_FAILED = Counter(
-    "ai_tasks_failed_total",
-    "Number of tasks that failed",
-    ["tenant"]
-)
+PROM_TASK_FAILED = Counter("ai_tasks_failed_total", "Number of tasks that failed", ["tenant"])
 PROM_TASK_TODO = Gauge(
     "ai_tasks_todo",
     "Number of tasks pending",
@@ -42,9 +37,11 @@ insights_generated_total = Counter(
 
 def todo_count(tenant: str) -> int:
     with Session(engine) as s:
-        cnt = (
-            s.exec(select(Task).where(Task.tenant_id == tenant, Task.status == TaskStatus.TODO))
-        ).count()
+        cnt = s.exec(
+            select(func.count(Task.id)).where(
+                Task.tenant_id == tenant, Task.status == TaskStatus.TODO
+            )
+        ).one()
     PROM_TASK_TODO.labels(tenant).set(cnt)
     return cnt
 
