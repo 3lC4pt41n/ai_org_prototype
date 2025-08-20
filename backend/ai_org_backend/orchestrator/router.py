@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from jinja2 import Template
-from ai_org_backend.orchestrator.inspector import alert
-from ai_org_backend.utils.llm import chat_completion
+
+from ai_org_backend.agents.utils import load_template
 from ai_org_backend.main import AGENTS
+from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.orchestrator.role_rules import heuristic_role, normalize_role
+from ai_org_backend.utils.llm import chat_completion
 
 # Include repo agent for bootstrapping
 AGENT_ROLES = list(AGENTS.keys())  # Now includes 'repo' role
+PROMPT_TMPL = load_template("orchestrator.j2")
 
 
 def classify_role(desc: str) -> str:
@@ -29,10 +30,7 @@ def classify_role(desc: str) -> str:
         return heuristic
 
     # Prepare LLM prompt using Jinja2 template with all available roles
-    tmpl_path = Path(__file__).resolve().parents[3] / "prompts" / "orchestrator.j2"
-    prompt = Template(tmpl_path.read_text(encoding="utf-8")).render(
-        roles=AGENT_ROLES, description=desc
-    )
+    prompt = PROMPT_TMPL.render(roles=AGENT_ROLES, description=desc)
 
     try:
         # Get LLM classification (expecting a JSON with {"role": "..."} or a single role string)
@@ -62,4 +60,3 @@ def classify_role(desc: str) -> str:
         alert(f"Unknown role '{role}', defaulting to dev", "router")
         return "dev"
     return role
-

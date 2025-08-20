@@ -1,17 +1,14 @@
-from __future__ import annotations
-
 import json
 import os
 import re
-from pathlib import Path
 from typing import Any, Dict, List
 
+from ai_org_backend.agents.utils import load_template
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.services.storage import register_artefact
 from dotenv import load_dotenv
-from jinja2 import Template
 from neo4j import GraphDatabase
 from networkx import DiGraph
 from sqlmodel import Session, select
@@ -20,7 +17,6 @@ load_dotenv()
 
 TENANT = os.getenv("TENANT", "demo")
 PURPOSE = os.getenv("PURPOSE", "bootstrap")
-PROMPT_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
@@ -59,13 +55,8 @@ def cypher(query: str) -> List[Dict[str, Any]]:
         return g.run(query).data()
 
 
-def _load_tmpl(name: str) -> Template:
-    path = PROMPT_DIR / name
-    return Template(path.read_text(encoding="utf-8", errors="replace"))
-
-
-TMPL_ARCH = _load_tmpl("architect.j2")
-TMPL_PLAN = _load_tmpl("planner.j2")
+TMPL_ARCH = load_template("architect.j2")
+TMPL_PLAN = load_template("planner.j2")
 
 MD_JSON_RX = re.compile(r"```json([\s\S]+?)```", re.I)
 
