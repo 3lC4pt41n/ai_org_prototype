@@ -36,7 +36,7 @@ WHERE NOT EXISTS {
   WHERE coalesce(r.kind,'FINISH_START') = 'FINISH_START'
     AND p.status <> 'done'
 }
-RETURN t.id AS id
+RETURN t.id AS id, t.desc AS d
 """
 BLOCKED_Q = """
 MATCH (t:Task {status:'todo'})
@@ -223,18 +223,42 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         for t in tasks:
             dep = t.get("depends_on") or t.get("depends_on_id")
             if dep and dep in id_map:
-                s.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
+                s.add(
+                    TaskDependency(
+                        from_id=id_map[dep],
+                        to_id=id_map[t["id"]],
+                        dependency_type="FINISH_START",
+                    )
+                )
         # Ensure all new tasks depend on the repo_init task (if present)
         repo_id = id_map.get("repo_init")
         if repo_id:
             blueprint_tid = id_map.get("blueprint")
             requirements_tid = prd_task.id
             if blueprint_tid:
-                s.add(TaskDependency(from_id=requirements_tid, to_id=blueprint_tid))
-                s.add(TaskDependency(from_id=blueprint_tid, to_id=repo_id))
+                s.add(
+                    TaskDependency(
+                        from_id=requirements_tid,
+                        to_id=blueprint_tid,
+                        dependency_type="FINISH_START",
+                    )
+                )
+                s.add(
+                    TaskDependency(
+                        from_id=blueprint_tid,
+                        to_id=repo_id,
+                        dependency_type="FINISH_START",
+                    )
+                )
             for slug, tid in id_map.items():
                 if slug not in ("repo_init", "blueprint"):
-                    s.add(TaskDependency(from_id=repo_id, to_id=tid))
+                    s.add(
+                        TaskDependency(
+                            from_id=repo_id,
+                            to_id=tid,
+                            dependency_type="FINISH_START",
+                        )
+                    )
         s.commit()
     # Persist the architecture blueprint as an artifact and mark its task as done
     blueprint_id = id_map.get("blueprint")
