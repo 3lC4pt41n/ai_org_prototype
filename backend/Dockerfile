@@ -14,12 +14,14 @@ WORKDIR /app
 
 # Anforderungen installieren (direkt aus dem App-Ordner)
 COPY ai_org_backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip
+# install project deps (ensure wheels for bcrypt/passlib)
+RUN pip install --no-cache-dir -r /app/requirements.txt
 # Laufzeit-Umgebung / Alembic
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     ALEMBIC_CONFIG=/app/alembic.ini \
     PYTHONPATH=/app
-RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Application source
 COPY . /app/ai_org_backend
