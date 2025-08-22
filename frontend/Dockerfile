@@ -9,7 +9,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY . .
 
 # 👉 Install: wenn Lockfile da, strikt; sonst normal
-RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+RUN if [ -f pnpm-lock.yaml ]; then HUSKY=0 pnpm install --frozen-lockfile; else HUSKY=0 pnpm install; fi
 
 # 👉 Build: bevorzugt Workspace-App apps/web, sonst Root-Build-Script
 RUN set -eux; \
@@ -69,4 +69,3 @@ COPY --from=build /tmp/export ./
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
-
