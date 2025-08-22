@@ -18,9 +18,9 @@ export default function Login() {
       localStorage.setItem("token", data.access_token);
       location.href = "/";
     } else if (resp.status === 401) {
-      setError("Invalid email or password");  // NEW: clear error message for wrong credentials
+      setError("Invalid email or password");
     } else {
-      setError("Login failed. Please try again.");  // NEW: generic error for other failures
+      setError("Login failed. Please try again.");
     }
   };
 
