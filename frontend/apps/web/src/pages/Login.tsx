@@ -17,8 +17,10 @@ export default function Login() {
       const data = await resp.json();
       localStorage.setItem("token", data.access_token);
       location.href = "/";
+    } else if (resp.status === 401) {
+      setError("Invalid email or password");  // NEW: clear error message for wrong credentials
     } else {
-      setError("Login failed");
+      setError("Login failed. Please try again.");  // NEW: generic error for other failures
     }
   };
 
