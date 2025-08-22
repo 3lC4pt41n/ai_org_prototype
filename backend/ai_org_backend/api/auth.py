@@ -1,57 +1,46 @@
-import logging  # NEW: logging for warnings
+import logging
 import os
-import secrets  # NEW: to generate fallback SECRET_KEY
+import secrets
 from datetime import datetime, timedelta
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from passlib.context import CryptContext  # NEW: for secure password hashing
+from passlib.context import CryptContext
 from sqlmodel import Session, select
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Tenant
 
 # Load JWT config from environment with defaults
-SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv(
-    "JWT_SECRET"
-)  # FIX: get SECRET_KEY from .env (fallback to JWT_SECRET)
+SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("JWT_SECRET")
 if not SECRET_KEY:
-    # Generate a temporary secret if none provided (dev fallback)
     SECRET_KEY = secrets.token_urlsafe(32)
     logging.warning("No SECRET_KEY provided in .env! Using an insecure default key.")
-ALGORITHM = os.getenv(
-    "ALGORITHM", "HS256"
-)  # FIX: allow override of JWT algorithm via .env (default HS256)
-ACCESS_TOKEN_EXPIRE_MINUTES = int(
-    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
-)  # Token expiry (minutes), default 1440 (24h)
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 # Initialize password hashing context (using bcrypt)
-pwd_context = CryptContext(
-    schemes=["bcrypt"], deprecated="auto"
-)  # NEW: configure bcrypt for password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
 def hash_password(p: str) -> str:
     """Hash a plaintext password using bcrypt."""
-    return pwd_context.hash(p)  # NEW: secure hash (bcrypt)
+    return pwd_context.hash(p)
 
 
 def verify_password(p: str, hashed: str) -> bool:
     """Verify a plaintext password against a hashed value."""
-    return pwd_context.verify(p, hashed)  # NEW: bcrypt verification
+    return pwd_context.verify(p, hashed)
 
 
 def create_access_token(tenant_id: str) -> str:
     """Generate a JWT access token for the given tenant_id."""
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"tenant_id": tenant_id, "exp": expire}
-    return jwt.encode(
-        to_encode, SECRET_KEY, algorithm=ALGORITHM
-    )  # uses configured SECRET_KEY and ALGORITHM
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 @router.post("/register")
