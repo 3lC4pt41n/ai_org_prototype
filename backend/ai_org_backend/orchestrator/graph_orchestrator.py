@@ -1,19 +1,18 @@
-import hashlib
 import json
 import os
 import re
 from typing import Any, Dict, List
 
-from dotenv import load_dotenv
-from neo4j import GraphDatabase
-from networkx import DiGraph
-from sqlmodel import Session, select
-
 from ai_org_backend.agents.utils import load_template
+from ai_org_backend.api.auth import hash_password  # import the bcrypt hash helper
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.orchestrator.inspector import alert, todo_count
 from ai_org_backend.services.storage import register_artefact
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from networkx import DiGraph
+from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -100,12 +99,12 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         if tenant is None:
             demo_pw = os.getenv("DEMO_PASSWORD", "demo")
             demo_email = os.getenv("DEMO_EMAIL", "demo@localhost")
-            demo_hash = hashlib.sha256(demo_pw.encode("utf-8")).hexdigest()
+            demo_hash = hash_password(demo_pw)  # use bcrypt to hash the demo password
             tenant = Tenant(
                 id=TENANT,
                 name="Demo Tenant",
-                hashed_password=demo_hash,
                 email=demo_email,
+                hashed_password=demo_hash,
             )
             session.add(tenant)
             session.commit()
