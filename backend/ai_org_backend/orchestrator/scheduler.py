@@ -20,7 +20,6 @@ from ai_org_backend.orchestrator.graph_orchestrator import (
     LEAF_Q,
     TENANT,
     cypher,
-    seed_if_empty,
 )
 from ai_org_backend.orchestrator.inspector import (
     PROM_BUDGET_BLOCKED,
@@ -32,6 +31,7 @@ from ai_org_backend.orchestrator.inspector import (
 )
 from ai_org_backend.orchestrator.router import classify_role
 from sqlmodel import Session, func, select
+from ai_org_backend.main import pool
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -83,9 +83,11 @@ async def orchestrator() -> None:
             avail_budget = 0.0  # Redis down, treat as no budget
         if avail_budget < 0:
             avail_budget = 0.0
-        seed_if_empty()
         # 1️⃣ retry failed tasks
         _retry_failed_tasks()
+        if pool.get(f"pause:{TENANT}"):
+            await asyncio.sleep(2)
+            continue
 
         # Iterate over ready tasks
         for rec in cypher(LEAF_Q):

@@ -1,7 +1,7 @@
 // src/pages/AdminDashboard.jsx
 import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@ui/Card";
-import { Gauge, History, Target, PlayCircle, FileText, Package } from "lucide-react";
+import { Gauge, History, Target, PlayCircle, PauseCircle, FileText, Package } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -28,6 +28,9 @@ export default function AdminDashboard() {
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [allowResearch, setAllowResearch] = useState<boolean>(false);
+  const [paused, setPaused] = useState(false);
+  const [currentPurpose, setCurrentPurpose] = useState("");
+  const [counts, setCounts] = useState({ planned: 0, running: 0, done: 0 });
   const navigate = useNavigate();
   const [lastCount, setLastCount] = useState(0);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
@@ -46,13 +49,19 @@ export default function AdminDashboard() {
     const controller = new AbortController();
 
     const tick = () =>
-      Promise.all([getJson("/"), getJson("/backlog"), getJson("/artifacts")])
-        .then(([statusData, backlogData, artifactsData]) => {
+      Promise.all([getJson("/"), getJson("/backlog"), getJson("/artifacts"), getJson("/api/pause"), getJson("/api/graph")])
+        .then(([statusData, backlogData, artifactsData, pauseData, graphData]) => {
           setBudget(statusData.budget_left);
           setBudgetTotal(statusData.budget_total);
           setBacklog(backlogData);
           setArtifacts(artifactsData);
           setLastCount(artifactsData.length);
+          setPaused(!!pauseData.paused);
+          const tasks = graphData.tasks || [];
+          const plannedCount = tasks.filter((t:any) => t.status === "todo").length;
+          const runningCount = tasks.filter((t:any) => t.status === "doing").length;
+          const doneCount = tasks.filter((t:any) => t.status === "done").length;
+          setCounts({ planned: plannedCount, running: runningCount, done: doneCount });
         })
         .catch(() => {
           toast.error("Failed to load data. Please try again later.");
@@ -148,6 +157,28 @@ export default function AdminDashboard() {
       .catch(() => toast.error("Failed to update research setting"));
   }
 
+  function togglePause() {
+    const endpoint = paused ? "/api/resume" : "/api/pause";
+    fetch(`${API}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`
+      }
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to update pipeline state");
+        return res.json();
+      })
+      .then(() => {
+        const newState = !paused;
+        setPaused(newState);
+        toast.success(newState ? "Pipeline paused" : "Pipeline resumed");
+      })
+      .catch(() => toast.error("Failed to update pipeline state"));
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetch(`${API}/api/purpose`, {
@@ -168,6 +199,7 @@ export default function AdminDashboard() {
       })
       .then((data) => {
         setBlueprint(data.blueprint || "");
+        setCurrentPurpose(purposeInput);
         setPurposeInput("");
         // Refresh backlog and artifacts after seeding new tasks
         getJson("/backlog")
@@ -245,6 +277,26 @@ export default function AdminDashboard() {
               className={`px-3 py-1 rounded ${allowResearch ? "bg-emerald-600" : "bg-slate-600"} hover:opacity-90`}
             >
               {allowResearch ? "Enabled" : "Disabled"} — toggle
+            </button>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 text-white">
+          <CardContent className="p-4">
+            <h2 className="text-lg font-semibold mb-2">Pipeline Status</h2>
+            <p className="text-sm mb-1">
+              <span className="font-medium">Current Purpose:</span> {currentPurpose || "—"}
+            </p>
+            <p className="text-sm mb-3">
+              <span className="font-medium">Planned:</span> {counts.planned}{" "}
+              <span className="font-medium">Running:</span> {counts.running}{" "}
+              <span className="font-medium">Done:</span> {counts.done}
+            </p>
+            <button
+              onClick={togglePause}
+              className={`px-3 py-1 rounded ${paused ? "bg-emerald-600" : "bg-red-600"} hover:opacity-90 flex items-center gap-1`}
+            >
+              {paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
+              {paused ? "Resume" : "Pause"}
             </button>
           </CardContent>
         </Card>
