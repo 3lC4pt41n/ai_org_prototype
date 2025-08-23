@@ -10,8 +10,30 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
+from ai_org_backend.main import pool
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+
+
+@router.post("/pause")
+def pause_pipeline(current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    pool.set(f"pause:{tenant_id}", "1")
+    return {"status": "paused"}
+
+
+@router.post("/resume")
+def resume_pipeline(current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    pool.delete(f"pause:{tenant_id}")
+    return {"status": "resumed"}
+
+
+@router.get("/pause")
+def get_pause_status(current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    paused = bool(pool.get(f"pause:{tenant_id}"))
+    return {"paused": paused}
 
 
 @router.get("/graph")
