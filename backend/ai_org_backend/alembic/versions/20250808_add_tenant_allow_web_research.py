@@ -17,12 +17,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "tenant",
-        sa.Column("allow_web_research", sa.Boolean(), nullable=False, server_default=sa.true()),
-    )
-    op.alter_column("tenant", "allow_web_research", server_default=None)
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    existing_columns = [c["name"] for c in insp.get_columns("tenant")]
+    if "allow_web_research" not in existing_columns:
+        op.add_column(
+            "tenant",
+            sa.Column(
+                "allow_web_research",
+                sa.Boolean(),
+                nullable=False,
+                server_default=sa.true(),
+            ),
+        )
+        op.alter_column("tenant", "allow_web_research", server_default=None)
 
 
 def downgrade() -> None:
-    op.drop_column("tenant", "allow_web_research")
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    existing_columns = [c["name"] for c in insp.get_columns("tenant")]
+    if "allow_web_research" in existing_columns:
+        op.drop_column("tenant", "allow_web_research")
