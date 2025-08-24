@@ -41,7 +41,7 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 "tokens_plan": task_obj.tokens_plan,
                 "tokens_actual": task_obj.tokens_actual,
             }
-            budget_val = budget_left(tid)
+            budget_val = budget_left(tid, task_obj.purpose_id)
             ctx = {
                 "purpose": purpose_name,
                 "task": task_data,
@@ -98,7 +98,11 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
             pass
         Repo(tid).update(task_id, status="done", owner="UX/UI", notes="wireframe", tokens_actual=tokens_used)
     try:
-        debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+        debit(
+            tid,
+            tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+            task_obj.purpose_id,
+        )
     except Exception as e:
         logging.error(f"[UXAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tid, "ux_ui", "done").inc()

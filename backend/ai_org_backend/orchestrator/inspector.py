@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ai_org_backend.db import engine
-from ai_org_backend.main import DEFAULT_BUDGET, pool
+from ai_org_backend.main import budget_left
 from ai_org_backend.models import Task
 from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Gauge
@@ -44,10 +44,6 @@ def todo_count(tenant: str) -> int:
         ).one()
     PROM_TASK_TODO.labels(tenant).set(cnt)
     return cnt
-
-
-def budget_left(tenant: str) -> float:
-    return float(pool.hget("budget", tenant) or DEFAULT_BUDGET)
 
 
 def alert(msg: str, kind: str = "orch") -> None:

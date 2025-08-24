@@ -296,7 +296,11 @@ def agent_dev(tid: str, task_id: str) -> None:
             except Exception as e:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
     try:
-        debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+        debit(
+            tid,
+            tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+            task_obj.purpose_id,
+        )
     except Exception as e:
         logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tid, "dev", "done").inc()
