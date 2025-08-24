@@ -35,7 +35,7 @@ export type RegisterResponse = {
 };
 
 export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
-  return await postJson<RegisterPayload, RegisterResponse>('/register', payload);
+  return await postJson<RegisterPayload, RegisterResponse>('/api/register', payload);
 }
 
 export type LoginPayload = { email: string; password: string };
@@ -44,9 +44,9 @@ export type LoginResponse = { access_token: string; token_type?: string };
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
   // Accept either JSON or x-www-form-urlencoded depending on backend; try JSON first
   try {
-    return await postJson<LoginPayload, LoginResponse>('/login', payload);
+    return await postJson<LoginPayload, LoginResponse>('/api/login', payload);
   } catch {
-    const res = await fetch(`${API}/login`, {
+    const res = await fetch(`${API}/api/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
