@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pathlib import Path
+
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, Tenant
@@ -10,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
-from ai_org_backend.main import pool
+from ai_org_backend.main import pool, DEFAULT_BUDGET
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
@@ -50,17 +52,63 @@ def get_graph(current_tenant: Tenant = Depends(get_current_tenant)):
     return {"tasks": tasks_data, "dependencies": dependencies_data}
 
 
+@router.get("/purpose/{purpose_id}/graph")
+def get_purpose_graph(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        tasks = session.exec(
+            select(Task).where(
+                Task.tenant_id == tenant_id, Task.purpose_id == purpose_id
+            )
+        ).all()
+        deps = session.exec(
+            select(TaskDependency).where(
+                TaskDependency.from_task.has(tenant_id=tenant_id, purpose_id=purpose_id),
+                TaskDependency.to_task.has(tenant_id=tenant_id, purpose_id=purpose_id),
+            )
+        ).all()
+        tasks_data = [t.model_dump() for t in tasks]
+        dependencies_data = [{"from_id": d.from_id, "to_id": d.to_id} for d in deps]
+    return {"tasks": tasks_data, "dependencies": dependencies_data}
+
+
+@router.post("/purpose/{purpose_id}/pause")
+def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+    return {"status": "paused"}
+
+
+@router.post("/purpose/{purpose_id}/resume")
+def resume_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    pool.delete(f"pause:{tenant_id}:{purpose_id}")
+    return {"status": "resumed"}
+
+
+@router.get("/purpose/{purpose_id}/status")
+def get_purpose_status(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
+    budget = float(pool.get(f"budget:{tenant_id}:{purpose_id}") or DEFAULT_BUDGET)
+    return {"paused": paused, "budget_left": budget, "budget_total": DEFAULT_BUDGET}
+
+
 @router.get("/artifacts")
-def list_artifacts(current_tenant: Tenant = Depends(get_current_tenant)):
+async def list_artifacts(
+    purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
+):
     """List all artifacts with related task info."""
     tenant_id = current_tenant.id
     with Session(engine) as session:
-        artifacts = session.exec(
+        query = (
             select(Artifact)
             .options(selectinload(Artifact.task))
             .where(Artifact.task.has(tenant_id=tenant_id))
-            .order_by(Artifact.created_at)
-        ).all()
+        )
+        if purpose_id:
+            query = query.where(Artifact.task.has(purpose_id=purpose_id))
+        artifacts = session.exec(query.order_by(Artifact.created_at)).all()
         result = []
         for art in artifacts:
             result.append(
@@ -77,6 +125,16 @@ def list_artifacts(current_tenant: Tenant = Depends(get_current_tenant)):
     return result
 
 
+@router.get("/purpose")
+def list_purposes(current_tenant: Tenant = Depends(get_current_tenant)):
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        purposes = session.exec(
+            select(Purpose).where(Purpose.tenant_id == tenant_id)
+        ).all()
+    return [p.model_dump() for p in purposes]
+
+
 @router.post("/purpose")
 def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_tenant)):
     """Create a new purpose and seed initial tasks via LLM agents."""
@@ -91,6 +149,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             session.add(purpose)
             session.commit()
             session.refresh(purpose)
+            pool.set(f"budget:{tenant_id}:{purpose.id}", DEFAULT_BUDGET)
     with Session(engine) as session:
         existing_tasks = session.exec(
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
@@ -224,7 +283,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     except Exception as e:
         print(f"[WARN] Neo4j ingest failed: {e}")
 
-    return {"requirements": prd_content, "blueprint": blueprint}
+    return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
 
 
 @router.get("/artifact/{artifact_id}")
