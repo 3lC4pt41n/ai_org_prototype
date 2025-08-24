@@ -1,6 +1,6 @@
 """Simple Redis-backed budget helpers."""
 
-from ai_org_backend.main import pool, DEFAULT_BUDGET
+from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 
 _MEM: dict[str, float] = {}
 
