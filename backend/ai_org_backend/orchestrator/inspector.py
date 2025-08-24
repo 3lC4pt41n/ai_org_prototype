@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from ai_org_backend.db import engine
-from ai_org_backend.main import budget_left
-from ai_org_backend.models import Task
-from ai_org_backend.models.task import TaskStatus
 from prometheus_client import Counter, Gauge
 from sqlmodel import Session, func, select
+
+from ai_org_backend.db import engine
+from ai_org_backend.models import Task, TaskStatus
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
 PROM_TASK_BLOCKED = Gauge(
