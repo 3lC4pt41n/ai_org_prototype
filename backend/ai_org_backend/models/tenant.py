@@ -1,35 +1,31 @@
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, List, Optional
 
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import Field, Relationship, SQLModel
 
 from ..settings import settings
 
 if TYPE_CHECKING:
-    from .task import Task
     from .purpose import Purpose
+    from .task import Task
 
 
 class Tenant(SQLModel, table=True):
     """Simple tenant model (multi-tenant future-proofing)."""
 
-    id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()), 
-        primary_key=True
-    )
-    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+
     name: str = Field(nullable=False, min_length=1, max_length=255)
     balance: float = Field(default=settings.default_budget, ge=0.0)
-    
+
     email: Optional[str] = Field(default=None)
     hashed_password: str = Field(nullable=False, min_length=1)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
     allow_web_research: bool = Field(
-        default=False,
-        description="If true, agents may access the public web."
+        default=True, description="If true, agents may access the public web."
     )
     enable_code_review: bool = Field(default=True)
     enable_refactor: bool = Field(default=True)
