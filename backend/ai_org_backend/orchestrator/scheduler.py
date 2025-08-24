@@ -5,15 +5,17 @@ import logging
 import time
 
 from ai_org_backend.db import engine
-from ai_org_backend.main import (  # import orchestrator dependencies
+from ai_org_backend.main import (
     BUDGET_GA,
     DEFAULT_BUDGET,
     TOKEN_PRICE_PER_1000,
     Repo,
     celery,
+    debit,
+    budget_left,
+    pool,
 )
-from ai_org_backend.models import Task, TaskDependency
-from ai_org_backend.models.task import TaskStatus
+from ai_org_backend.models import Task, TaskStatus, TaskDependency
 from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
     CRIT_Q,
@@ -26,12 +28,10 @@ from ai_org_backend.orchestrator.inspector import (
     PROM_CRIT_PATH_LEN,
     PROM_TASK_BLOCKED,
     alert,
-    budget_left,
     todo_count,
 )
 from ai_org_backend.orchestrator.router import classify_role
 from sqlmodel import Session, func, select
-from ai_org_backend.main import pool
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -76,13 +76,7 @@ async def orchestrator() -> None:
     alerted_fail_modules: set[str] = set()
     alerted_retry_modules: set[str] = set()
     while True:
-        # Pre-dispatch budget availability check
-        try:
-            avail_budget = budget_left(TENANT)
-        except Exception:
-            avail_budget = 0.0  # Redis down, treat as no budget
-        if avail_budget < 0:
-            avail_budget = 0.0
+        # No global budget check here; budgets are managed per-purpose
         # 1️⃣ retry failed tasks
         _retry_failed_tasks()
         if pool.get(f"pause:{TENANT}"):
@@ -96,17 +90,21 @@ async def orchestrator() -> None:
                 task_obj = session.get(Task, rec["id"])
             if not task_obj:
                 continue
+            # Skip if this purpose is paused
+            if task_obj.purpose_id and pool.get(f"pause:{TENANT}:{task_obj.purpose_id}"):
+                continue
             # Calculate cost estimate for this task
             cost_est = (task_obj.tokens_plan or 0) * (TOKEN_PRICE_PER_1000 / 1000.0)
-            if avail_budget < cost_est:
-                # Skip task due to insufficient budget
+            # Check purpose-specific budget
+            budget_val = budget_left(TENANT, task_obj.purpose_id)
+            if budget_val < cost_est:
                 Repo(TENANT).update(task_obj.id, status="budget_exceeded", notes="budget skip")
                 alert(f"Task {task_obj.id} skipped due to insufficient budget", "budget")
                 continue
-            # Deduct planned cost from available budget and dispatch
-            avail_budget -= cost_est
             role = classify_role(rec["d"])
             Repo(TENANT).update(task_obj.id, status="doing")
+            # Deduct budget for the purpose
+            debit(TENANT, cost_est, task_obj.purpose_id)
             celery.send_task(f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}")
         if time.time() - last > 10:
             blocked = cypher(BLOCKED_Q)[0]["blocked"]

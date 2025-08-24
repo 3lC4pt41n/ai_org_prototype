@@ -370,7 +370,11 @@ def agent_qa(tid: str, task_id: str) -> None:
             except Exception as e:
                 logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
     try:
-        debit(tid, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+        debit(
+            tid,
+            tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+            task_obj.purpose_id if task_obj else None,
+        )
     except Exception as e:
         logging.error(f"[QAAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tid, "qa", "done").inc()

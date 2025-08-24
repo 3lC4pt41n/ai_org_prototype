@@ -29,11 +29,15 @@ export default function AdminDashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [allowResearch, setAllowResearch] = useState<boolean>(false);
   const [paused, setPaused] = useState(false);
-  const [currentPurpose, setCurrentPurpose] = useState("");
+  const [purposes, setPurposes] = useState<any[]>([]);
+  const [currentPurposeId, setCurrentPurposeId] = useState("");
   const [counts, setCounts] = useState({ planned: 0, running: 0, done: 0 });
   const navigate = useNavigate();
   const [lastCount, setLastCount] = useState(0);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
+
+  const currentPurpose =
+    purposes.find((p) => p.id === currentPurposeId)?.name || "";
 
   const statusInfo: Record<string, { label: string; color: string; tooltip: string }> = {
     todo: { label: "Todo", color: "bg-yellow-500 text-black", tooltip: "Task is not started yet." },
@@ -45,22 +49,40 @@ export default function AdminDashboard() {
     budget_exceeded: { label: "Blocked (Budget)", color: "bg-gray-500 text-white", tooltip: "Task skipped due to insufficient budget." }
   };
 
+  // Fetch list of purposes on mount
   useEffect(() => {
-    const controller = new AbortController();
+    getJson("/api/purpose")
+      .then((data) => {
+        setPurposes(data);
+        if (data.length > 0) {
+          setCurrentPurposeId(data[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
+  // Polling data for selected purpose
+  useEffect(() => {
+    if (!currentPurposeId) return;
+    const controller = new AbortController();
     const tick = () =>
-      Promise.all([getJson("/"), getJson("/backlog"), getJson("/artifacts"), getJson("/api/pause"), getJson("/api/graph")])
-        .then(([statusData, backlogData, artifactsData, pauseData, graphData]) => {
+      Promise.all([
+        getJson(`/api/purpose/${currentPurposeId}/status`),
+        getJson(`/backlog?purpose_id=${currentPurposeId}`),
+        getJson(`/api/artifacts?purpose_id=${currentPurposeId}`),
+        getJson(`/api/purpose/${currentPurposeId}/graph`)
+      ])
+        .then(([statusData, backlogData, artifactsData, graphData]) => {
           setBudget(statusData.budget_left);
           setBudgetTotal(statusData.budget_total);
           setBacklog(backlogData);
           setArtifacts(artifactsData);
           setLastCount(artifactsData.length);
-          setPaused(!!pauseData.paused);
+          setPaused(!!statusData.paused);
           const tasks = graphData.tasks || [];
-          const plannedCount = tasks.filter((t:any) => t.status === "todo").length;
-          const runningCount = tasks.filter((t:any) => t.status === "doing").length;
-          const doneCount = tasks.filter((t:any) => t.status === "done").length;
+          const plannedCount = tasks.filter((t: any) => t.status === "todo").length;
+          const runningCount = tasks.filter((t: any) => t.status === "doing").length;
+          const doneCount = tasks.filter((t: any) => t.status === "done").length;
           setCounts({ planned: plannedCount, running: runningCount, done: doneCount });
         })
         .catch(() => {
@@ -73,7 +95,7 @@ export default function AdminDashboard() {
       clearInterval(id);
       controller.abort();
     };
-  }, []);
+  }, [currentPurposeId]);
 
   // Load research setting
   useEffect(() => {
@@ -86,14 +108,15 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
+    if (!currentPurposeId) return;
     const interval = setInterval(() => {
-      getJson("/artifacts")
+      getJson(`/api/artifacts?purpose_id=${currentPurposeId}`)
         .then((arts) => {
           if (arts.length > lastCount) {
             const latest = arts[0];
-            if (latest.name.includes("standup")) {
+            if (latest.repo_path.includes("standup")) {
               setAlertMsg("✅ A new Standup Report is available.");
-            } else if (latest.name.includes("planning-adjustment")) {
+            } else if (latest.repo_path.includes("planning-adjustment")) {
               setAlertMsg(
                 "⚠️ A plan adjustment was made to address project risks."
               );
@@ -106,7 +129,7 @@ export default function AdminDashboard() {
         .catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
-  }, [lastCount]);
+  }, [lastCount, currentPurposeId]);
 
   useEffect(() => {
     if (budgetTotal != null && budget != null) {
@@ -158,7 +181,10 @@ export default function AdminDashboard() {
   }
 
   function togglePause() {
-    const endpoint = paused ? "/api/resume" : "/api/pause";
+    if (!currentPurposeId) return;
+    const endpoint = paused
+      ? `/api/purpose/${currentPurposeId}/resume`
+      : `/api/purpose/${currentPurposeId}/pause`;
     fetch(`${API}${endpoint}`, {
       method: "POST",
       headers: {
@@ -174,7 +200,7 @@ export default function AdminDashboard() {
       .then(() => {
         const newState = !paused;
         setPaused(newState);
-        toast.success(newState ? "Pipeline paused" : "Pipeline resumed");
+        toast.success(newState ? "Purpose paused" : "Purpose resumed");
       })
       .catch(() => toast.error("Failed to update pipeline state"));
   }
@@ -199,13 +225,14 @@ export default function AdminDashboard() {
       })
       .then((data) => {
         setBlueprint(data.blueprint || "");
-        setCurrentPurpose(purposeInput);
+        setPurposes([...purposes, { id: data.purpose_id, name: purposeInput }]);
+        setCurrentPurposeId(data.purpose_id);
         setPurposeInput("");
         // Refresh backlog and artifacts after seeding new tasks
-        getJson("/backlog")
+        getJson(`/backlog?purpose_id=${data.purpose_id}`)
           .then((b) => setBacklog(b))
           .catch(() => {});
-        getJson("/artifacts")
+        getJson(`/api/artifacts?purpose_id=${data.purpose_id}`)
           .then((a) => {
             setArtifacts(a);
             setLastCount(a.length);
