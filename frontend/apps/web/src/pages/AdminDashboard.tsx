@@ -5,7 +5,7 @@ import { Gauge, History, Target, PlayCircle, PauseCircle, FileText, Package } fr
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "/api";
 
 async function getJson(path) {
   const token = localStorage.getItem("token");
@@ -52,7 +52,7 @@ export default function AdminDashboard() {
 
   // Fetch list of purposes on mount
   useEffect(() => {
-    getJson("/api/purpose")
+    getJson("/purpose")
       .then((data) => {
         setPurposes(data);
         if (data.length > 0) {
@@ -68,10 +68,10 @@ export default function AdminDashboard() {
     const controller = new AbortController();
     const tick = () =>
       Promise.all([
-        getJson(`/api/purpose/${currentPurposeId}/status`),
+        getJson(`/purpose/${currentPurposeId}/status`),
         getJson(`/backlog?purpose_id=${currentPurposeId}`),
-        getJson(`/api/artifacts?purpose_id=${currentPurposeId}`),
-        getJson(`/api/purpose/${currentPurposeId}/graph`)
+        getJson(`/artifacts?purpose_id=${currentPurposeId}`),
+        getJson(`/purpose/${currentPurposeId}/graph`)
       ])
         .then(([statusData, backlogData, artifactsData, graphData]) => {
           setBudget(statusData.budget_left);
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
 
   // Load research setting
   useEffect(() => {
-    fetch(`${API}/api/settings/research`, {
+    fetch(`${API}/settings/research`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
     })
       .then((r) => r.json())
@@ -111,7 +111,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!currentPurposeId) return;
     const interval = setInterval(() => {
-      getJson(`/api/artifacts?purpose_id=${currentPurposeId}`)
+      getJson(`/artifacts?purpose_id=${currentPurposeId}`)
         .then((arts) => {
           if (arts.length > lastCount) {
             const latest = arts[0];
@@ -168,7 +168,7 @@ export default function AdminDashboard() {
     if (updatingResearch) return;
     setUpdatingResearch(true);
     const next = !allowResearch;
-    fetch(`${API}/api/settings/research`, {
+    fetch(`${API}/settings/research`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -191,8 +191,8 @@ export default function AdminDashboard() {
   function togglePause() {
     if (!currentPurposeId) return;
     const endpoint = paused
-      ? `/api/purpose/${currentPurposeId}/resume`
-      : `/api/purpose/${currentPurposeId}/pause`;
+      ? `/purpose/${currentPurposeId}/resume`
+      : `/purpose/${currentPurposeId}/pause`;
     fetch(`${API}${endpoint}`, {
       method: "POST",
       headers: {
@@ -215,7 +215,7 @@ export default function AdminDashboard() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetch(`${API}/api/purpose`, {
+    fetch(`${API}/purpose`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -240,7 +240,7 @@ export default function AdminDashboard() {
         getJson(`/backlog?purpose_id=${data.purpose_id}`)
           .then((b) => setBacklog(b))
           .catch(() => {});
-        getJson(`/api/artifacts?purpose_id=${data.purpose_id}`)
+        getJson(`/artifacts?purpose_id=${data.purpose_id}`)
           .then((a) => {
             setArtifacts(a);
             setLastCount(a.length);
