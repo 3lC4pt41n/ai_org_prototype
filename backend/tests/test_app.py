@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 def test_root_get(monkeypatch):
     monkeypatch.setitem(os.environ, "DISABLE_METRICS", "1")
+    monkeypatch.setitem(os.environ, "REDIS_URL", "redis://localhost:6379/0")
     main = importlib.import_module("ai_org_backend.main")
     monkeypatch.setattr(budget, "get_left", lambda tid: 0)
     monkeypatch.setattr(budget, "get_total", lambda tid: 0)
