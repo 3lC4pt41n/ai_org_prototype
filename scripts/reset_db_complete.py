@@ -34,7 +34,8 @@ def reset_database():
     engine = create_engine(db_url, echo=True)
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
-    # Erweitere version_num-Spalte der Alembic-Versionstabelle (für längere Revisions-IDs)
+    # Stelle sicher, dass die Alembic-Versionstabelle vorhanden ist
+    # und eine längere version_num erlaubt
     from sqlalchemy import text
 
     with engine.connect() as conn:
@@ -51,7 +52,16 @@ def reset_database():
             conn.commit()
             print("✓ Spalte 'version_num' in alembic_version auf VARCHAR(64) erweitert")
         else:
-            print("ℹ️  alembic_version-Tabelle nicht gefunden, Schritt übersprungen")
+            conn.execute(
+                text(
+                    "CREATE TABLE alembic_version ("
+                    "version_num VARCHAR(64) NOT NULL, "
+                    "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+                    ")"
+                )
+            )
+            conn.commit()
+            print("✓ alembic_version-Tabelle erstellt (version_num VARCHAR(64))")
     print("✓ Dropped and recreated all tables with current schema")
 
 
