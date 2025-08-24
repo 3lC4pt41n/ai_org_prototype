@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine
 
@@ -63,6 +65,9 @@ def reset_database():
             conn.commit()
             print("✓ alembic_version-Tabelle erstellt (version_num VARCHAR(64))")
     print("✓ Dropped and recreated all tables with current schema")
+    alembic_cfg = Config(str(backend_dir / "ai_org_backend" / "alembic.ini"))
+    command.stamp(alembic_cfg, "head")
+    print("✓ Alembic stamped to head")
 
 
 if __name__ == "__main__":
