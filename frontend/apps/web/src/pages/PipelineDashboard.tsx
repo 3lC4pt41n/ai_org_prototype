@@ -4,7 +4,7 @@ import { FileText, Package, PlayCircle, Target } from "lucide-react";
 import ReactFlow, { MiniMap, Controls, Background } from "reactflow";
 import "reactflow/dist/style.css";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "/api";
 async function getJson(path: string) {
   const token = localStorage.getItem("token");
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -51,7 +51,7 @@ export default function PipelineDashboard() {
   }, []);
 
   const refreshData = () => {
-    return Promise.all([getJson("/api/graph"), getJson("/artifacts")]).then(
+    return Promise.all([getJson("/graph"), getJson("/artifacts")]).then(
       ([graphData, artifactsData]) => {
         const nodes = graphData.tasks.map((task: any) => ({
           id: task.id,
@@ -100,7 +100,7 @@ export default function PipelineDashboard() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetch(`${API}/api/purpose`, {
+    fetch(`${API}/purpose`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
