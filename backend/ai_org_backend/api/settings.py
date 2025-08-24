@@ -12,22 +12,24 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("/research")
-def get_research(current=Depends(get_current_tenant)):
-    with Session(engine) as db:
-        t = db.exec(select(Tenant).where(Tenant.id == current.id)).first()
+def get_research_setting(current: Tenant = Depends(get_current_tenant)):
+    """Return whether the current tenant allows web research."""
+    with Session(engine) as session:
+        t = session.exec(select(Tenant).where(Tenant.id == current.id)).first()
         if not t:
-            raise HTTPException(404, "Tenant not found")
-        return {"allow_web_research": t.allow_web_research}
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        return {"allow_web_research": bool(getattr(t, "allow_web_research", True))}
 
 
 @router.post("/research")
-def set_research(payload: dict, current=Depends(get_current_tenant)):
-    allow = bool(payload.get("allow", False))
-    with Session(engine) as db:
-        t = db.exec(select(Tenant).where(Tenant.id == current.id)).first()
+def set_research_setting(payload: dict, current: Tenant = Depends(get_current_tenant)):
+    """Update the tenant's web research setting."""
+    val = bool(payload.get("allow_web_research", True))
+    with Session(engine) as session:
+        t = session.exec(select(Tenant).where(Tenant.id == current.id)).first()
         if not t:
-            raise HTTPException(404, "Tenant not found")
-        t.allow_web_research = allow
-        db.add(t)
-        db.commit()
-    return {"ok": True, "allow_web_research": allow}
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        t.allow_web_research = val
+        session.add(t)
+        session.commit()
+        return {"allow_web_research": val}
