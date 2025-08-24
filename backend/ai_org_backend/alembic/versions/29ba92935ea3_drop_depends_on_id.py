@@ -39,6 +39,8 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+    if not inspector.has_table("task"):
+        return
     task_cols = [c["name"] for c in inspector.get_columns("task")]
     if "depends_on_id" in task_cols:
         op.execute(
@@ -57,12 +59,13 @@ def downgrade() -> None:
     """Downgrade schema."""
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    task_cols = [c["name"] for c in inspector.get_columns("task")]
-    if "depends_on_id" not in task_cols:
-        with op.batch_alter_table("task") as batch:
-            batch.add_column(sa.Column("depends_on_id", sa.String(length=36), nullable=True))
+    if inspector.has_table("task"):
+        task_cols = [c["name"] for c in inspector.get_columns("task")]
+        if "depends_on_id" not in task_cols:
+            with op.batch_alter_table("task") as batch:
+                batch.add_column(sa.Column("depends_on_id", sa.String(length=36), nullable=True))
 
-    if inspector.has_table("task_dependency"):
+    if inspector.has_table("task_dependency") and inspector.has_table("task"):
         op.execute(
             sa.text(
                 """

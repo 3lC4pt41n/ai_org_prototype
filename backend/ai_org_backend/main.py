@@ -6,9 +6,15 @@ import os
 from contextlib import asynccontextmanager
 from typing import Dict
 
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from neo4j import GraphDatabase
+from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from sqlmodel import Session, select
+
 import ai_org_backend.hooks.review_hook  # noqa: F401
 import ai_org_backend.hooks.tests_hook  # noqa: F401
-import redis
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.dependencies import get_current_tenant
@@ -21,29 +27,22 @@ from ai_org_backend.db import engine
 
 # storage helpers are used by individual agent modules
 from ai_org_backend.models import Task, Tenant
+
+# ──────────────── ENV / constants ─────────────────────────────
+from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.tasks.celery_app import celery
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from neo4j import GraphDatabase
-from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
-from sqlmodel import Session, select
 
 # Expose Repo here so existing imports keep working:
 from .repo import Repo  # noqa: F401
 
-# ──────────────── ENV / constants ─────────────────────────────
 load_dotenv()
-REDIS_URL = os.getenv("REDIS_URL")
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASS = os.getenv("NEO4J_PASS")
-DEFAULT_BUDGET = float(os.getenv("DEFAULT_BUDGET", 20))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 # Price per 1k tokens (USD)
 TOKEN_PRICE_PER_1000 = float(os.getenv("TOKEN_PRICE_PER_1000", "0.0005"))
 
-pool = redis.from_url(REDIS_URL, decode_responses=True)
 driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
 
 # ──────────────── Metrics Prometheus ──────────────────────────
