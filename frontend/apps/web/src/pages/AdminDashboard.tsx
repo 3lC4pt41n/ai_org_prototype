@@ -28,6 +28,7 @@ export default function AdminDashboard() {
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [allowResearch, setAllowResearch] = useState<boolean>(false);
+  const [updatingResearch, setUpdatingResearch] = useState(false);
   const [paused, setPaused] = useState(false);
   const [purposes, setPurposes] = useState<any[]>([]);
   const [currentPurposeId, setCurrentPurposeId] = useState("");
@@ -164,20 +165,27 @@ export default function AdminDashboard() {
   }
 
   function toggleResearch() {
+    if (updatingResearch) return;
+    setUpdatingResearch(true);
+    const next = !allowResearch;
     fetch(`${API}/api/settings/research`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${localStorage.getItem("token")}`
       },
-      body: JSON.stringify({ allow: !allowResearch })
+      body: JSON.stringify({ allow_web_research: next })
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Update failed");
+        return r.json();
+      })
       .then((d) => {
-        setAllowResearch(!!d.allow_web_research);
+        setAllowResearch(Boolean(d.allow_web_research));
         toast.success(d.allow_web_research ? "Web Research enabled" : "Web Research disabled");
       })
-      .catch(() => toast.error("Failed to update research setting"));
+      .catch(() => toast.error("Failed to update research setting"))
+      .finally(() => setUpdatingResearch(false));
   }
 
   function togglePause() {
@@ -301,9 +309,13 @@ export default function AdminDashboard() {
             </p>
             <button
               onClick={toggleResearch}
-              className={`px-3 py-1 rounded ${allowResearch ? "bg-emerald-600" : "bg-slate-600"} hover:opacity-90`}
+              disabled={updatingResearch}
+              className={`px-3 py-2 rounded flex items-center gap-2 font-medium ${
+                allowResearch ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-600"
+              }`}
             >
-              {allowResearch ? "Enabled" : "Disabled"} — toggle
+              {allowResearch ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
+              {allowResearch ? "Disable" : "Enable"}
             </button>
           </CardContent>
         </Card>
