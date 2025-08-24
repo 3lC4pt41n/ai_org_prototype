@@ -60,13 +60,25 @@ else:  # create unregistered dummies
 
 
 # ──────────────── Budget utils ───────────────────────────────
-def budget_left(tenant: str = "demo") -> float:
-    return float(pool.hget("budget", tenant) or DEFAULT_BUDGET)
+def budget_left(tenant: str = "demo", purpose: str | None = None) -> float:
+    if purpose:
+        # Return budget left for a specific purpose
+        return float(pool.get(f"budget:{tenant}:{purpose}") or DEFAULT_BUDGET)
+    # Sum budgets of all purposes for this tenant
+    total = 0.0
+    for key in pool.keys(f"budget:{tenant}:*"):
+        total += float(pool.get(key) or 0)
+    return total
 
 
-def debit(tenant: str, amount: float):
-    left = max(budget_left(tenant) - amount, 0)
-    pool.hset("budget", tenant, left)
+def debit(tenant: str, amount: float, purpose: str | None = None):
+    if purpose:
+        current = float(pool.get(f"budget:{tenant}:{purpose}") or DEFAULT_BUDGET)
+        left = max(current - amount, 0)
+        pool.set(f"budget:{tenant}:{purpose}", left)
+    else:
+        # No purpose specified: do not alter any budget, just get total
+        left = budget_left(tenant, None)
     BUDGET_GA.labels(tenant).set(left)
 
 
@@ -136,11 +148,16 @@ async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tena
 
 
 @app.get("/backlog")
-async def backlog(current_tenant: Tenant = Depends(get_current_tenant)):
+async def backlog(
+    purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
+):
     with Session(engine) as s:
-        rows = s.exec(
-            select(Task).where(Task.tenant_id == current_tenant.id, Task.status == "todo")
-        ).all()
+        query = select(Task).where(
+            Task.tenant_id == current_tenant.id, Task.status == "todo"
+        )
+        if purpose_id:
+            query = query.where(Task.purpose_id == purpose_id)
+        rows = s.exec(query).all()
     return [r.model_dump() for r in rows]
 
 

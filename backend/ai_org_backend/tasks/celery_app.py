@@ -42,7 +42,11 @@ def enforce_budget(sender=None, body=None, headers=None, **extra):
         from ai_org_backend.db import SessionLocal
         from ai_org_backend.main import TOKEN_PRICE_PER_1000, Repo
         from ai_org_backend.models import Task
-        from ai_org_backend.orchestrator.inspector import PROM_BUDGET_BLOCKED, alert, budget_left
+        from ai_org_backend.orchestrator.inspector import (
+            PROM_BUDGET_BLOCKED,
+            alert,
+            budget_left,
+        )
 
         with SessionLocal() as session:
             task_obj = session.get(Task, t_id)
@@ -50,7 +54,7 @@ def enforce_budget(sender=None, body=None, headers=None, **extra):
             return
 
         cost_est = (task_obj.tokens_plan or 0) * (TOKEN_PRICE_PER_1000 / 1000.0)
-        if budget_left(tenant_id) < cost_est:
+        if budget_left(tenant_id, task_obj.purpose_id) < cost_est:
             Repo(tenant_id).update(t_id, status="budget_exceeded", notes="budget skip")
             alert(f"Task {t_id} skipped due to insufficient budget", "budget")
             PROM_BUDGET_BLOCKED.labels(tenant_id).inc()

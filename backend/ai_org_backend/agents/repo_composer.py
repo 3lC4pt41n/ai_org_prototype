@@ -28,6 +28,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         architecture_plan = ""
         with SessionLocal() as db:
             task_obj = db.get(Task, task_id)
+            purpose_id = task_obj.purpose_id if task_obj else None
             if task_obj:
                 # Try to find a related architecture blueprint artefact (if any)
                 artefact = db.query(Artifact).join(Task).filter(
@@ -93,7 +94,11 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             return
         Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created", tokens_actual=tokens_used)
     try:
-        debit(tenant_id, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+        debit(
+            tenant_id,
+            tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+            purpose_id,
+        )
     except Exception as e:
         logging.error(f"[repo_composer] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tenant_id, "repo", "done").inc()

@@ -112,7 +112,11 @@ def refactor_task(tenant_id: str, task_id: str) -> None:
     )
     tokens_used = resp.usage.total_tokens if resp and hasattr(resp, "usage") else 0
     try:
-        debit(tenant_id, tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0))
+        debit(
+            tenant_id,
+            tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+            task.purpose_id if task else None,
+        )
     except Exception as e:
         logging.error(f"[RefactorAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tenant_id, "qa-refactor", "done").inc()
