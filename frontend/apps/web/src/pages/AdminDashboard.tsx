@@ -213,8 +213,7 @@ export default function AdminDashboard() {
       .catch(() => toast.error("Failed to update pipeline state"));
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const startPipeline = () => {
     fetch(`${API}/purpose`, {
       method: "POST",
       headers: {
@@ -253,7 +252,9 @@ export default function AdminDashboard() {
   };
 
   return (
-    <>
+    <div className="bg-gray-900 text-white min-h-screen p-4">
+      <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
+      <p className="mb-4">Übersicht und Steuerung des Projekts.</p>
       {alertMsg && (
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 px-4 py-3 mb-4">
           <p className="font-medium">
@@ -372,7 +373,7 @@ export default function AdminDashboard() {
             <h2 className="flex items-center gap-2 text-lg mb-2">
               <Target /> Define Purpose
             </h2>
-            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+            <form onSubmit={(e) => e.preventDefault()} className="flex items-center gap-2">
               <input
                 type="text"
                 value={purposeInput}
@@ -381,7 +382,8 @@ export default function AdminDashboard() {
                 className="flex-1 p-2 rounded bg-slate-800 text-white border border-slate-700"
               />
               <button
-                type="submit"
+                type="button"
+                onClick={startPipeline}
                 className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1"
               >
                 <PlayCircle className="w-4 h-4" /> Start
@@ -430,6 +432,9 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+      {backlog.length === 0 && (
+        <div className="text-red-400 mt-4">Keine Aufgaben verfügbar.</div>
+      )}
 
       {showOnboarding && (
         <div
@@ -460,6 +465,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
