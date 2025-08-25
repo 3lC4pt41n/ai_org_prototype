@@ -98,8 +98,7 @@ export default function PipelineDashboard() {
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const startPipeline = () => {
     fetch(`${API}/purpose`, {
       method: "POST",
       headers: {
@@ -135,14 +134,16 @@ export default function PipelineDashboard() {
   const closeModal = () => setSelectedTask(null);
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="bg-gray-900 text-white min-h-screen p-4 space-y-4">
+      <h1 className="text-3xl font-bold mb-4">Pipeline</h1>
+      <p className="mb-4">Aktuelle Aufgaben der Pipeline.</p>
       <Card className="bg-slate-900 text-white">
         <CardContent className="p-4">
           <h2 className="flex items-center gap-2 text-lg mb-2">
             <Target /> Define Purpose
           </h2>
           {error && <p className="text-red-400 mb-2">{error}</p>}
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <form onSubmit={(e) => e.preventDefault()} className="flex items-center gap-2">
             <input
               type="text"
               value={purposeInput}
@@ -150,7 +151,11 @@ export default function PipelineDashboard() {
               placeholder="Enter project purpose..."
               className="flex-1 p-2 rounded bg-slate-800 text-white border border-slate-700"
             />
-            <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={startPipeline}
+              className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1"
+            >
               <PlayCircle className="w-4 h-4" /> Start
             </button>
           </form>
@@ -171,7 +176,10 @@ export default function PipelineDashboard() {
           <p className="text-center text-white pt-8">No tasks to display</p>
         ) : (
           <ReactFlow elements={elements} onNodeClick={handleNodeClick} fitView>
-            <MiniMap nodeStrokeColor={(n) => (n.style?.border as string) ?? "#64748b"} nodeColor={(n) => (n.style?.background as string) ?? "#334155"} />
+            <MiniMap
+              nodeStrokeColor={(n) => (n.style?.border as string) ?? "#64748b"}
+              nodeColor={(n) => (n.style?.background as string) ?? "#334155"}
+            />
             <Controls />
             <Background color="#334155" gap={18} />
           </ReactFlow>
@@ -198,6 +206,9 @@ export default function PipelineDashboard() {
           </ul>
         </CardContent>
       </Card>
+      {tasks.length === 0 && (
+        <div className="text-red-400 mt-4">Keine Aufgaben in der Pipeline.</div>
+      )}
       {selectedTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closeModal}>
           <div className="bg-slate-800 text-white p-6 rounded max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
