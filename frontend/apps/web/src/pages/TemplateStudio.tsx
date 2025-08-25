@@ -31,30 +31,34 @@ export default function TemplateStudio() {
     })
 
   return (
-    <div className='flex h-full'>
-      <aside className='w-56 border-r'>
-        <h3 className='p-2 font-bold'>Templates</h3>
-        {files.map(f => (
-          <div key={f}
-               className={'cursor-pointer p-2 ' + (f===name?'bg-gray-200':'')}
-               onClick={() => loadFile(f)}>{f}</div>
-        ))}
-      </aside>
-      <main className='flex-1'>
-        {name
-          ? <>
-              <div className='flex items-center justify-between p-2 bg-gray-50 border-b'>
-                <span className='font-mono'>{name}</span>
-                <button onClick={save}
-                        className='bg-green-600 text-white px-3 py-1 rounded'>Save</button>
-              </div>
-              <Editor height='calc(100vh - 3rem)'
-                      defaultLanguage='jinja'
-                      value={content}
-                      onChange={(v) => setContent(v ?? '')} />
-            </>
-          : <p className='m-4 text-gray-500'>Select a template…</p>}
-      </main>
+    <div className="bg-gray-900 text-white min-h-screen p-4">
+      <h1 className="text-3xl font-bold mb-4">Studio</h1>
+      <p className="mb-4">LLM-Interaktionsraum / Editor.</p>
+      <div className='flex h-full'>
+        <aside className='w-56 border-r border-gray-700 bg-gray-800'>
+          <h3 className='p-2 font-bold'>Templates</h3>
+          {files.map(f => (
+            <div key={f}
+                 className={'cursor-pointer p-2 ' + (f===name?'bg-gray-700':'')}
+                 onClick={() => loadFile(f)}>{f}</div>
+          ))}
+        </aside>
+        <main className='flex-1'>
+          {name
+            ? <>
+                <div className='flex items-center justify-between p-2 bg-gray-700 border-b border-gray-600'>
+                  <span className='font-mono'>{name}</span>
+                  <button onClick={save}
+                          className='bg-green-600 text-white px-3 py-1 rounded'>Save</button>
+                </div>
+                <Editor height='calc(100vh - 3rem)'
+                        defaultLanguage='jinja'
+                        value={content}
+                        onChange={(v) => setContent(v ?? '')} />
+              </>
+            : <p className='m-4 text-gray-400'>Select a template…</p>}
+        </main>
+      </div>
     </div>
   )
 }
