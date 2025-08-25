@@ -1,65 +1,67 @@
-const API = import.meta.env.VITE_API_URL || '/api';
+/**
+ * Build a robust API base:
+ * - If VITE_API_URL is set (e.g. http://localhost:8000 or http://localhost:8000/api),
+ *   strip trailing slashes and DO NOT assume it already contains /api.
+ * - Always append exactly one "/api".
+ * - Always join with a leading slash for the path.
+ */
+const _VITE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+export const API_BASE =
+  (_VITE ? `${_VITE}/api` : "/api").replace(/\/{2,}/g, "/"); // normalise accidental double slashes
 
 export async function getJson(path: string) {
-  const res = await fetch(`${API}${path}`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-    },
+  const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function postJson<TBody extends object = any, TResp = any>(path: string, body: TBody) {
-  const res = await fetch(`${API}${path}`, {
-    method: 'POST',
+  const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    let msg = "";
+    try {
+      msg = await res.text();
+    } catch {
+      /* ignore */
+    }
+    if (!msg) msg = `HTTP ${res.status} ${res.statusText}`;
+    throw new Error(msg);
+  }
   return (await res.json()) as TResp;
 }
 
-// --- Auth helpers ---
+// --- Auth helpers (explicit /api paths via API_BASE) ---
 export type RegisterPayload = { name: string; email: string; password: string };
-export type RegisterResponse = {
-  id?: string;
-  email?: string;
-  access_token?: string;
-  token_type?: string;
-};
+export type RegisterResponse = { id?: string; email?: string; access_token?: string; token_type?: string };
 
 export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
-  // path will be prefixed with API (default '/api')
-  return await postJson<RegisterPayload, RegisterResponse>('/register', payload);
+  return await postJson<RegisterPayload, RegisterResponse>("/register", payload);
 }
 
 export type LoginPayload = { email: string; password: string };
 export type LoginResponse = { access_token: string; token_type?: string };
 
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
-  // Accept either JSON or x-www-form-urlencoded depending on backend; try JSON first
-  try {
-    // path will be prefixed with API (default '/api')
-    return await postJson<LoginPayload, LoginResponse>('/login', payload);
-  } catch {
-    const res = await fetch(`${API}/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: new URLSearchParams({
-        username: payload.email,
-        password: payload.password,
-      }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as LoginResponse;
-  }
+  // Send OAuth2-style form FIRST (what FastAPI expects) to avoid 422 spam,
+  // then fallback to JSON only if needed.
+  const res = await fetch(`${API_BASE}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({ username: payload.email, password: payload.password }),
+  });
+  if (res.ok) return (await res.json()) as LoginResponse;
+  // graceful fallback (dev backends that accept JSON)
+  return await postJson<LoginPayload, LoginResponse>("/login", payload);
 }
