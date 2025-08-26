@@ -1,0 +1,65 @@
+/* ======================================================================
+   Corporate Design Tokens (Light Theme)
+   ====================================================================== */
+:root{
+  /* Brand */
+  --brand-50:#E6F6FD;
+  --brand-100:#CBEAF8;
+  --brand-200:#9ED7F3;
+  --brand-300:#6FC2ED;
+  --brand-400:#39AEE7;
+  --brand-500:#0ABAF0; /* Primärakzent */
+  --brand-600:#089ECF;
+  --brand-700:#087FA7;
+  --brand-800:#085F7C;
+  --brand-900:#07465C;
+
+  /* Neutrals (UI) */
+  --bg:#FFFFFF;            /* Grundfläche hell */
+  --bg-subtle:#F5F7FA;     /* Sektionen/alternierende Flächen */
+  --text:#2F3035;          /* Primärtext dunkel */
+  --text-muted:#4B5563;    /* Sekundärtext */
+  --border:#E5E7EB;        /* Linien/Rahmen */
+  --disabled:#9CA3AF;      /* Disabled/Text */
+  --danger:#DC2626;        /* Fehlermeldungen */
+  --warning:#F59E0B;
+  --success:#10B981;
+  --focus:#0ABAF0;         /* Fokus/Outline */
+}
+
+/* Base */
+html, body, #root { height:100%; }
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Fira Sans", "Inter", sans-serif;
+  line-height:1.5;
+}
+
+/* Utility */
+.container-app{ max-width:1280px; margin:0 auto; padding:24px; }
+.card{ background:var(--bg); border:1px solid var(--border); border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+.card-header{ padding:16px 20px; border-bottom:1px solid var(--border); font-weight:600; }
+.card-body{ padding:20px; }
+.muted{ color:var(--text-muted); }
+.danger{ color:var(--danger); }
+
+/* Inputs/Buttons */
+input,select,textarea{
+  background:#fff; color:var(--text);
+  border:1px solid var(--border); border-radius:8px;
+  padding:10px 12px; width:100%;
+  outline: none;
+}
+input:focus,select:focus,textarea:focus{ border-color:var(--focus); box-shadow:0 0 0 3px rgba(10,186,240,.2) }
+button.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  border-radius:8px; padding:10px 14px; font-weight:600; border:1px solid transparent; cursor:pointer;
+}
+button.btn-primary{ background:var(--brand-500); color:#fff; }
+button.btn-primary:hover{ background:var(--brand-600); }
+button.btn-outline{ background:transparent; border-color:var(--border); color:var(--text); }
+button.btn-outline:hover{ border-color:var(--text-muted); }
+button:disabled{ opacity:.6; cursor:not-allowed; }
+
