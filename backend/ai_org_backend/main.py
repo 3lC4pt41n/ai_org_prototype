@@ -128,6 +128,16 @@ app.include_router(settings_router)
 app.include_router(reviews_router)
 app.include_router(root_router)
 
+# ─────────────── Scheduler automatisch starten ─────────────────────────
+import asyncio
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    from ai_org_backend.orchestrator.scheduler import orchestrator
+
+    asyncio.create_task(orchestrator())
+
 if os.getenv("DISABLE_METRICS") != "1":
     metrics_app = make_asgi_app()
     app.mount("/metrics", metrics_app)
