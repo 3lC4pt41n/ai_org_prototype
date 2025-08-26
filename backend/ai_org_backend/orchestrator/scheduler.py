@@ -22,6 +22,7 @@ from ai_org_backend.orchestrator.graph_orchestrator import (
     LEAF_Q,
     TENANT,
     cypher,
+    seed_if_empty,
 )
 from ai_org_backend.orchestrator.inspector import (
     PROM_BUDGET_BLOCKED,
@@ -75,6 +76,9 @@ async def orchestrator() -> None:
     near_budget_alert_sent = False
     alerted_fail_modules: set[str] = set()
     alerted_retry_modules: set[str] = set()
+    # ⏳ Initiales Seeden der Backlogs (PRD und Architektur-Blueprint generieren)
+    await asyncio.to_thread(seed_if_empty)
+
     while True:
         # No global budget check here; budgets are managed per-purpose
         # 1️⃣ retry failed tasks
@@ -222,15 +226,12 @@ if __name__ == "__main__":
     from ai_org_backend.services.llm_client import ensure_client
 
     if not key_present:
-        print(
-            "FATAL: No OPENAI_API_KEY in container environment (or *_KEY/_APIKEY, *_KEY_FILE/B64)."
-        )
-        sys.exit(1)
-    try:
-        ensure_client()
-    except Exception as e:
-        print(f"FATAL: OpenAI client init failed: {e}")
-        sys.exit(1)
+        print("⚠️  [ORCH] No OPENAI_API_KEY found; LLM-Funktionen werden übersprungen.")
+    else:
+        try:
+            ensure_client()
+        except Exception as e:
+            print(f"⚠️  [ORCH] OpenAI-Client-Init fehlgeschlagen (weiter ohne LLM): {e}")
 
     # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
     from ai_org_backend.orchestrator.graph_orchestrator import driver
