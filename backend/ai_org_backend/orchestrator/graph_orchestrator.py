@@ -121,10 +121,10 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             select(Purpose).where(Purpose.name == purpose_name, Purpose.tenant_id == TENANT)
         ).first()
         if not purpose:
-            purpose = Purpose(name=purpose_name, tenant_id=TENANT)
-            session.add(purpose)
-            session.commit()
-            session.refresh(purpose)
+            print(
+                f"[SEED] Kein aktiver Purpose '{purpose_name}' für Tenant '{TENANT}' gefunden – Seeding abgebrochen."
+            )
+            return
 
     # Generate Product Requirements via Product Owner agent
     from ai_org_backend.agents.architect import run_architect
