@@ -3,7 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import AdminDashboard from './pages/AdminDashboard';
 import TaskGraph from './pages/TaskGraph';
 import TemplateStudio from './pages/TemplateStudio';
-import PipelineDashboard from './pages/PipelineDashboard';
+import PipelinePage from './pages/PipelinePage';
 import Nav from './components/Nav';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -21,7 +21,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<AdminDashboard />} />
             <Route path="/graph" element={<TaskGraph />} />
-            <Route path="/pipeline" element={<PipelineDashboard />} />
+            <Route path="/pipeline" element={<PipelinePage />} />
             <Route path="/studio" element={<TemplateStudio />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/reports" element={<ReportsPage />} />
