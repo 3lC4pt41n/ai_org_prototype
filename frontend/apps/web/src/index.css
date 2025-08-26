@@ -63,3 +63,5 @@ button.btn-outline{ background:transparent; border-color:var(--border); color:va
 button.btn-outline:hover{ border-color:var(--text-muted); }
 button:disabled{ opacity:.6; cursor:not-allowed; }
 
+button.btn-secondary{ background:#6b7280; color:#fff; }
+button.btn-secondary:hover{ background:#4b5563; }
