@@ -7,6 +7,7 @@ from sqlmodel import SQLModel, Field, Relationship
 if TYPE_CHECKING:
     from .tenant import Tenant
     from .task import Task
+    from .feedback import Feedback
 
 
 class Purpose(SQLModel, table=True):
@@ -28,3 +29,4 @@ class Purpose(SQLModel, table=True):
     # Use List from typing explicitly
     tenant: "Tenant" = Relationship(back_populates="purposes")
     tasks: List["Task"] = Relationship(back_populates="purpose")
+    feedback: List["Feedback"] = Relationship(back_populates="purpose")

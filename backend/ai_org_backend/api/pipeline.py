@@ -7,7 +7,15 @@ from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.models import (
+    Artifact,
+    Purpose,
+    Task,
+    TaskDependency,
+    Tenant,
+    Feedback,
+    FeedbackType,
+)
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
@@ -277,6 +285,22 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
                     session.add(TaskDependency(from_id=repo_id, to_id=tid))
         session.commit()
 
+    # Save initial blueprint artefact and mark task done
+    blueprint_task_id = id_map.get("blueprint")
+    if blueprint_task_id:
+        save_artefact(
+            blueprint_task_id,
+            blueprint.encode("utf-8"),
+            filename="blueprint/architecture_blueprint.md",
+            media_type="text/markdown",
+        )
+        Repo(tenant_id).update(
+            blueprint_task_id,
+            status="done",
+            owner="Architect",
+            notes="Blueprint completed",
+        )
+
     # Update Neo4j graph
     try:
         ingest(tenant_id)
@@ -284,6 +308,186 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         print(f"[WARN] Neo4j ingest failed: {e}")
 
     return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
+
+
+@router.post("/purpose/{purpose_id}/feedback")
+def post_feedback(
+    purpose_id: str,
+    payload: dict,
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """Submit feedback or approval for PRD or Blueprint."""
+
+    tenant_id = current_tenant.id
+    try:
+        ftype = FeedbackType(payload.get("type"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid feedback type")
+    text = (payload.get("text") or "").strip()
+    approve = bool(payload.get("approved"))
+
+    with Session(engine) as session:
+        purpose = session.get(Purpose, purpose_id)
+        if not purpose or purpose.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        existing_approved = session.exec(
+            select(Feedback)
+            .where(
+                Feedback.purpose_id == purpose_id,
+                Feedback.type == ftype,
+                Feedback.approved == True,
+            )
+        ).first()
+        if existing_approved:
+            raise HTTPException(status_code=400, detail="Feedback already approved")
+
+        if approve:
+            last_entry = session.exec(
+                select(Feedback)
+                .where(Feedback.purpose_id == purpose_id, Feedback.type == ftype)
+                .order_by(Feedback.version.desc())
+            ).first()
+            if last_entry:
+                last_entry.approved = True
+                session.add(last_entry)
+                session.commit()
+            else:
+                fb = Feedback(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    type=ftype,
+                    version=1,
+                    text="",
+                    approved=True,
+                )
+                session.add(fb)
+                session.commit()
+            return {"status": "approved"}
+
+        if not text:
+            raise HTTPException(status_code=400, detail="Feedback text required")
+
+        last_version = session.exec(
+            select(Feedback.version)
+            .where(Feedback.purpose_id == purpose_id, Feedback.type == ftype)
+            .order_by(Feedback.version.desc())
+        ).first()
+        version = (last_version or 1) + 1
+        fb = Feedback(
+            tenant_id=tenant_id,
+            purpose_id=purpose_id,
+            type=ftype,
+            version=version,
+            text=text,
+            approved=False,
+        )
+        session.add(fb)
+        session.commit()
+
+        # Fetch current document content and previous task
+        if ftype == FeedbackType.PRD:
+            art_query = (
+                select(Artifact)
+                .where(
+                    Artifact.task.has(
+                        Task.tenant_id == tenant_id,
+                        Task.purpose_id == purpose_id,
+                        Task.description.like("Product Requirements Document%"),
+                    )
+                )
+                .order_by(Artifact.created_at.desc())
+            )
+        else:
+            art_query = (
+                select(Artifact)
+                .where(
+                    Artifact.task.has(
+                        Task.tenant_id == tenant_id,
+                        Task.purpose_id == purpose_id,
+                        Task.description.like("Architecture Blueprint%"),
+                    )
+                )
+                .order_by(Artifact.created_at.desc())
+            )
+        current_art = session.exec(art_query).first()
+        current_text = ""
+        prev_task = None
+        if current_art:
+            file_path = Path("workspace") / current_art.repo_path
+            if file_path.exists():
+                current_text = file_path.read_text(encoding="utf-8", errors="ignore")
+            prev_task = session.get(Task, current_art.task_id)
+
+        if ftype == FeedbackType.PRD:
+            from ai_org_backend.agents.product_owner import run_requirements_feedback
+
+            new_content = run_requirements_feedback(purpose, text, current_text)
+            desc = f"Product Requirements Document (v{version})"
+            filename = f"requirements/product_requirements_v{version}.md"
+            owner = "ProductOwner"
+        else:
+            from ai_org_backend.agents.architect import run_architect_feedback
+
+            new_content = run_architect_feedback(purpose, text, current_text)
+            desc = f"Architecture Blueprint (v{version})"
+            filename = f"blueprint/architecture_blueprint_v{version}.md"
+            owner = "Architect"
+
+        task = Task(
+            tenant_id=tenant_id,
+            purpose_id=purpose_id,
+            description=desc,
+            business_value=0.0,
+            tokens_plan=0,
+            purpose_relevance=1.0 if ftype == FeedbackType.PRD else 0.0,
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        if prev_task:
+            session.add(TaskDependency(from_id=prev_task.id, to_id=task.id))
+            session.commit()
+
+        save_artefact(
+            task.id,
+            new_content.encode("utf-8"),
+            filename=filename,
+            media_type="text/markdown",
+        )
+        Repo(tenant_id).update(
+            task.id,
+            status="done",
+            owner=owner,
+            notes="Updated from feedback",
+        )
+
+    try:
+        ingest(tenant_id)
+    except Exception as e:
+        print(f"[WARN] Neo4j ingest failed: {e}")
+
+    if ftype == FeedbackType.PRD:
+        return {"prdContent": new_content}
+    return {"blueprintContent": new_content}
+
+
+@router.get("/purpose/{purpose_id}/feedback")
+def get_feedback_history(
+    purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        purpose = session.get(Purpose, purpose_id)
+        if not purpose or purpose.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+        entries = session.exec(
+            select(Feedback)
+            .where(Feedback.purpose_id == purpose_id)
+            .order_by(Feedback.created_at)
+        ).all()
+    return [e.model_dump() for e in entries]
 
 
 @router.get("/artifact/{artifact_id}")
