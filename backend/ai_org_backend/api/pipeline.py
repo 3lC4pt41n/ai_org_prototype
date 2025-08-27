@@ -183,6 +183,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         prd_task_obj.id,
         prd_content.encode("utf-8"),
         filename="requirements/product_requirements.md",
+        media_type="text/markdown",
     )
     Repo(tenant_id).update(
         prd_task_obj.id, status="done", owner="ProductOwner", notes="PRD completed"
