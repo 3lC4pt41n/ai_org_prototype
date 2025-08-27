@@ -42,6 +42,14 @@ export async function postJson<TBody extends object = any, TResp = any>(path: st
   return (await res.json()) as TResp;
 }
 
+// Purpose anlegen (Pipeline)
+export async function createPurpose(purpose: string) {
+  return await postJson<{ purpose: string }, { purpose_id: string; requirements: string; blueprint: string }>(
+    "/purpose",
+    { purpose }
+  );
+}
+
 // --- Auth helpers (explicit /api paths via API_BASE) ---
 export type RegisterPayload = { name: string; email: string; password: string };
 export type RegisterResponse = { id?: string; email?: string; access_token?: string; token_type?: string };
