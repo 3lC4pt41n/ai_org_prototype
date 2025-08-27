@@ -11,11 +11,12 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import Optional
 
+from neo4j import GraphDatabase
+from sqlmodel import Session
+
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Task
-from neo4j import GraphDatabase
-from sqlmodel import Session
 
 from .vector_store import VectorStore
 
@@ -118,6 +119,7 @@ def register_artefact(
     filename: Optional[str] = None,
     *,
     allow_overwrite: bool = False,
+    media_type: Optional[str] = None,
 ) -> Artifact:
     """Save artefact file for a completed task and register it in the database.
     If ``allow_overwrite`` is True and a file with the same name already exists in the
@@ -138,6 +140,12 @@ def register_artefact(
     else:
         src = Path(src).expanduser().resolve()
         base_name = filename or src.name
+    base_name = (base_name or "artifact").strip().lstrip("/\\")
+    if (
+        not Path(base_name).suffix
+        and media_type in ("text/markdown", "text/x-markdown")
+    ):
+        base_name = f"{base_name}.md"
     tgt = target_dir / base_name
     # Ensure directories exist for nested paths like "requirements/"
     tgt.parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +170,7 @@ def register_artefact(
     artefact = Artifact(
         task_id=task_id,
         repo_path=str(tgt.relative_to(WORKSPACE)),
-        media_type=_mime(tgt),
+        media_type=media_type or _mime(tgt),
         size=tgt.stat().st_size,
         sha256=sha,
     )

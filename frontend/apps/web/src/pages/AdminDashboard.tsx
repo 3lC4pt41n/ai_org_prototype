@@ -1,7 +1,7 @@
 // src/pages/AdminDashboard.jsx
 import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@ui/Card";
-import { Gauge, History, Target, PlayCircle, PauseCircle, FileText, Package } from "lucide-react";
+import { Gauge, History, Target, PlayCircle, PauseCircle, Package } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -23,8 +23,6 @@ export default function AdminDashboard() {
   const [warn90, setWarn90] = useState(false);
   const [warn100, setWarn100] = useState(false);
   const [backlog, setBacklog] = useState<any[]>([]);
-  const [purposeInput, setPurposeInput] = useState("");
-  const [blueprint, setBlueprint] = useState("");
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [allowResearch, setAllowResearch] = useState<boolean>(false);
@@ -213,43 +211,6 @@ export default function AdminDashboard() {
       .catch(() => toast.error("Failed to update pipeline state"));
   }
 
-  const startPipeline = () => {
-    fetch(`${API}/purpose`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`
-      },
-      body: JSON.stringify({ purpose: purposeInput })
-    })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail || "Failed to start");
-        }
-        return data;
-      })
-      .then((data) => {
-        setBlueprint(data.blueprint || "");
-        setPurposes([...purposes, { id: data.purpose_id, name: purposeInput }]);
-        setCurrentPurposeId(data.purpose_id);
-        setPurposeInput("");
-        // Refresh backlog and artifacts after seeding new tasks
-        getJson(`/backlog?purpose_id=${data.purpose_id}`)
-          .then((b) => setBacklog(b))
-          .catch(() => {});
-        getJson(`/artifacts?purpose_id=${data.purpose_id}`)
-          .then((a) => {
-            setArtifacts(a);
-            setLastCount(a.length);
-          })
-          .catch(() => {});
-      })
-      .catch((e) => {
-        toast.error(e.message || "Failed to start project.");
-      });
-  };
 
   return (
     <div className="bg-gray-900 text-white min-h-screen p-4">
@@ -371,37 +332,19 @@ export default function AdminDashboard() {
         <Card className="bg-slate-900 text-white col-span-3">
           <CardContent className="p-4">
             <h2 className="flex items-center gap-2 text-lg mb-2">
-              <Target /> Define Purpose
+              <Target /> Purpose
             </h2>
-            <form onSubmit={(e) => e.preventDefault()} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={purposeInput}
-                onChange={(e) => setPurposeInput(e.target.value)}
-                placeholder="Enter project purpose..."
-                className="flex-1 p-2 rounded bg-slate-800 text-white border border-slate-700"
-              />
-              <button
-                type="button"
-                onClick={startPipeline}
-                className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1"
-              >
-                <PlayCircle className="w-4 h-4" /> Start
-              </button>
-            </form>
+            <p className="mb-2 text-slate-300">
+              Die Purpose-Anlage & Projektsteuerung erfolgt vollständig über die <b>Pipeline</b>.
+            </p>
+            <a
+              href="/pipeline"
+              className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 inline-block"
+            >
+              Zur Pipeline
+            </a>
           </CardContent>
         </Card>
-
-        {blueprint && (
-          <Card className="bg-slate-900 text-white col-span-3">
-            <CardContent className="p-4">
-              <h2 className="flex items-center gap-2 text-lg mb-2">
-                <FileText /> Architecture Blueprint
-              </h2>
-              <pre className="text-sm whitespace-pre-wrap">{blueprint}</pre>
-            </CardContent>
-          </Card>
-        )}
 
         <Card className="bg-slate-900 text-white col-span-3 max-h-64 overflow-auto">
           <CardContent className="p-4">
@@ -451,7 +394,7 @@ export default function AdminDashboard() {
               wie Sie ein neues KI-Projekt anlegen und den Fortschritt überwachen.
             </p>
             <ul className="list-disc list-inside text-sm mb-4 space-y-1">
-              <li><b>Projektziel festlegen:</b> Geben Sie im Formular <em>“Define Purpose”</em> ein neues Projektziel ein. Dadurch wird ein initialer Aufgaben-Graph erzeugt.</li>
+              <li><b>Projektziel festlegen:</b> Legen Sie das Projektziel in der <em>Pipeline</em>-Ansicht fest. Dadurch wird ein initialer Aufgaben-Graph erzeugt.</li>
               <li><b>Task-Graph verstehen:</b> Im <em>Pipeline-Graph</em> werden alle Tasks als Knoten dargestellt (Größe entspricht Business Value, Farbe entspricht Status).</li>
               <li><b>Backlog & Artefakte:</b> Links sehen Sie die <em>Backlog</em>-Liste aller anstehenden Aufgaben und darunter die vom System generierten <em>Artifacts</em> (Dateien).</li>
               <li><b>Budget beobachten:</b> Oben links zeigt der Budget-Balken den verbrauchten Anteil Ihres Budgets. Warnungen informieren Sie, wenn das Budget knapp wird.</li>
