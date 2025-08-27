@@ -4,6 +4,7 @@ from .purpose import Purpose
 from .task import Task, TaskStatus
 from .task_dependency import TaskDependency
 from .tenant import Tenant
+from .feedback import Feedback, FeedbackType
 
 __all__ = [
     "Tenant",
@@ -13,4 +14,6 @@ __all__ = [
     "TaskDependency",
     "Artifact",
     "Artefact",
+    "Feedback",
+    "FeedbackType",
 ]

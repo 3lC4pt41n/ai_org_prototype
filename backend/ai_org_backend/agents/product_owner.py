@@ -17,6 +17,7 @@ PRODUCT_REQ_LATENCY = prom_hist(
 )
 
 PROMPT_TMPL = load_template("requirements.j2")
+PROMPT_FEEDBACK_TMPL = load_template("requirements_feedback.j2")
 
 
 def run_requirements(purpose: Purpose) -> str:
@@ -37,5 +38,27 @@ def run_requirements(purpose: Purpose) -> str:
         return content
     except BudgetExceededError:
         return "⚠️ Budget exhausted during requirements gathering. Please top up and retry."
+    finally:
+        PRODUCT_REQ_LATENCY.observe(time.time() - start_time)
+
+
+def run_requirements_feedback(purpose: Purpose, feedback: str, current_prd: str) -> str:
+    """Update existing PRD based on user feedback."""
+
+    ctx = {"purpose": purpose.name, "feedback": feedback, "current_prd": current_prd}
+    prompt = PROMPT_FEEDBACK_TMPL.render(**ctx)
+    start_time = time.time()
+    try:
+        resp = chat_with_tools(
+            messages=[{"role": "user", "content": prompt}],
+            model=MODEL_PRO,
+            tenant_id=purpose.tenant_id,
+            usage_label="requirements_feedback",
+        )
+        PRODUCT_REQ_RUNS.inc()
+        content = resp["choices"][0]["message"]["content"]
+        return content
+    except BudgetExceededError:
+        return "⚠️ Budget exhausted during requirements update. Please top up and retry."
     finally:
         PRODUCT_REQ_LATENCY.observe(time.time() - start_time)
