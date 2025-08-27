@@ -11,12 +11,11 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import Optional
 
-from neo4j import GraphDatabase
-from sqlmodel import Session
-
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Task
+from neo4j import GraphDatabase
+from sqlmodel import Session
 
 from .vector_store import VectorStore
 
@@ -43,9 +42,7 @@ if WORKSPACE.exists():
         try:
             subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "Git repository initialization failed: %s", exc
-            )
+            logging.getLogger(__name__).warning("Git repository initialization failed: %s", exc)
 else:
     logging.getLogger(__name__).warning(
         "Workspace directory %s not found, skipping Git init", WORKSPACE
@@ -142,6 +139,8 @@ def register_artefact(
         src = Path(src).expanduser().resolve()
         base_name = filename or src.name
     tgt = target_dir / base_name
+    # Ensure directories exist for nested paths like "requirements/"
+    tgt.parent.mkdir(parents=True, exist_ok=True)
     original_exists = tgt.exists()
     if tgt.exists() and not allow_overwrite:
         original_tgt = tgt
@@ -184,21 +183,14 @@ def register_artefact(
         session.refresh(artefact)
     if original_exists and allow_overwrite and vector_store.client:
         try:
-            from qdrant_client.models import (
-                FieldCondition,
-                Filter,
-                FilterSelector,
-                MatchValue,
-            )
+            from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
             vector_store.client.set_payload(
                 collection_name=vector_store.collection_name,
                 points_selector=FilterSelector(
                     filter=Filter(
                         must=[
-                            FieldCondition(
-                                key="tenant", match=MatchValue(value=tenant_dir)
-                            ),
+                            FieldCondition(key="tenant", match=MatchValue(value=tenant_dir)),
                             FieldCondition(
                                 key="file",
                                 match=MatchValue(value=str(artefact.repo_path)),
@@ -234,9 +226,7 @@ def register_artefact(
             )
 
     action = "update" if original_exists and allow_overwrite else "add"
-    _git_commit(
-        artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}"
-    )
+    _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
     if original_exists and allow_overwrite:
         ARTIFACT_UPDATES.inc()
     try:
@@ -244,9 +234,7 @@ def register_artefact(
     except Exception:
         # Fehler im Neo4j-Link wurden bereits geloggt
         pass
-    logging.info(
-        f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})"
-    )
+    logging.info(f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})")
     return artefact
 
 
@@ -256,29 +244,20 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
     if vector_store.client:
         try:
             # Remove points by artifact_id (all chunks) using Qdrant filter
-            from qdrant_client.models import (
-                FieldCondition,
-                Filter,
-                FilterSelector,
-                MatchValue,
-            )
+            from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
             vector_store.client.delete(
                 collection_name=vector_store.collection_name,
                 points_selector=FilterSelector(
                     filter=Filter(
                         must=[
-                            FieldCondition(
-                                key="artifact_id", match=MatchValue(value=artifact_id)
-                            )
+                            FieldCondition(key="artifact_id", match=MatchValue(value=artifact_id))
                         ]
                     )
                 ),
             )
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "Vector retraction via filter failed: %s", exc
-            )
+            logging.getLogger(__name__).warning("Vector retraction via filter failed: %s", exc)
             try:
                 # Fallback: direct deletion by ID (non-chunked entries)
                 vector_store.client.delete(
@@ -286,9 +265,7 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
                     points_selector=[artifact_id],
                 )
             except Exception as exc2:
-                logging.getLogger(__name__).warning(
-                    "Vector retraction by ID failed: %s", exc2
-                )
+                logging.getLogger(__name__).warning("Vector retraction by ID failed: %s", exc2)
     if remove_from_neo4j:
         try:
             sha_val = None
@@ -298,13 +275,9 @@ def retract_artifact(artifact_id: str, remove_from_neo4j: bool = False) -> None:
                     sha_val = art_obj.sha256
             if sha_val:
                 with driver.session() as g:
-                    g.run(
-                        "MATCH (a:Artifact {sha256:$sha}) DETACH DELETE a", sha=sha_val
-                    )
+                    g.run("MATCH (a:Artifact {sha256:$sha}) DETACH DELETE a", sha=sha_val)
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "Neo4j artifact removal failed: %s", exc
-            )
+            logging.getLogger(__name__).warning("Neo4j artifact removal failed: %s", exc)
 
 
 # Maintain backward compatibility
