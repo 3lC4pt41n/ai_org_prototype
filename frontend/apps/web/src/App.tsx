@@ -1,39 +1,94 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import AdminDashboard from './pages/AdminDashboard';
-import TaskGraph from './pages/TaskGraph';
-import TemplateStudio from './pages/TemplateStudio';
-import PipelinePage from './pages/PipelinePage';
-import Nav from './components/Nav';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Insights from './pages/Insights';
-import ReportsPage from './pages/ReportsPage';
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+import Nav from "./components/Nav";
+import AdminDashboard from "./pages/AdminDashboard";
+import TaskGraph from "./pages/TaskGraph";
+import TemplateStudio from "./pages/TemplateStudio";
+import PipelinePage from "./pages/PipelinePage";
+import Insights from "./pages/Insights";
+import ReportsPage from "./pages/ReportsPage";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Profile from "./pages/Profile";
+
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  return token ? (
+    <>
+      <Nav />
+      <Toaster position="top-right" />
+      {children}
+    </>
+  ) : (
+    <Navigate to="/login" />
+  );
+}
 
 export default function App() {
-  const token = localStorage.getItem('token');
   return (
     <BrowserRouter>
-      {token ? (
-        <>
-          <Nav />
-          <Toaster position="top-right" />
-          <Routes>
-            <Route path="/" element={<AdminDashboard />} />
-            <Route path="/graph" element={<TaskGraph />} />
-            <Route path="/pipeline" element={<PipelinePage />} />
-            <Route path="/studio" element={<TemplateStudio />} />
-            <Route path="/insights" element={<Insights />} />
-            <Route path="/reports" element={<ReportsPage />} />
-          </Routes>
-        </>
-      ) : (
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="*" element={<Login />} />
-        </Routes>
-      )}
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route
+          path="/profile"
+          element={
+            <PrivateRoute>
+              <Profile />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/graph"
+          element={
+            <PrivateRoute>
+              <TaskGraph />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/pipeline"
+          element={
+            <PrivateRoute>
+              <PipelinePage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/studio"
+          element={
+            <PrivateRoute>
+              <TemplateStudio />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <PrivateRoute>
+              <Insights />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <PrivateRoute>
+              <ReportsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <AdminDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </BrowserRouter>
   );
 }
