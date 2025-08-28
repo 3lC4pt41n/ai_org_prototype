@@ -134,10 +134,10 @@ export default function PipelineDashboard() {
   const closeModal = () => setSelectedTask(null);
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen p-4 space-y-4">
+    <div className="min-h-screen p-4 space-y-4">
       <h1 className="text-3xl font-bold mb-4">Pipeline</h1>
       <p className="mb-4">Aktuelle Aufgaben der Pipeline.</p>
-      <Card className="bg-slate-900 text-white">
+      <Card>
         <CardContent className="p-4">
           <h2 className="flex items-center gap-2 text-lg mb-2">
             <Target /> Define Purpose
@@ -149,7 +149,7 @@ export default function PipelineDashboard() {
               value={purposeInput}
               onChange={(e) => setPurposeInput(e.target.value)}
               placeholder="Enter project purpose..."
-              className="flex-1 p-2 rounded bg-slate-800 text-white border border-slate-700"
+              className="flex-1 p-2 rounded border border-slate-300"
             />
             <button
               type="button"
@@ -162,7 +162,7 @@ export default function PipelineDashboard() {
         </CardContent>
       </Card>
       {blueprint && (
-        <Card className="bg-slate-900 text-white">
+        <Card>
           <CardContent className="p-4">
             <h2 className="flex items-center gap-2 text-lg mb-2">
               <FileText /> Architect Seed
@@ -171,31 +171,31 @@ export default function PipelineDashboard() {
           </CardContent>
         </Card>
       )}
-      <div style={{ width: "100%", height: 700, background: "#0f172a", borderRadius: 18, boxShadow: "0 8px 32px #000a" }}>
+      <div style={{ width: "100%", height: 700, background: "#f5f5f5", borderRadius: 18, boxShadow: "0 8px 32px #000a" }}>
         {elements.length === 0 ? (
-          <p className="text-center text-white pt-8">No tasks to display</p>
+          <p className="text-center pt-8">No tasks to display</p>
         ) : (
           <ReactFlow elements={elements} onNodeClick={handleNodeClick} fitView>
             <MiniMap
-              nodeStrokeColor={(n) => (n.style?.border as string) ?? "#64748b"}
-              nodeColor={(n) => (n.style?.background as string) ?? "#334155"}
+              nodeStrokeColor={(n) => (n.style?.border as string) ?? "#94a3b8"}
+              nodeColor={(n) => (n.style?.background as string) ?? "#cbd5e1"}
             />
             <Controls />
-            <Background color="#334155" gap={18} />
+            <Background color="#cbd5e1" gap={18} />
           </ReactFlow>
         )}
       </div>
-      <Card className="bg-slate-900 text-white max-h-64 overflow-auto">
+      <Card className="max-h-64 overflow-auto">
         <CardContent className="p-4">
           <h2 className="flex items-center gap-2 text-lg mb-2">
             <Package /> Artifacts
           </h2>
           <ul className="space-y-1 text-sm">
             {artifacts.map((a) => (
-              <li key={a.id} className="border-b border-slate-700 py-1">
+              <li key={a.id} className="border-b border-slate-200 py-1">
                 <span className="text-amber-400 font-mono mr-2">{a.task_id}</span>
                 {a.repo_path}{" "}
-                <span className="text-slate-400 text-xs">
+                <span className="text-slate-600 text-xs">
                   ({a.media_type}, {new Date(a.created_at).toLocaleString()})
                 </span>
               </li>
@@ -211,7 +211,7 @@ export default function PipelineDashboard() {
       )}
       {selectedTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closeModal}>
-          <div className="bg-slate-800 text-white p-6 rounded max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white text-slate-900 p-6 rounded max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-semibold mb-2">{selectedTask.description}</h3>
             <p className="mb-1">
               <span className="font-medium">Status:</span> {selectedTask.status}
@@ -249,14 +249,14 @@ export default function PipelineDashboard() {
                         <a href={artifact.url} className="text-amber-400 hover:underline" target="_blank" rel="noopener noreferrer">
                           {displayPath}
                         </a>{" "}
-                        <span className="text-xs text-slate-400">({artifact.media_type})</span>
+                        <span className="text-xs text-slate-600">({artifact.media_type})</span>
                       </li>
                     );
                   })}
                 </ul>
               )}
             </div>
-            <button onClick={closeModal} className="mt-4 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded">
+            <button onClick={closeModal} className="mt-4 px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded">
               Close
             </button>
           </div>

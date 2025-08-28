@@ -14,19 +14,19 @@ export default function ReportsPage() {
       .catch(() => {});
   }, []);
   return (
-    <div className="bg-gray-900 text-white min-h-screen p-4">
+    <div className="min-h-screen p-4">
       <h1 className="text-3xl font-bold mb-4">Reports</h1>
       <p className="mb-4">Berichte zum Projekt.</p>
-      <div className="bg-gray-800 shadow rounded-sm">
-        <table className="min-w-full divide-y divide-gray-700 text-sm">
-          <thead className="bg-gray-700">
+      <div className="bg-white shadow rounded-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-100">
             <tr>
-              <th className="px-4 py-2 text-left font-medium text-gray-200">Report</th>
-              <th className="px-4 py-2 text-left font-medium text-gray-200">Created</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Report</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Created</th>
               <th className="px-4 py-2"></th>
             </tr>
           </thead>
-          <tbody className="bg-gray-800 divide-y divide-gray-700">
+          <tbody className="bg-white divide-y divide-gray-200">
             {artifacts.map((art) => (
               <tr key={art.id}>
                 <td className="px-4 py-2">{art.name}</td>
@@ -36,7 +36,7 @@ export default function ReportsPage() {
                 <td className="px-4 py-2">
                   <a
                     href={`/artifact/${art.id}`}
-                    className="text-emerald-400 hover:underline"
+                    className="text-emerald-600 hover:underline"
                   >
                     Download
                   </a>
