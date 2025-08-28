@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import PurposeInput from "../components/pipeline/PurposeInput";
 import StatusIndicator from "../components/pipeline/StatusIndicator";
 import FeedbackForm from "../components/pipeline/FeedbackForm";
-import { getJson, postJson, API_BASE } from "@api-client";
+import { getJson, postJson, API_BASE } from "@api";
 import { toast } from "react-hot-toast";
 
 const API = API_BASE;
