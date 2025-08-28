@@ -114,14 +114,14 @@ export default function TaskGraph() {
   }, []);
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen p-4">
+    <div className="min-h-screen p-4">
       <h1 className="text-3xl font-bold mb-4">Graph</h1>
       <p className="mb-4">Visualisierung aller Aufgaben im Graph-Format.</p>
-      <div style={{ width: "100%", height: 700, background: "#0f172a", borderRadius: 18, marginTop: 32, boxShadow: "0 8px 32px #000a" }}>
+      <div style={{ width: "100%", height: 700, background: "#f5f5f5", borderRadius: 18, marginTop: 32, boxShadow: "0 8px 32px #000a" }}>
         <ReactFlow elements={elements} fitView>
-          <MiniMap nodeStrokeColor={n => n.style?.border ?? "#64748b"} nodeColor={n => n.style?.background ?? "#334155"} />
+          <MiniMap nodeStrokeColor={n => n.style?.border ?? "#94a3b8"} nodeColor={n => n.style?.background ?? "#cbd5e1"} />
           <Controls />
-          <Background color="#334155" gap={18} />
+          <Background color="#cbd5e1" gap={18} />
         </ReactFlow>
       </div>
       {elements.length === 0 && (
