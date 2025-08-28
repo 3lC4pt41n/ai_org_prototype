@@ -2,24 +2,22 @@ import React from "react";
 
 interface PurposeInputProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (newVal: string) => void;
   onStart: () => void;
 }
 
 export default function PurposeInput({ value, onChange, onStart }: PurposeInputProps) {
+  const canStart = value.trim() !== "";
   return (
-    <div className="flex space-x-2">
+    <div className="mt-4">
+      <label className="block mb-1">Neues Projektziel</label>
       <input
-        className="flex-grow border rounded px-4 py-2"
-        placeholder="Purpose eingeben…"
+        className="w-full border rounded p-2"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder="Projektziel eingeben..."
       />
-      <button
-        className="btn btn-primary"
-        onClick={onStart}
-        disabled={!value.trim()}
-      >
+      <button className="btn btn-primary mt-2" onClick={onStart} disabled={!canStart}>
         Start
       </button>
     </div>
