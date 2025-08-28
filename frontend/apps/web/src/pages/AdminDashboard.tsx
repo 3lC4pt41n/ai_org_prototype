@@ -43,9 +43,9 @@ export default function AdminDashboard() {
     doing: { label: "In Progress", color: "bg-blue-500 text-white", tooltip: "Task is currently in progress." },
     done: { label: "Done", color: "bg-green-600 text-white", tooltip: "Task completed successfully." },
     failed: { label: "Failed", color: "bg-red-600 text-white", tooltip: "Task execution failed." },
-    blocked: { label: "Blocked", color: "bg-gray-500 text-white", tooltip: "Task was blocked and not executed." },
-    skipped: { label: "Skipped", color: "bg-gray-500 text-white", tooltip: "Task was skipped (not executed)." },
-    budget_exceeded: { label: "Blocked (Budget)", color: "bg-gray-500 text-white", tooltip: "Task skipped due to insufficient budget." }
+    blocked: { label: "Blocked", color: "bg-gray-200 text-slate-800", tooltip: "Task was blocked and not executed." },
+    skipped: { label: "Skipped", color: "bg-gray-200 text-slate-800", tooltip: "Task was skipped (not executed)." },
+    budget_exceeded: { label: "Blocked (Budget)", color: "bg-gray-200 text-slate-800", tooltip: "Task skipped due to insufficient budget." }
   };
 
   // Fetch list of purposes on mount
@@ -213,7 +213,7 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen p-4">
+    <div className="min-h-screen p-4">
       <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
       <p className="mb-4">Übersicht und Steuerung des Projekts.</p>
       {alertMsg && (
@@ -230,7 +230,7 @@ export default function AdminDashboard() {
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
-        <Card className="bg-slate-900 text-white">
+        <Card>
           <CardContent className="p-6 flex flex-col gap-2 items-start">
             <div className="flex items-center gap-2">
               <Gauge className="text-emerald-400" />
@@ -245,7 +245,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             {budgetTotal != null && budget != null && (
-              <div className="w-full bg-slate-800 rounded h-3 mt-1">
+              <div className="w-full bg-gray-200 rounded h-3 mt-1">
                 <div
                   className={
                     "h-3 rounded " +
@@ -263,17 +263,19 @@ export default function AdminDashboard() {
             )}
           </CardContent>
         </Card>
-        <Card className="bg-slate-900 text-white">
+        <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-2">Web Research</h2>
-            <p className="text-sm text-slate-300 mb-3">
+            <p className="text-sm text-slate-600 mb-3">
               Allow agents to access the public web (search & fetch) to ground their outputs.
             </p>
             <button
               onClick={toggleResearch}
               disabled={updatingResearch}
               className={`px-3 py-2 rounded flex items-center gap-2 font-medium ${
-                allowResearch ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-600"
+                allowResearch
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-gray-200 hover:bg-gray-300 text-slate-900"
               }`}
             >
               {allowResearch ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
@@ -281,7 +283,7 @@ export default function AdminDashboard() {
             </button>
           </CardContent>
         </Card>
-        <Card className="bg-slate-900 text-white">
+        <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-2">Pipeline Status</h2>
             <p className="text-sm mb-1">
@@ -302,16 +304,16 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900 text-white col-span-2 max-h-64 overflow-auto">
+        <Card className="col-span-2 max-h-64 overflow-auto">
           <CardContent className="p-4">
             <h2 className="flex items-center gap-2 text-lg mb-2">
               <History /> Backlog
             </h2>
             <ul className="space-y-1 text-sm">
               {backlog.map((t) => (
-                <li key={t.id} className="border-b border-slate-700 py-1 flex items-center justify-between">
+                <li key={t.id} className="border-b border-slate-200 py-1 flex items-center justify-between">
                   <div>
-                    <span className="text-amber-400 font-mono mr-2">{t.id}</span>
+                    <span className="text-amber-600 font-mono mr-2">{t.id}</span>
                     {t.description}
                   </div>
                   <span
@@ -329,12 +331,12 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900 text-white col-span-3">
+        <Card className="col-span-3">
           <CardContent className="p-4">
             <h2 className="flex items-center gap-2 text-lg mb-2">
               <Target /> Purpose
             </h2>
-            <p className="mb-2 text-slate-300">
+            <p className="mb-2 text-slate-600">
               Die Purpose-Anlage & Projektsteuerung erfolgt vollständig über die <b>Pipeline</b>.
             </p>
             <a
@@ -346,24 +348,24 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900 text-white col-span-3 max-h-64 overflow-auto">
+        <Card className="col-span-3 max-h-64 overflow-auto">
           <CardContent className="p-4">
             <h2 className="flex items-center gap-2 text-lg mb-2">
               <Package /> Artifacts
             </h2>
             <ul className="space-y-1 text-sm">
               {artifacts.map((a) => (
-                <li key={a.id} className="border-b border-slate-700 py-1">
-                  <span className="text-amber-400 font-mono mr-2">{a.task_id}</span>
+                <li key={a.id} className="border-b border-slate-200 py-1">
+                  <span className="text-amber-600 font-mono mr-2">{a.task_id}</span>
                   <a
                     href={a.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-amber-400 hover:underline"
+                    className="text-amber-600 hover:underline"
                   >
                     {a.repo_path.replace(/^[^/]+\//, "")}
                   </a>{" "}
-                  <span className="text-slate-400 text-xs">
+                  <span className="text-slate-600 text-xs">
                     ({a.media_type}, {new Date(a.created_at).toLocaleString()})
                   </span>
                 </li>
@@ -376,7 +378,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
       {backlog.length === 0 && (
-        <div className="text-red-400 mt-4">Keine Aufgaben verfügbar.</div>
+        <div className="text-red-600 mt-4">Keine Aufgaben verfügbar.</div>
       )}
 
       {showOnboarding && (

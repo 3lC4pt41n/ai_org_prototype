@@ -27,7 +27,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 38,
-  "style": "dark",
+  "style": "light",
   "tags": ["ai_org"],
   "time": {"from": "now-1h", "to": "now"},
   "timezone": "browser",

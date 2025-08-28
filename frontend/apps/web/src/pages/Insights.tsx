@@ -20,7 +20,7 @@ export default function Insights() {
   const grafanaSrc = `${GRAFANA_URL}/d/${dashboardUID}?orgId=1&var-tenant=${tenantId}&kiosk=1`;
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen p-4">
+    <div className="min-h-screen p-4">
       <h1 className="text-3xl font-bold mb-4">Insights</h1>
       <p className="mb-4">Datenanalysen und Metriken.</p>
       <iframe
@@ -29,7 +29,7 @@ export default function Insights() {
         title="AI Org Insights"
       />
       {insightsData.length === 0 && (
-        <div className="text-red-400 mt-4">Keine Daten verfügbar.</div>
+        <div className="text-red-600 mt-4">Keine Daten verfügbar.</div>
       )}
     </div>
   );
