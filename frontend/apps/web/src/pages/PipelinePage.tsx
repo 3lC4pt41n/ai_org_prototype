@@ -18,9 +18,9 @@ async function createPurpose(purpose: string) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ purpose })
+    body: JSON.stringify({ purpose }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -35,9 +35,9 @@ async function postFeedback(purposeId: string, body: any) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -49,22 +49,41 @@ async function postFeedback(purposeId: string, body: any) {
 async function fetchFeedback(purposeId: string): Promise<FeedbackEntry[]> {
   const token = localStorage.getItem("token");
   const res = await fetch(`${API}/purpose/${purposeId}/feedback`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) throw new Error("Failed to load feedback");
   return res.json();
 }
 
+async function fetchStatusAndGraph(purposeId: string) {
+  const token = localStorage.getItem("token");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const [statusRes, graphRes] = await Promise.all([
+    fetch(`${API}/purpose/${purposeId}/status`, { headers }),
+    fetch(`${API}/purpose/${purposeId}/graph`, { headers }),
+  ]);
+  if (!statusRes.ok || !graphRes.ok) {
+    throw new Error("Failed to load status");
+  }
+  const statusData = await statusRes.json();
+  const graphData = await graphRes.json();
+  return { statusData, graphData };
+}
+
 export default function PipelinePage() {
   const [purpose, setPurpose] = useState("");
   const [purposeId, setPurposeId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "complete">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "complete">(
+    "idle",
+  );
   const [prd, setPrd] = useState("");
   const [blueprint, setBlueprint] = useState("");
   const [feedbackPrd, setFeedbackPrd] = useState("");
   const [feedbackArch, setFeedbackArch] = useState("");
   const [historyPrd, setHistoryPrd] = useState<FeedbackEntry[]>([]);
   const [historyArch, setHistoryArch] = useState<FeedbackEntry[]>([]);
+  const [paused, setPaused] = useState(false);
+  const [counts, setCounts] = useState({ done: 0, doing: 0, todo: 0 });
 
   const approvedPrd = historyPrd.some((h) => h.approved);
   const approvedArch = historyArch.some((h) => h.approved);
@@ -74,6 +93,21 @@ export default function PipelinePage() {
       const data = await fetchFeedback(pid);
       setHistoryPrd(data.filter((d) => d.type === "prd"));
       setHistoryArch(data.filter((d) => d.type === "blueprint"));
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadStatus = async (pid: string) => {
+    try {
+      const { statusData, graphData } = await fetchStatusAndGraph(pid);
+      setPaused(!!statusData.paused);
+      const tasks = graphData.tasks || [];
+      setCounts({
+        done: tasks.filter((t: any) => t.status === "done").length,
+        doing: tasks.filter((t: any) => t.status === "doing").length,
+        todo: tasks.filter((t: any) => t.status === "todo").length,
+      });
     } catch {
       // ignore
     }
@@ -91,6 +125,7 @@ export default function PipelinePage() {
       setHistoryPrd([]);
       setHistoryArch([]);
       await loadHistory(data.purpose_id);
+      await loadStatus(data.purpose_id);
       setStatus("ready");
     } catch {
       setStatus("idle");
@@ -108,6 +143,7 @@ export default function PipelinePage() {
       if (type === "prd") setFeedbackPrd("");
       if (type === "blueprint") setFeedbackArch("");
       await loadHistory(purposeId);
+      await loadStatus(purposeId);
       setStatus("ready");
     } catch {
       setStatus("ready");
@@ -120,9 +156,30 @@ export default function PipelinePage() {
     try {
       await postFeedback(purposeId, { type, approved: true });
       await loadHistory(purposeId);
+      await loadStatus(purposeId);
       setStatus("ready");
     } catch {
       setStatus("ready");
+    }
+  };
+
+  const togglePause = async () => {
+    if (!purposeId) return;
+    const token = localStorage.getItem("token");
+    const endpoint = paused
+      ? `/purpose/${purposeId}/resume`
+      : `/purpose/${purposeId}/pause`;
+    try {
+      await fetch(`${API}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      await loadStatus(purposeId);
+    } catch {
+      // ignore
     }
   };
 
@@ -132,9 +189,44 @@ export default function PipelinePage() {
     }
   }, [approvedPrd, approvedArch]);
 
+  useEffect(() => {
+    if (!purposeId) return;
+    const id = setInterval(() => loadStatus(purposeId), 5000);
+    return () => clearInterval(id);
+  }, [purposeId]);
+
   return (
     <div className="p-8 bg-white text-gray-900 space-y-6">
       <PurposeInput value={purpose} onChange={setPurpose} onStart={start} />
+
+      {purposeId && (
+        <div className="flex justify-between items-center text-sm">
+          <span className="text-gray-600">
+            Purpose ID: <span className="font-mono">{purposeId}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-2">
+              <span className="px-2 py-0.5 rounded bg-green-500 text-white text-xs">
+                Done {counts.done}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-blue-500 text-white text-xs">
+                Doing {counts.doing}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-gray-500 text-white text-xs">
+                Todo {counts.todo}
+              </span>
+            </div>
+            <button
+              className={`px-3 py-1 rounded text-white hover:opacity-90 ${
+                paused ? "bg-emerald-600" : "bg-red-600"
+              }`}
+              onClick={togglePause}
+            >
+              {paused ? "Fortsetzen" : "Pause"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <StatusIndicator status={status} />
 
@@ -175,3 +267,4 @@ export default function PipelinePage() {
     </div>
   );
 }
+
