@@ -2,118 +2,32 @@ import React, { useEffect, useState } from "react";
 import PurposeInput from "../components/pipeline/PurposeInput";
 import StatusIndicator from "../components/pipeline/StatusIndicator";
 import FeedbackForm from "../components/pipeline/FeedbackForm";
+import { getJson, postJson, API_BASE } from "@api-client";
+import { toast } from "react-hot-toast";
 
-const API = import.meta.env.VITE_API_URL || "/api";
-
-interface FeedbackEntry {
-  type: string;
-  version: number;
-  text: string;
-  approved: boolean;
-}
-
-async function createPurpose(purpose: string) {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API}/purpose`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ purpose }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || "Failed to start");
-  }
-  return res.json();
-}
-
-async function postFeedback(purposeId: string, body: any) {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API}/purpose/${purposeId}/feedback`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || "Failed to send feedback");
-  }
-  return res.json();
-}
-
-async function fetchFeedback(purposeId: string): Promise<FeedbackEntry[]> {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API}/purpose/${purposeId}/feedback`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error("Failed to load feedback");
-  return res.json();
-}
-
-async function fetchStatusAndGraph(purposeId: string) {
-  const token = localStorage.getItem("token");
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const [statusRes, graphRes] = await Promise.all([
-    fetch(`${API}/purpose/${purposeId}/status`, { headers }),
-    fetch(`${API}/purpose/${purposeId}/graph`, { headers }),
-  ]);
-  if (!statusRes.ok || !graphRes.ok) {
-    throw new Error("Failed to load status");
-  }
-  const statusData = await statusRes.json();
-  const graphData = await graphRes.json();
-  return { statusData, graphData };
-}
+const API = API_BASE;
+const headers = {
+  Accept: "application/json",
+  Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+};
 
 export default function PipelinePage() {
   const [purpose, setPurpose] = useState("");
-  const [purposeId, setPurposeId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "complete">(
-    "idle",
-  );
+  const [purposeId, setPurposeId] = useState<string>();
   const [prd, setPrd] = useState("");
   const [blueprint, setBlueprint] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "complete">("idle");
+  const [counts, setCounts] = useState({ todo: 0, doing: 0, done: 0 });
+  const [paused, setPaused] = useState(false);
   const [feedbackPrd, setFeedbackPrd] = useState("");
   const [feedbackArch, setFeedbackArch] = useState("");
-  const [historyPrd, setHistoryPrd] = useState<FeedbackEntry[]>([]);
-  const [historyArch, setHistoryArch] = useState<FeedbackEntry[]>([]);
-  const [paused, setPaused] = useState(false);
-  const [counts, setCounts] = useState({ done: 0, doing: 0, todo: 0 });
-
+  const [historyPrd, setHistoryPrd] = useState<any[]>([]);
+  const [historyArch, setHistoryArch] = useState<any[]>([]);
   const approvedPrd = historyPrd.some((h) => h.approved);
   const approvedArch = historyArch.some((h) => h.approved);
 
-  const loadHistory = async (pid: string) => {
-    try {
-      const data = await fetchFeedback(pid);
-      setHistoryPrd(data.filter((d) => d.type === "prd"));
-      setHistoryArch(data.filter((d) => d.type === "blueprint"));
-    } catch {
-      // ignore
-    }
-  };
-
-  const loadStatus = async (pid: string) => {
-    try {
-      const { statusData, graphData } = await fetchStatusAndGraph(pid);
-      setPaused(!!statusData.paused);
-      const tasks = graphData.tasks || [];
-      setCounts({
-        done: tasks.filter((t: any) => t.status === "done").length,
-        doing: tasks.filter((t: any) => t.status === "doing").length,
-        todo: tasks.filter((t: any) => t.status === "todo").length,
-      });
-    } catch {
-      // ignore
-    }
-  };
-
-  const start = async () => {
+  // Create a new purpose and start the pipeline
+  async function start() {
     setStatus("loading");
     try {
       const data = await createPurpose(purpose);
@@ -122,66 +36,85 @@ export default function PipelinePage() {
       setPurposeId(data.purpose_id);
       setFeedbackPrd("");
       setFeedbackArch("");
-      setHistoryPrd([]);
-      setHistoryArch([]);
-      await loadHistory(data.purpose_id);
-      await loadStatus(data.purpose_id);
       setStatus("ready");
-    } catch {
+      loadHistory(data.purpose_id);
+      loadStatus(data.purpose_id);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to start pipeline");
       setStatus("idle");
     }
-  };
+  }
 
-  const sendFeedback = async (type: "prd" | "blueprint") => {
+  // Load feedback history
+  async function loadHistory(pid: string) {
+    const data = await getJson(`/purpose/${pid}/feedback`);
+    const prdHistory = data.filter((e: any) => e.type === "prd");
+    const archHistory = data.filter((e: any) => e.type === "blueprint");
+    setHistoryPrd(prdHistory);
+    setHistoryArch(archHistory);
+  }
+
+  // Load pipeline status and task counts
+  async function loadStatus(pid: string) {
+    const [statusRes, graphRes] = await Promise.all([
+      fetch(`${API}/purpose/${pid}/status`, { headers }),
+      fetch(`${API}/purpose/${pid}/graph`, { headers }),
+    ]);
+    const statusData = await statusRes.json();
+    setPaused(statusData.paused);
+    const graphData = await graphRes.json();
+    const tasks: any[] = graphData.tasks || [];
+    const done = tasks.filter((t) => t.status === "done").length;
+    const doing = tasks.filter((t) => t.status === "doing").length;
+    const todo = tasks.filter((t) => t.status === "todo").length;
+    setCounts({ done, doing, todo });
+  }
+
+  // Pause or resume the purpose
+  async function togglePause() {
+    if (!purposeId) return;
+    const endpoint = paused ? `/purpose/${purposeId}/resume` : `/purpose/${purposeId}/pause`;
+    await fetch(`${API}${endpoint}`, { method: "POST", headers });
+    setPaused(!paused);
+  }
+
+  // Send feedback or approval for PRD or architecture
+  async function sendFeedback(type: "prd" | "blueprint") {
     if (!purposeId) return;
     const text = type === "prd" ? feedbackPrd : feedbackArch;
-    setStatus("loading");
     try {
-      const data = await postFeedback(purposeId, { type, text });
-      setPrd(data.prdContent ?? prd);
-      setBlueprint(data.blueprintContent ?? blueprint);
-      if (type === "prd") setFeedbackPrd("");
-      if (type === "blueprint") setFeedbackArch("");
-      await loadHistory(purposeId);
-      await loadStatus(purposeId);
-      setStatus("ready");
-    } catch {
-      setStatus("ready");
-    }
-  };
-
-  const approve = async (type: "prd" | "blueprint") => {
-    if (!purposeId) return;
-    setStatus("loading");
-    try {
-      await postFeedback(purposeId, { type, approved: true });
-      await loadHistory(purposeId);
-      await loadStatus(purposeId);
-      setStatus("ready");
-    } catch {
-      setStatus("ready");
-    }
-  };
-
-  const togglePause = async () => {
-    if (!purposeId) return;
-    const token = localStorage.getItem("token");
-    const endpoint = paused
-      ? `/purpose/${purposeId}/resume`
-      : `/purpose/${purposeId}/pause`;
-    try {
-      await fetch(`${API}${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+      const data = await postJson(`/purpose/${purposeId}/feedback`, {
+        type,
+        text,
       });
-      await loadStatus(purposeId);
-    } catch {
-      // ignore
+      if (type === "prd") {
+        if (data.prdContent) setPrd(data.prdContent);
+        setFeedbackPrd("");
+      } else {
+        if (data.blueprintContent) setBlueprint(data.blueprintContent);
+        setFeedbackArch("");
+      }
+      loadHistory(purposeId);
+      setStatus("ready");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to send feedback");
     }
-  };
+  }
+
+  async function approve(type: "prd" | "blueprint") {
+    if (!purposeId) return;
+    try {
+      await postJson(`/purpose/${purposeId}/feedback`, { type, approved: true });
+      loadHistory(purposeId);
+      if (type === "prd") {
+        setStatus(approvedArch ? "complete" : "ready");
+      } else {
+        setStatus(approvedPrd ? "complete" : "ready");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to approve");
+    }
+  }
 
   useEffect(() => {
     if (approvedPrd && approvedArch) {
@@ -197,7 +130,9 @@ export default function PipelinePage() {
 
   return (
     <div className="p-8 bg-white text-gray-900 space-y-6">
-      <PurposeInput value={purpose} onChange={setPurpose} onStart={start} />
+      {!purposeId && (
+        <PurposeInput value={purpose} onChange={setPurpose} onStart={start} />
+      )}
 
       {purposeId && (
         <div className="flex justify-between items-center text-sm">
@@ -268,3 +203,7 @@ export default function PipelinePage() {
   );
 }
 
+async function createPurpose(purpose: string) {
+  const data = await postJson("/purpose", { purpose });
+  return data;
+}

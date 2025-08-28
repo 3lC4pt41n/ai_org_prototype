@@ -5,27 +5,20 @@ interface StatusIndicatorProps {
 }
 
 export default function StatusIndicator({ status }: StatusIndicatorProps) {
-  if (status === "idle") return null;
-
-  const steps = [
-    { key: "loading", label: "Warte auf PRD", color: "bg-gray-400" },
-    { key: "ready", label: "Feedback ausstehend", color: "bg-blue-600" },
-    { key: "complete", label: "Erledigt", color: "bg-green-600" }
-  ];
-
-  const currentIndex =
-    status === "loading" ? 0 : status === "ready" ? 1 : status === "complete" ? 2 : 0;
-
-  return (
-    <ol className="flex items-center space-x-4 text-sm">
-      {steps.map((step, index) => (
-        <li key={step.key} className="flex items-center space-x-2">
-          <span
-            className={`w-3 h-3 rounded-full ${index < currentIndex ? "bg-green-600" : index === currentIndex ? step.color : "bg-gray-300"}`}
-          ></span>
-          <span>{step.label}</span>
-        </li>
-      ))}
-    </ol>
-  );
+  let text = "";
+  let color = "";
+  if (status === "idle") {
+    text = "Bereit";
+    color = "text-gray-600";
+  } else if (status === "loading") {
+    text = "Wird ausgeführt...";
+    color = "text-blue-600";
+  } else if (status === "ready") {
+    text = "Feedback ausstehend";
+    color = "text-yellow-600";
+  } else if (status === "complete") {
+    text = "Fertig";
+    color = "text-green-600";
+  }
+  return <h3 className={`text-lg font-medium ${color}`}>{text}</h3>;
 }
