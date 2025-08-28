@@ -1,82 +1,60 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { login } from "../../../../packages/api-client/src";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
-import Logo from "../components/ui/Logo";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
 
-  async function handleSubmit(e?: React.FormEvent) {
-    if (e) {
-      e.preventDefault();
-    }
-    if (loading) return;
-    setLoading(true);
-    setError(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
     try {
-      const resp = await login({ email: email.trim(), password });
-      localStorage.setItem("token", resp?.access_token || "");
-      localStorage.setItem("user_email", email.trim());
-      navigate("/admin", { replace: true });
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Login fehlgeschlagen");
+      localStorage.setItem("token", data.access_token);
+      navigate("/");
     } catch (err: any) {
-      setError(err?.message || "Login fehlgeschlagen.");
-    } finally {
-      setLoading(false);
+      setError(err.message);
     }
-  }
+  };
 
   return (
-    <div className="container-app">
-      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <Logo size={28} />
-        <b>AI Org</b>
-      </header>
-
-      <div className="card" style={{ maxWidth: 480, margin: "40px auto" }}>
-        <div className="card-header">Anmelden</div>
-        <div className="card-body">
-          <p className="muted" style={{ marginBottom: 16 }}>
-            Melde dich mit deiner E-Mail und deinem Passwort an.
-          </p>
-          <form onSubmit={handleSubmit}>
-            <Input
-              label="E-Mail"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <Input
-              label="Passwort"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            {error && (
-              <div className="danger" style={{ marginBottom: 12 }}>
-                {error}
-              </div>
-            )}
-            <Button type="submit" block disabled={loading}>
-              {loading ? "Anmelden…" : "Anmelden"}
-            </Button>
-          </form>
-          <div className="muted" style={{ marginTop: 12, fontSize: 14 }}>
-            Kein Konto?{' '}
-            <Link to="/register" style={{ color: "var(--brand-600)" }}>
-              Jetzt registrieren
-            </Link>
-          </div>
-        </div>
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="max-w-sm w-full">
+        <h1 className="text-2xl font-bold mb-4">Login</h1>
+        {error && <div className="text-red-500 mb-2">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="email"
+            placeholder="E-Mail"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-2 border rounded"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Passwort"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-2 border rounded"
+            required
+          />
+          <button
+            type="submit"
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Anmelden
+          </button>
+        </form>
       </div>
     </div>
   );
 }
-

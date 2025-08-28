@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from "react-router-dom";
 
 export default function Nav() {
   return (
@@ -9,6 +9,7 @@ export default function Nav() {
       <Link to="/studio" className="hover:underline">Studio</Link>
       <Link to="/insights" className="hover:underline">Insights</Link>
       <Link to="/reports" className="hover:underline">Reports</Link>
+      <Link to="/profile" className="hover:underline">Profil</Link>
     </nav>
-  )
+  );
 }
