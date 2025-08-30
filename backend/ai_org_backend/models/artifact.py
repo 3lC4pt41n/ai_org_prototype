@@ -2,12 +2,13 @@ import uuid
 import hashlib
 from datetime import datetime as dt
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlmodel import SQLModel, Field, Relationship
 
 if TYPE_CHECKING:
     from .task import Task
+    from .artifact_feedback import ArtifactFeedback
 
 
 class Artifact(SQLModel, table=True):
@@ -21,6 +22,7 @@ class Artifact(SQLModel, table=True):
     task_id: str = Field(foreign_key="task.id", nullable=False)
     
     task: "Task" = Relationship(back_populates="artifacts")
+    feedback: List["ArtifactFeedback"] = Relationship(back_populates="artifact")
 
     repo_path: str = Field(nullable=False)
     media_type: str = Field(nullable=False)
