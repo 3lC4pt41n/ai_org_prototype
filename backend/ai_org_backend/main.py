@@ -23,6 +23,8 @@ from ai_org_backend.api.reviews import router as reviews_router
 from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
+from ai_org_backend.api.purposes import router as purposes_router
+from ai_org_backend.api.feedback import router as feedback_router
 from ai_org_backend.db import engine
 
 # storage helpers are used by individual agent modules
@@ -127,6 +129,8 @@ app.include_router(pipeline_router)
 app.include_router(settings_router)
 app.include_router(reviews_router)
 app.include_router(root_router)
+app.include_router(purposes_router)
+app.include_router(feedback_router)
 
 # ─────────────── Scheduler automatisch starten ─────────────────────────
 import asyncio
