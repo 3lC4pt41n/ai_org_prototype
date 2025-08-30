@@ -7,7 +7,7 @@ from ai_org_backend.agents.utils import load_template
 from ai_org_backend.api.auth import hash_password  # import the bcrypt hash helper
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskDependency
-from ai_org_backend.orchestrator.inspector import alert, todo_count
+from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.services.storage import register_artefact
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
@@ -93,6 +93,8 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
 def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     from ai_org_backend.models import Purpose, Tenant
 
+    _ = purpose_name  # parameter retained for backward compatibility
+
     with Session(engine) as session:
         # ── Safety net: create demo tenant automatically if missing ───────────────────────────────
         tenant = session.get(Tenant, TENANT)
@@ -109,22 +111,32 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             session.add(tenant)
             session.commit()
 
-        # Abort seeding if backlog already populated
-        if todo_count(TENANT) > 0:
-            return
-
-        # Backlog is empty, initiate seeding
-        print(f"[SEED] Seeding started for purpose '{purpose_name}' (tenant '{TENANT}')")
-
-        # Determine or create Purpose for seeding
-        purpose = session.exec(
-            select(Purpose).where(Purpose.name == purpose_name, Purpose.tenant_id == TENANT)
-        ).first()
-        if not purpose:
+        # Prüfe alle aktiven Purposes auf neue, leere Backlogs
+        print(f"[SEED] Checking for new purpose to seed (tenant '{TENANT}')")
+        purposes = session.exec(
+            select(Purpose).where(
+                Purpose.tenant_id == TENANT, Purpose.is_active == True  # noqa: E712
+            )
+        ).all()
+        if not purposes:
             print(
-                f"[SEED] Kein aktiver Purpose '{purpose_name}' für Tenant '{TENANT}' gefunden – Seeding abgebrochen."
+                f"[SEED] Kein aktiver Purpose für Tenant '{TENANT}' gefunden – Seeding abgebrochen."
             )
             return
+        # Finde ersten Purpose ohne zugehörige Tasks
+        purpose = None
+        for p in purposes:
+            task_exists = session.exec(
+                select(Task).where(Task.tenant_id == TENANT, Task.purpose_id == p.id)
+            ).first()
+            if task_exists:
+                continue
+            purpose = p
+            break
+        if not purpose:
+            print("[SEED] Keine neuen Zwecke mit leerem Backlog gefunden – Seeding abgebrochen.")
+            return
+        print(f"[SEED] Seeding started for purpose '{purpose.name}' (tenant '{TENANT}')")
 
     # Generate Product Requirements via Product Owner agent
     from ai_org_backend.agents.architect import run_architect
