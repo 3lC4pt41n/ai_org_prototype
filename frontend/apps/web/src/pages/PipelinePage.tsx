@@ -34,6 +34,7 @@ export default function PipelinePage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [elements, setElements] = useState<any[]>([]);
   const [artifacts, setArtifacts] = useState<any[]>([]);
+  const [pipelinePaused, setPipelinePaused] = useState(false);
 
   function statusColor(status: string) {
     switch (status) {
@@ -150,6 +151,23 @@ export default function PipelinePage() {
     setPaused(!paused);
   }
 
+  // Pipeline level pause/resume
+  useEffect(() => {
+    getJson('/pause')
+      .then((d) => setPipelinePaused(!!d.paused))
+      .catch(() => {});
+  }, []);
+
+  async function handlePausePipeline() {
+    await postJson('/pause', {});
+    setPipelinePaused(true);
+  }
+
+  async function handleResumePipeline() {
+    await postJson('/resume', {});
+    setPipelinePaused(false);
+  }
+
   // Send feedback or approval for PRD or architecture
   async function sendFeedback(type: 'prd' | 'blueprint') {
     if (!purposeId) return;
@@ -245,6 +263,23 @@ export default function PipelinePage() {
             />
           </div>
         )}
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handlePausePipeline}
+          disabled={pipelinePaused}
+          className="px-3 py-1 rounded bg-red-600 text-white disabled:opacity-50"
+        >
+          Pause Pipeline
+        </button>
+        <button
+          onClick={handleResumePipeline}
+          disabled={!pipelinePaused}
+          className="px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50"
+        >
+          Resume Pipeline
+        </button>
       </div>
 
       <Accordion title="🚀 Projektziel" defaultOpen={!purposeId}>
