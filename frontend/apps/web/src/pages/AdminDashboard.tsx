@@ -4,17 +4,9 @@ import { Card, CardContent } from "@ui/Card";
 import { Gauge, History, Target, PlayCircle, PauseCircle, Package } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import { getJson, postJson } from "@api";
 
 const API = import.meta.env.VITE_API_URL || "/api";
-
-async function getJson(path) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const r = await fetch(`${API}${path}`, { headers });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
 
 export default function AdminDashboard() {
   const [budget, setBudget] = useState<number | null>(null);
@@ -30,6 +22,9 @@ export default function AdminDashboard() {
   const [paused, setPaused] = useState(false);
   const [purposes, setPurposes] = useState<any[]>([]);
   const [currentPurposeId, setCurrentPurposeId] = useState("");
+  const [purposeName, setPurposeName] = useState("");
+  const [requirements, setRequirements] = useState("");
+  const [blueprint, setBlueprint] = useState("");
   const [counts, setCounts] = useState({ planned: 0, running: 0, done: 0 });
   const navigate = useNavigate();
   const [lastCount, setLastCount] = useState(0);
@@ -47,6 +42,16 @@ export default function AdminDashboard() {
     skipped: { label: "Skipped", color: "bg-gray-500 text-white", tooltip: "Task was skipped (not executed)." },
     budget_exceeded: { label: "Blocked (Budget)", color: "bg-gray-500 text-white", tooltip: "Task skipped due to insufficient budget." }
   };
+
+  // Load overall budget on mount
+  useEffect(() => {
+    getJson("/")
+      .then((d) => {
+        setBudget(d.budget_left);
+        setBudgetTotal(d.budget_total);
+      })
+      .catch(() => {});
+  }, []);
 
   // Fetch list of purposes on mount
   useEffect(() => {
@@ -211,11 +216,51 @@ export default function AdminDashboard() {
       .catch(() => toast.error("Failed to update pipeline state"));
   }
 
+  async function handleCreatePurpose() {
+    try {
+      const res = await postJson("/purpose", { purpose: purposeName });
+      setCurrentPurposeId(res.purpose_id);
+      setRequirements(res.requirements);
+      setBlueprint(res.blueprint);
+      setPurposeName("");
+      getJson("/purpose").then(setPurposes).catch(() => {});
+      getJson(`/artifacts?purpose_id=${res.purpose_id}`).then(setArtifacts).catch(() => {});
+    } catch {
+      toast.error("Failed to create purpose");
+    }
+  }
+
 
   return (
     <div className="min-h-screen p-4">
       <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
       <p className="mb-4">Übersicht und Steuerung des Projekts.</p>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select
+          value={currentPurposeId}
+          onChange={(e) => setCurrentPurposeId(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="">-- Projektziel wählen --</option>
+          {purposes.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <input
+          value={purposeName}
+          onChange={(e) => setPurposeName(e.target.value)}
+          placeholder="Neues Projektziel"
+          className="border p-2 rounded"
+        />
+        <button
+          onClick={handleCreatePurpose}
+          className="px-3 py-2 bg-emerald-600 text-white rounded"
+        >
+          Anlegen
+        </button>
+      </div>
       {alertMsg && (
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 px-4 py-3 mb-4">
           <p className="font-medium">
