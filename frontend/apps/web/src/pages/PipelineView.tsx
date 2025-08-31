@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@ui/Card";
-import { Gauge, Target, PlayCircle, FileText, Package } from "lucide-react";
+import { Gauge, Target, PlayCircle, FileText, Package, ClipboardList } from "lucide-react";
 import ReactFlow, { MiniMap, Controls, Background } from "reactflow";
 import "reactflow/dist/style.css";
 import { getJson, postJson, API_BASE } from "@api";
@@ -17,6 +17,7 @@ export default function PipelineView() {
   // Project (Purpose)
   const [purposeInput, setPurposeInput] = useState("");
   const [purposeId, setPurposeId] = useState<string | null>(null);
+  const [purposeName, setPurposeName] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [elements, setElements] = useState<any[]>([]);
   const [counts, setCounts] = useState({ done: 0, doing: 0, todo: 0 });
@@ -63,6 +64,7 @@ export default function PipelineView() {
       await postJson("/pause", {});
       setPipelinePaused(true);
     } catch (e: any) {
+      console.error(e);
       toast.error(e.message || "Failed to pause pipeline");
     }
   };
@@ -71,6 +73,7 @@ export default function PipelineView() {
       await postJson("/resume", {});
       setPipelinePaused(false);
     } catch (e: any) {
+      console.error(e);
       toast.error(e.message || "Failed to resume pipeline");
     }
   };
@@ -81,6 +84,7 @@ export default function PipelineView() {
     try {
       const data = await postJson("/purpose", { purpose: purposeInput });
       setPurposeId(data.id);
+      setPurposeName(purposeInput);
       setBlueprint(data.blueprint || "");
       setError(null);
       // Budget initial setzen (wird beim Status-Abgleich aktualisiert)
@@ -152,6 +156,8 @@ export default function PipelineView() {
       setElements([...nodes, ...edges]);
       setArtifacts(artifactsData);
     } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to load pipeline data");
       setError(e.message || "Failed to load pipeline data");
     }
   };
@@ -169,12 +175,15 @@ export default function PipelineView() {
   const toggleProjectPause = async () => {
     if (!purposeId) return;
     try {
-      const endpoint = projectPaused
-        ? `/purpose/${purposeId}/resume`
-        : `/purpose/${purposeId}/pause`;
-      await fetch(`${API}${endpoint}`, { method: "POST" });
-      setProjectPaused(!projectPaused);
+      if (projectPaused) {
+        await postJson(`/purpose/${purposeId}/resume`, {});
+        setProjectPaused(false);
+      } else {
+        await postJson(`/purpose/${purposeId}/pause`, {});
+        setProjectPaused(true);
+      }
     } catch (e: any) {
+      console.error(e);
       toast.error(e.message || "Failed to toggle project pause");
     }
   };
@@ -190,7 +199,9 @@ export default function PipelineView() {
       const text = await res.text();
       setArtifactContent(text);
     } catch (e: any) {
+      console.error(e);
       setArtifactContent(`Failed to load artifact: ${e.message}`);
+      toast.error(`Failed to load artifact: ${e.message || ""}`);
     } finally {
       setArtifactLoading(false);
     }
@@ -285,7 +296,7 @@ export default function PipelineView() {
           ) : (
             <div className="flex flex-col sm:flex-row justify-between items-center text-sm">
               <span className="text-gray-700 mb-2 sm:mb-0">
-                Purpose ID: <span className="font-mono">{purposeId}</span>
+                Name: <span className="font-semibold">{purposeName}</span> (ID: <span className="font-mono">{purposeId}</span>)
               </span>
               <div className="flex items-center gap-4">
                 <div className="flex gap-2">
@@ -323,6 +334,49 @@ export default function PipelineView() {
               {/* Optional: Button zum Neuladen könnten wir hier hinzufügen */}
             </h2>
             <pre className="text-sm whitespace-pre-wrap">{blueprint}</pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Backlog */}
+      {tasks.length > 0 && (
+        <Card>
+          <CardContent>
+            <h2 className="flex items-center gap-2 text-lg mb-2">
+              <ClipboardList /> Backlog
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Todo</h3>
+                <ul className="space-y-1 text-sm">
+                  {tasks.filter((t) => t.status === "todo").map((t) => (
+                    <li key={t.id} className="border-b border-slate-200 py-1">
+                      {t.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Doing</h3>
+                <ul className="space-y-1 text-sm">
+                  {tasks.filter((t) => t.status === "doing").map((t) => (
+                    <li key={t.id} className="border-b border-slate-200 py-1">
+                      {t.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Done</h3>
+                <ul className="space-y-1 text-sm">
+                  {tasks.filter((t) => t.status === "done").map((t) => (
+                    <li key={t.id} className="border-b border-slate-200 py-1">
+                      {t.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
