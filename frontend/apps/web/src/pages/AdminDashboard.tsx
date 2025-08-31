@@ -48,6 +48,16 @@ export default function AdminDashboard() {
     budget_exceeded: { label: "Blocked (Budget)", color: "bg-gray-500 text-white", tooltip: "Task skipped due to insufficient budget." }
   };
 
+  // Load overall budget information on mount
+  useEffect(() => {
+    getJson("/")
+      .then((d) => {
+        setBudget(d.budget_left);
+        setBudgetTotal(d.budget_total);
+      })
+      .catch(() => {});
+  }, []);
+
   // Fetch list of purposes on mount
   useEffect(() => {
     getJson("/purpose")
@@ -284,9 +294,24 @@ export default function AdminDashboard() {
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-2">Pipeline Status</h2>
-            <p className="text-sm mb-1">
-              <span className="font-medium">Current Purpose:</span> {currentPurpose || "—"}
-            </p>
+            <div className="text-sm mb-2 flex items-center gap-2">
+              <label className="font-medium" htmlFor="purpose-select">
+                Current Purpose:
+              </label>
+              <select
+                id="purpose-select"
+                className="border rounded px-2 py-1"
+                value={currentPurposeId}
+                onChange={(e) => setCurrentPurposeId(e.target.value)}
+              >
+                <option value="">-- Select Purpose --</option>
+                {purposes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <p className="text-sm mb-3">
               <span className="font-medium">Planned:</span> {counts.planned}{" "}
               <span className="font-medium">Running:</span> {counts.running}{" "}

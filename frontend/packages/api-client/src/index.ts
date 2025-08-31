@@ -73,3 +73,23 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   // graceful fallback (dev backends that accept JSON)
   return await postJson<LoginPayload, LoginResponse>("/login", payload);
 }
+
+// --- Additional API helpers ---
+export async function getTemplates() {
+  return await getJson("/templates");
+}
+
+export async function getGraph() {
+  return await getJson("/graph");
+}
+
+export async function getPurposeGraph(pid: string) {
+  return await getJson(`/purpose/${pid}/graph`);
+}
+
+export async function postFeedback(
+  pid: string,
+  payload: { type: string; text?: string; approved?: boolean }
+) {
+  return await postJson(`/purpose/${pid}/feedback`, payload);
+}
