@@ -19,7 +19,7 @@ def main(tenant: str, purpose: str) -> int:
 
     # warten bis Tasks durch sind
     while True:
-        rows = requests.get(f"{API}/backlog", params={"tenant": tenant}).json()
+        rows = requests.get(f"{API}/api/backlog", params={"tenant": tenant}).json()
         undone = [t for t in rows if t.get("status") in {"todo", "doing"}]
         if not undone:
             break
@@ -27,7 +27,7 @@ def main(tenant: str, purpose: str) -> int:
         time.sleep(3)
 
     # Artefakte abrufen
-    arts = requests.get(f"{API}/artifacts", params={"tenant": tenant}).json()
+    arts = requests.get(f"{API}/api/artifacts", params={"tenant": tenant}).json()
     if not arts:
         raise SystemExit("No artefacts produced!")
     print(f"🎉 {len(arts)} artefacts produced – smoke test PASS")
