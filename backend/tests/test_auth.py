@@ -19,8 +19,8 @@ def test_register_login_and_protected_route(monkeypatch):
     assert r.status_code == 200
     token = r.json()["access_token"]
     # unauthorized
-    resp = client.get("/backlog")
+    resp = client.get("/api/backlog")
     assert resp.status_code == 401
     # authorized
-    resp = client.get("/backlog", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/api/backlog", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200

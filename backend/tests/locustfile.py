@@ -1,6 +1,6 @@
 # tests/locustfile.py
 """
-50-VU Smoke-Test – feuert POST /task + GET /backlog
+50-VU Smoke-Test – feuert POST /task + GET /api/backlog
   locust -f tests/locustfile.py --headless -u 50 -r 5 -t 30s --host http://localhost:8000
 """
 
@@ -24,7 +24,7 @@ class AIOrgDemo(HttpUser):
 
     @task(1)
     def read_backlog(self):
-        self.client.get("/backlog", name="/backlog")
+        self.client.get("/api/backlog", name="/api/backlog")
 
     @task(1)
     def root_status(self):

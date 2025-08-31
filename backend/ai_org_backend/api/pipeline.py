@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -21,27 +22,41 @@ from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services.storage import save_artefact, vector_store
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
 
 @router.post("/pause")
 def pause_pipeline(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    pool.set(f"pause:{tenant_id}", "1")
+    try:
+        pool.set(f"pause:{tenant_id}", "1")
+    except Exception as e:
+        logger.error("Redis set failed: %s", e)
+        raise HTTPException(status_code=503, detail="Cache unavailable")
     return {"status": "paused"}
 
 
 @router.post("/resume")
 def resume_pipeline(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    pool.delete(f"pause:{tenant_id}")
+    try:
+        pool.delete(f"pause:{tenant_id}")
+    except Exception as e:
+        logger.error("Redis delete failed: %s", e)
+        raise HTTPException(status_code=503, detail="Cache unavailable")
     return {"status": "resumed"}
 
 
 @router.get("/pause")
 def get_pause_status(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    paused = bool(pool.get(f"pause:{tenant_id}"))
+    try:
+        paused = bool(pool.get(f"pause:{tenant_id}"))
+    except Exception as e:
+        logger.error("Redis get failed: %s", e)
+        raise HTTPException(status_code=503, detail="Cache unavailable")
     return {"paused": paused}
 
 
@@ -82,23 +97,50 @@ def get_purpose_graph(purpose_id: str, current_tenant: Tenant = Depends(get_curr
 @router.post("/purpose/{purpose_id}/pause")
 def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+    try:
+        pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+    except Exception as e:
+        logger.error("Redis set failed: %s", e)
+        raise HTTPException(status_code=503, detail="Cache unavailable")
     return {"status": "paused"}
 
 
 @router.post("/purpose/{purpose_id}/resume")
 def resume_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    pool.delete(f"pause:{tenant_id}:{purpose_id}")
+    try:
+        pool.delete(f"pause:{tenant_id}:{purpose_id}")
+    except Exception as e:
+        logger.error("Redis delete failed: %s", e)
+        raise HTTPException(status_code=503, detail="Cache unavailable")
     return {"status": "resumed"}
 
 
 @router.get("/purpose/{purpose_id}/status")
 def get_purpose_status(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
-    paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
-    budget = float(pool.get(f"budget:{tenant_id}:{purpose_id}") or DEFAULT_BUDGET)
+    try:
+        paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
+        budget = float(pool.get(f"budget:{tenant_id}:{purpose_id}") or DEFAULT_BUDGET)
+    except Exception as e:
+        logger.error("Redis get failed: %s", e)
+        paused = False
+        budget = DEFAULT_BUDGET
     return {"paused": paused, "budget_left": budget, "budget_total": DEFAULT_BUDGET}
+
+
+@router.get("/backlog")
+async def backlog(
+    purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    with Session(engine) as s:
+        query = select(Task).where(
+            Task.tenant_id == current_tenant.id, Task.status == "todo"
+        )
+        if purpose_id:
+            query = query.where(Task.purpose_id == purpose_id)
+        rows = s.exec(query).all()
+    return [r.model_dump() for r in rows]
 
 
 @router.get("/artifacts")
@@ -156,7 +198,11 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             session.add(purpose)
             session.commit()
             session.refresh(purpose)
-            pool.set(f"budget:{tenant_id}:{purpose.id}", DEFAULT_BUDGET)
+            try:
+                pool.set(f"budget:{tenant_id}:{purpose.id}", DEFAULT_BUDGET)
+            except Exception as e:
+                logger.error("Redis set failed: %s", e)
+                raise HTTPException(status_code=503, detail="Cache unavailable")
     with Session(engine) as session:
         existing_tasks = session.exec(
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)

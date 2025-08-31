@@ -141,7 +141,7 @@ PostgreSQL (in Dev und Prod) → Datenbank über Alembic‑Migrationen verwa
 🔌 4 | REST API (Auszug)
  Methode 	 Pfad 	 Beschreibung 
 GET	/	Health + Budget Left
-GET	/backlog	Liste aller todo‑Tasks (Tenant)
+GET     /api/backlog	Liste aller todo‑Tasks (Tenant)
 POST	/task	JSON {description, business_value} → Task anlegen
 GET	/api/graph	Graph‑JSON (Nodes + Edges) für Frontend
 
