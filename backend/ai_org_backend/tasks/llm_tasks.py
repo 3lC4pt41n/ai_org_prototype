@@ -18,10 +18,10 @@ def render_dev(**ctx: str) -> str:
     return TMPL_DEV.render(**ctx)
 
 
-def generate_dev_code(**ctx: str) -> str:
+def generate_dev_code(tenant_id: str | None = None, **ctx: str) -> str:
     """Return code snippet from dev agent."""
     prompt = render_dev(**ctx)
-    return chat_completion(prompt)
+    return chat_completion(prompt, tenant_id=tenant_id)
 
 
 @shared_task(name="ai_org_backend.tasks.llm_tasks.insight_agent")
@@ -37,6 +37,7 @@ def insight_agent(tenant: str, task_id: str) -> None:
             messages=[{"role": "user", "content": p}],
             max_tokens=500,
             temperature=0,
+            tenant_id=tenant,
         )
 
     try:
