@@ -20,10 +20,18 @@ from ai_org_backend.models import Artifact, Task
 
 from .vector_store import VectorStore
 
-# Store artifacts under a fixed workspace directory within the backend package.
-WORKSPACE = Path(__file__).parent.parent / "workspace"
-# Ensure the directory exists even for nested paths.
-WORKSPACE.mkdir(parents=True, exist_ok=True)
+log = logging.getLogger(__name__)
+
+# Workspace root (can be overridden via WORKSPACE_DIR env)
+WORKSPACE = Path(
+    os.getenv("WORKSPACE_DIR", str(Path(__file__).resolve().parent.parent / "workspace"))
+).resolve()
+
+# Git identity (author + committer), configurable via env
+GIT_NAME = os.getenv("GIT_AUTHOR_NAME", os.getenv("GIT_COMMITTER_NAME", "ai-org-bot"))
+GIT_EMAIL = os.getenv(
+    "GIT_AUTHOR_EMAIL", os.getenv("GIT_COMMITTER_EMAIL", "noreply@ai.org")
+)
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
@@ -39,16 +47,42 @@ ARTIFACT_UPDATES = prom_counter(
 # retry settings for vector persistence
 VECTOR_STORE_RETRIES = 3
 
-# Git-Repository im Workspace initialisieren, falls möglich
-if WORKSPACE.exists():
-    if not (WORKSPACE / ".git").exists():
-        try:
-            subprocess.run(["git", "init", "-q", str(WORKSPACE)], check=True)
-        except Exception as exc:
-            logging.getLogger(__name__).warning("Git repository initialization failed: %s", exc)
-else:
-    logging.getLogger(__name__).warning(
-        "Workspace directory %s not found, skipping Git init", WORKSPACE
+
+def _ensure_repo(repo_dir: Path) -> None:
+    """Initialise a Git repository if needed and configure identity."""
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    if not (repo_dir / ".git").exists():
+        subprocess.run(["git", "init", str(repo_dir)], check=True)
+        subprocess.run(["git", "-C", str(repo_dir), "branch", "-M", "main"], check=False)
+        (repo_dir / ".gitkeep").write_text("", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_dir), "add", "-A"], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_dir),
+                "-c",
+                f"user.name={GIT_NAME}",
+                "-c",
+                f"user.email={GIT_EMAIL}",
+                "commit",
+                "-m",
+                "init workspace",
+                "--quiet",
+            ],
+            check=True,
+        )
+    subprocess.run(
+        ["git", "config", "--global", "--add", "safe.directory", str(repo_dir)],
+        check=False,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "config", "user.name", GIT_NAME],
+        check=False,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "config", "user.email", GIT_EMAIL],
+        check=False,
     )
 
 
@@ -62,29 +96,31 @@ def _mime(p: Path) -> str:
 
 
 def _git_commit(rel_path: str, message: str) -> None:
-    subprocess.run(["git", "-C", str(WORKSPACE), "add", rel_path], check=True)
-    # Determine if a Git user is configured for this repository. If not, provide a
-    # default author to avoid failing commits in clean environments.
-    try:
-        user_name = subprocess.check_output(
-            ["git", "-C", str(WORKSPACE), "config", "--get", "user.name"],
-            text=True,
-        ).strip()
-        user_email = subprocess.check_output(
-            ["git", "-C", str(WORKSPACE), "config", "--get", "user.email"],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
-        user_name = user_email = ""
-    commit_cmd = ["git", "-C", str(WORKSPACE)]
-    if not user_name or not user_email:
-        commit_cmd += [
-            "-c",
-            "user.name=ai-org-bot",
-            "-c",
-            "user.email=noreply@ai.org",
-        ]
-    commit_cmd += ["commit", "-m", message, "--quiet"]
+    """Add & commit changes in the workspace repository."""
+    _ensure_repo(WORKSPACE)
+    subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
+    status = subprocess.run(
+        ["git", "-C", str(WORKSPACE), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if not status.stdout.strip():
+        log.info("storage: nothing to commit in %s", WORKSPACE)
+        return
+    commit_cmd = [
+        "git",
+        "-C",
+        str(WORKSPACE),
+        "-c",
+        f"user.name={GIT_NAME}",
+        "-c",
+        f"user.email={GIT_EMAIL}",
+        "commit",
+        "-m",
+        message,
+        "--quiet",
+    ]
     subprocess.run(commit_cmd, check=True)
 
 
@@ -128,7 +164,7 @@ def should_embed(text: str) -> bool:
 
 def register_artefact(
     task_id: str,
-    src: Path | bytes,
+    src: Path | bytes | str,
     filename: Optional[str] = None,
     *,
     allow_overwrite: bool = False,
@@ -147,9 +183,9 @@ def register_artefact(
     target_dir = WORKSPACE / tenant_dir / purpose_dir if purpose_dir else WORKSPACE / tenant_dir
     target_dir.mkdir(exist_ok=True, parents=True)
     # Determine target file path and ensure unique name
-    if isinstance(src, bytes):
+    if isinstance(src, (bytes, str)):
         if not filename:
-            raise ValueError("`filename` required when passing bytes.")
+            raise ValueError("`filename` required when passing bytes or str.")
         base_name = filename
     else:
         src = Path(src).expanduser().resolve()
@@ -174,6 +210,8 @@ def register_artefact(
     try:
         if isinstance(src, bytes):
             tgt.write_bytes(src)
+        elif isinstance(src, str):
+            tgt.write_text(src)
         else:
             shutil.copy2(src, tgt)
     except Exception as exc:  # pragma: no cover - defensive
