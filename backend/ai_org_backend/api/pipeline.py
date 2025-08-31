@@ -1,5 +1,5 @@
-from pathlib import Path
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -10,17 +10,17 @@ from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 from ai_org_backend.models import (
     Artifact,
+    Feedback,
+    FeedbackType,
     Purpose,
     Task,
     TaskDependency,
     Tenant,
-    Feedback,
-    FeedbackType,
 )
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
-from ai_org_backend.services.storage import save_artefact, vector_store
+from ai_org_backend.services.storage import WORKSPACE, save_artefact, vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +382,7 @@ def post_feedback(
             .where(
                 Feedback.purpose_id == purpose_id,
                 Feedback.type == ftype,
-                Feedback.approved == True,
+                Feedback.approved.is_(True),
             )
         ).first()
         if existing_approved:
@@ -460,7 +460,7 @@ def post_feedback(
         current_text = ""
         prev_task = None
         if current_art:
-            file_path = Path("workspace") / current_art.repo_path
+            file_path = WORKSPACE / current_art.repo_path
             if file_path.exists():
                 current_text = file_path.read_text(encoding="utf-8", errors="ignore")
             prev_task = session.get(Task, current_art.task_id)
@@ -544,7 +544,7 @@ def download_artifact(artifact_id: str, current_tenant: Tenant = Depends(get_cur
         art = session.get(Artifact, artifact_id)
         if not art or (art.task and art.task.tenant_id != tenant_id):
             raise HTTPException(status_code=404, detail="Artifact not found")
-        file_path = Path("workspace") / art.repo_path
+        file_path = WORKSPACE / art.repo_path
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Artifact file not found")
     return FileResponse(file_path, media_type=art.media_type, filename=Path(art.repo_path).name)
@@ -554,7 +554,7 @@ def download_artifact(artifact_id: str, current_tenant: Tenant = Depends(get_cur
 def download_project_archive(current_tenant: Tenant = Depends(get_current_tenant)):
     """Download a ZIP archive containing all artifacts for the tenant."""
     tenant_id = current_tenant.id
-    base_dir = Path("workspace") / tenant_id
+    base_dir = WORKSPACE / tenant_id
     if not base_dir.exists():
         raise HTTPException(status_code=404, detail="No project output available")
     archive_path = base_dir.parent / f"{tenant_id}_output.zip"
@@ -584,7 +584,7 @@ def get_context(task_id: str, current_tenant: Tenant = Depends(get_current_tenan
         source = payload.get("file", "")
         snippet_text = ""
         if source:
-            file_path = Path("workspace") / source
+            file_path = WORKSPACE / source
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8", errors="ignore")
