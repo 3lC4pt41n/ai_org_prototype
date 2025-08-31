@@ -315,6 +315,25 @@ export default function PipelineView() {
     }
   }, [selectedArtifact, feedback, purposeId]);
 
+  // Approval for PRD and Architecture tasks
+  const isApproveEligible = !!selectedArtifact && (
+    selectedArtifact.repo_path.includes('product_requirements') ||
+    selectedArtifact.repo_path.includes('architecture_blueprint')
+  );
+  const approveFeedback = useCallback(async () => {
+    if (!selectedArtifact || !purposeId) return;
+    const type = selectedArtifact.repo_path.includes('product_requirements') ? 'prd' : 'blueprint';
+    try {
+      await postJson(`/api/purpose/${purposeId}/feedback`, { type, approved: true });
+      toast.success('Freigabe erteilt');
+      setSelectedArtifact(null);
+      setPurposeId(purposeId);
+    } catch (e) {
+      console.error(e);
+      toast.error('Freigabe fehlgeschlagen');
+    }
+  }, [selectedArtifact, purposeId]);
+
   // Graph-Fallback aus Backlog
   useEffect(() => {
     if (nodes.length || !backlog.length) return;
@@ -374,7 +393,13 @@ export default function PipelineView() {
                 </>
               )}
             </HStack>
-            <HStack className="w-[420px] justify-end">
+            <HStack className="w-full justify-between items-center">
+              {status && (
+                <div className="text-sm text-slate-600">
+                  Budget: {status.budget_left}/{status.budget_total} USD
+                </div>
+              )}
+              <div className="flex-1" />
               <Input
                 placeholder="Neues Projektziel…"
                 value={newPurpose}
@@ -502,6 +527,11 @@ export default function PipelineView() {
                 onChange={(e) => setFeedback(e.target.value)}
               />
               <HStack className="justify-end mt-2">
+                {isApproveEligible && (
+                  <Button onClick={approveFeedback}>
+                    Freigeben
+                  </Button>
+                )}
                 <Button onClick={sendFeedback} disabled={!feedback.trim()}>
                   Senden
                 </Button>
