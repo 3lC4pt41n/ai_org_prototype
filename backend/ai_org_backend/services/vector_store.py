@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from ai_org_backend.config import QDRANT_API_KEY, QDRANT_URL
 
+from . import budget
+
 try:  # pragma: no cover - optional dependency during tests
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
@@ -19,11 +21,37 @@ try:  # pragma: no cover - optional dependency during tests
     )
 except Exception:  # pragma: no cover
     QdrantClient = None  # type: ignore
+    Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None  # type: ignore
 
 try:  # pragma: no cover - allow tests without openai package
     import openai
 except Exception:  # pragma: no cover
     openai = None  # type: ignore
+
+
+def _embedding_with_tokens(text: str) -> tuple[list[float], int]:
+    """Return embedding vector and token count using OpenAI client, compatible with
+    both legacy and new SDKs."""
+    if openai is None:
+        raise RuntimeError("openai package not available")
+    if hasattr(openai, "OpenAI"):
+        client = openai.OpenAI()
+        resp = client.embeddings.create(model="text-embedding-3-small", input=text)
+        data = resp.to_dict() if hasattr(resp, "to_dict") else resp
+    elif hasattr(openai, "Embedding"):
+        resp = openai.Embedding.create(model="text-embedding-3-small", input=text)
+        data = resp
+    elif hasattr(openai, "Embeddings"):
+        resp = openai.Embeddings.create(model="text-embedding-3-small", input=text)
+        data = resp
+    else:  # pragma: no cover - defensive
+        raise AttributeError("No embedding method found on openai module")
+    vector = data["data"][0]["embedding"]
+    usage = data.get("usage") or {}
+    tokens = int(usage.get("total_tokens") or usage.get("prompt_tokens") or 0)
+    if tokens <= 0:
+        tokens = max(1, int(len(text) / 4))
+    return vector, tokens
 
 
 class VectorStore:
@@ -39,9 +67,7 @@ class VectorStore:
                     try:
                         self.client.create_collection(
                             collection_name=self.collection_name,
-                            vectors_config=VectorParams(
-                                size=1536, distance=Distance.COSINE
-                            ),
+                            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
                         )
                     except Exception as exc:
                         # Falls die Collection bereits existiert (HTTP 409), Fehler ignorieren
@@ -94,8 +120,15 @@ class VectorStore:
             except Exception as exc:  # pragma: no cover
                 logging.getLogger(__name__).warning("Vector cleanup failed: %s", exc)
 
-            embed = openai.Embedding.create(model="text-embedding-3-small", input=text)
-            vector = embed["data"][0]["embedding"]
+            vector, total_tokens = _embedding_with_tokens(text)
+            if tenant_id:
+                try:
+                    budget.charge_tokens(tenant_id, "text-embedding-3-small", total_tokens)
+                except budget.BudgetExceededError as exc:
+                    logging.getLogger(__name__).warning(
+                        "Budget exceeded for tenant %s: %s", tenant_id, exc
+                    )
+                    return False
             payload: Dict[str, Any] = {
                 "tenant": tenant_id,
                 "version": version,
@@ -119,8 +152,15 @@ class VectorStore:
         if not self.client or openai is None:
             return []
         try:
-            embed = openai.Embedding.create(model="text-embedding-3-small", input=query_text)
-            vector = embed["data"][0]["embedding"]
+            vector, total_tokens = _embedding_with_tokens(query_text)
+            if tenant_id:
+                try:
+                    budget.charge_tokens(tenant_id, "text-embedding-3-small", total_tokens)
+                except budget.BudgetExceededError as exc:
+                    logging.getLogger(__name__).warning(
+                        "Budget exceeded for tenant %s: %s", tenant_id, exc
+                    )
+                    return []
             q_filter = Filter(
                 must=[FieldCondition(key="tenant", match=MatchValue(value=tenant_id))],
                 must_not=[FieldCondition(key="obsolete", match=MatchValue(value=True))],
@@ -137,4 +177,3 @@ class VectorStore:
 
 
 __all__ = ["VectorStore"]
-

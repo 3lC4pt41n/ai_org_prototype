@@ -11,12 +11,11 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import Optional
 
-from neo4j import GraphDatabase
-from sqlmodel import Session
-
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Task
+from neo4j import GraphDatabase
+from sqlmodel import Session
 
 from .vector_store import VectorStore
 
@@ -126,11 +125,12 @@ def register_artefact(
     tenant workspace, the existing file is replaced instead of creating a suffixed copy.
     Automatically stores the artefact under the tenant's workspace directory and records metadata.
     """
-    # Determine tenant workspace directory
+    # Determine tenant workspace directory, optionally including purpose
     with Session(engine) as session:
         task_obj = session.get(Task, task_id)
         tenant_dir = task_obj.tenant_id if task_obj else "default"
-    target_dir = WORKSPACE / tenant_dir
+        purpose_dir = task_obj.purpose_id if task_obj and task_obj.purpose_id else None
+    target_dir = WORKSPACE / tenant_dir / purpose_dir if purpose_dir else WORKSPACE / tenant_dir
     target_dir.mkdir(exist_ok=True, parents=True)
     # Determine target file path and ensure unique name
     if isinstance(src, bytes):
@@ -141,10 +141,7 @@ def register_artefact(
         src = Path(src).expanduser().resolve()
         base_name = filename or src.name
     base_name = (base_name or "artifact").strip().lstrip("/\\")
-    if (
-        not Path(base_name).suffix
-        and media_type in ("text/markdown", "text/x-markdown")
-    ):
+    if not Path(base_name).suffix and media_type in ("text/markdown", "text/x-markdown"):
         base_name = f"{base_name}.md"
     tgt = target_dir / base_name
     # Ensure directories exist for nested paths like "requirements/"
@@ -160,13 +157,21 @@ def register_artefact(
             counter += 1
         original_exists = False
     # Write bytes or copy file
-    if isinstance(src, bytes):
-        tgt.write_bytes(src)
-    else:
-        shutil.copy2(src, tgt)
+    try:
+        if isinstance(src, bytes):
+            tgt.write_bytes(src)
+        else:
+            shutil.copy2(src, tgt)
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.error("Failed to write artifact to %s: %s", tgt, exc)
+        raise
 
     # Compute metadata
-    sha = _sha256(tgt)
+    try:
+        sha = _sha256(tgt)
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.error("Failed to compute SHA256 for %s: %s", tgt, exc)
+        raise
     artefact = Artifact(
         task_id=task_id,
         repo_path=str(tgt.relative_to(WORKSPACE)),
@@ -176,19 +181,24 @@ def register_artefact(
     )
     text_content: Optional[str] = None
     # Save artefact in database and link to task
-    with Session(engine) as session:
-        session.add(artefact)
-        task_obj = session.get(Task, task_id)
-        if task_obj:
-            # Update token usage (approximate)
-            try:
-                text_content = tgt.read_text(encoding="utf-8", errors="ignore")
-                word_count = len(text_content.split())
-            except Exception:
-                word_count = 0
-            task_obj.tokens_actual += int(word_count * 1.5)
-        session.commit()
-        session.refresh(artefact)
+    try:
+        with Session(engine) as session:
+            session.add(artefact)
+            task_obj = session.get(Task, task_id)
+            if task_obj:
+                # Update token usage (approximate)
+                try:
+                    text_content = tgt.read_text(encoding="utf-8", errors="ignore")
+                    word_count = len(text_content.split())
+                except Exception as exc:  # pragma: no cover - defensive
+                    logging.warning("Failed to read text content for %s: %s", tgt, exc)
+                    word_count = 0
+                task_obj.tokens_actual += int(word_count * 1.5)
+            session.commit()
+            session.refresh(artefact)
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.error("Failed to register artifact in database: %s", exc)
+        raise
     if original_exists and allow_overwrite and vector_store.client:
         try:
             from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
@@ -227,6 +237,9 @@ def register_artefact(
                 logging.warning("Vector store attempt %s failed", attempt)
                 time.sleep(1)
             if not stored:
+                logging.error(
+                    "Vector store persistence failed after %s attempts", VECTOR_STORE_RETRIES
+                )
                 raise RuntimeError("Vector store persistence failed")
         else:
             logging.info(
