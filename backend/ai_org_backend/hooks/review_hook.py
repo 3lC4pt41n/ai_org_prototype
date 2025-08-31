@@ -1,4 +1,3 @@
-from __future__ import annotations
 """
 Review Hook (monkey-patch save_artefact)
 ---------------------------------------
@@ -10,14 +9,16 @@ Markdown is saved, we:
 
 This avoids invasive edits to pipeline/orchestrator and stays tenant-safe.
 """
+
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
+from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.services import storage as _storage
-
-from ai_org_backend.agents.reviewer import reviewer_task
 
 # Keep original pointer so we can call it
 _orig_save_artefact = _storage.save_artefact
@@ -32,7 +33,11 @@ def _ensure_review_task(tenant_id: str, purpose_id: str) -> Task:
         # Try to find an existing review task for this purpose
         t = (
             s.query(Task)
-            .filter(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id, Task.description == "Architecture & Domain Review")
+            .filter(
+                Task.tenant_id == tenant_id,
+                Task.purpose_id == purpose_id,
+                Task.description == "Architecture & Domain Review",
+            )
             .first()
         )
         if t:
@@ -55,17 +60,21 @@ def _ensure_review_task(tenant_id: str, purpose_id: str) -> Task:
         return t
 
 
-def _wire_dependencies_after_blueprint(tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str) -> None:
+def _wire_dependencies_after_blueprint(
+    tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str
+) -> None:
     """
-    Ensure: blueprint -> review, and review -> every other task in this purpose (except blueprint, review).
-    This guarantees no implementation proceeds before review approval.
-    Idempotent: skips existing edges.
+    Ensure: blueprint -> review, and review -> every other task in this purpose
+    (except blueprint, review). This guarantees no implementation proceeds
+    before review approval. Idempotent: skips existing edges.
     """
     with SessionLocal() as s:
         # Edge: blueprint -> review
         if (
             s.query(TaskDependency)
-            .filter(TaskDependency.from_id == blueprint_task_id, TaskDependency.to_id == review_task_id)
+            .filter(
+                TaskDependency.from_id == blueprint_task_id, TaskDependency.to_id == review_task_id
+            )
             .first()
             is None
         ):
@@ -74,9 +83,7 @@ def _wire_dependencies_after_blueprint(tenant_id: str, purpose_id: str, blueprin
 
         # Edge(s): review -> all other tasks (repo init + dev + anything else)
         other_tasks = (
-            s.query(Task)
-            .filter(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id)
-            .all()
+            s.query(Task).filter(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id).all()
         )
         for t in other_tasks:
             if t.id in (blueprint_task_id, review_task_id):
@@ -93,13 +100,17 @@ def _wire_dependencies_after_blueprint(tenant_id: str, purpose_id: str, blueprin
         s.commit()
 
 
-def _schedule_reviewer_job(tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str) -> None:
+def _schedule_reviewer_job(
+    tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str
+) -> None:
     """
     Enqueue Celery job. We rely on the default 'celery' queue to keep this portable.
     """
     try:
         reviewer_task.delay(tenant_id, purpose_id, blueprint_task_id, review_task_id)
-        logging.info("[ReviewHook] Enqueued reviewer job (tenant=%s, purpose=%s)", tenant_id, purpose_id)
+        logging.info(
+            "[ReviewHook] Enqueued reviewer job (tenant=%s, purpose=%s)", tenant_id, purpose_id
+        )
     except Exception as e:
         logging.error("[ReviewHook] Failed to enqueue reviewer job: %s", e)
 
@@ -124,17 +135,41 @@ def _maybe_trigger_review(task_id: str, filename: str) -> None:
         # Create or reuse review task
         review_task = _ensure_review_task(tenant_id, purpose_id)
         # Wire dependency edges
-        _wire_dependencies_after_blueprint(tenant_id, purpose_id, blueprint_task_id=task_id, review_task_id=review_task.id)
+        _wire_dependencies_after_blueprint(
+            tenant_id, purpose_id, blueprint_task_id=task_id, review_task_id=review_task.id
+        )
         # Fire reviewer job (generates markdown artefact; leaves task 'todo')
-        _schedule_reviewer_job(tenant_id, purpose_id, blueprint_task_id=task_id, review_task_id=review_task.id)
+        _schedule_reviewer_job(
+            tenant_id, purpose_id, blueprint_task_id=task_id, review_task_id=review_task.id
+        )
 
 
-def save_artefact_with_review(task_id: str, data: bytes, filename: str, allow_overwrite: bool = False):
+def save_artefact_with_review(
+    task_id: str,
+    data: bytes,
+    filename: str,
+    allow_overwrite: bool = False,
+    media_type: Optional[str] = None,
+):
     """
     Wrapper around the original save_artefact.
     Calls the original, then triggers review if the blueprint was saved.
+
+    Args:
+        task_id: The ID of the task the artefact belongs to.
+        data: The artefact contents.
+        filename: Target filename for the artefact.
+        allow_overwrite: Whether to allow overwriting existing artefacts.
+        media_type: Optional media type for the artefact; forwarded to the
+            underlying storage implementation.
     """
-    result = _orig_save_artefact(task_id, data, filename, allow_overwrite=allow_overwrite)
+    result = _orig_save_artefact(
+        task_id,
+        data,
+        filename,
+        allow_overwrite=allow_overwrite,
+        media_type=media_type,
+    )
     try:
         _maybe_trigger_review(task_id=task_id, filename=filename)
     except Exception as e:
