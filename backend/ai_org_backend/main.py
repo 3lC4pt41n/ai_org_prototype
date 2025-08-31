@@ -11,7 +11,6 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import GraphDatabase
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
-from sqlmodel import Session, select
 
 import ai_org_backend.hooks.review_hook  # noqa: F401
 import ai_org_backend.hooks.tests_hook  # noqa: F401
@@ -26,9 +25,7 @@ from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.api.purposes import router as purposes_router
 from ai_org_backend.api.feedback import router as feedback_router
 from ai_org_backend.db import engine
-
-# storage helpers are used by individual agent modules
-from ai_org_backend.models import Task, Tenant
+from ai_org_backend.models import Tenant
 
 # ──────────────── ENV / constants ─────────────────────────────
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
@@ -158,20 +155,6 @@ async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tena
         purpose_relevance=d.get("purpose_relevance", 0),
     )
     return t.model_dump()
-
-
-@app.get("/backlog")
-async def backlog(
-    purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
-):
-    with Session(engine) as s:
-        query = select(Task).where(
-            Task.tenant_id == current_tenant.id, Task.status == "todo"
-        )
-        if purpose_id:
-            query = query.where(Task.purpose_id == purpose_id)
-        rows = s.exec(query).all()
-    return [r.model_dump() for r in rows]
 
 
 # run dev server
