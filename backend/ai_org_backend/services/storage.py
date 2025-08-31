@@ -76,9 +76,15 @@ def _git_commit(rel_path: str, message: str) -> None:
         ).strip()
     except subprocess.CalledProcessError:
         user_name = user_email = ""
-    commit_cmd = ["git", "-C", str(WORKSPACE), "commit", "-m", message, "--quiet"]
+    commit_cmd = ["git", "-C", str(WORKSPACE)]
     if not user_name or not user_email:
-        commit_cmd += ["--author", "ai-org-bot <noreply@ai.org>"]
+        commit_cmd += [
+            "-c",
+            "user.name=ai-org-bot",
+            "-c",
+            "user.email=noreply@ai.org",
+        ]
+    commit_cmd += ["commit", "-m", message, "--quiet"]
     subprocess.run(commit_cmd, check=True)
 
 
@@ -253,9 +259,7 @@ def register_artefact(
                         {"task": task_id, "file": artefact.repo_path, "sha": sha},
                     )
                 except Exception as exc:
-                    logging.warning(
-                        "Vector store attempt %s raised exception: %s", attempt, exc
-                    )
+                    logging.warning("Vector store attempt %s raised exception: %s", attempt, exc)
                     time.sleep(1)
                     continue
                 if success:
