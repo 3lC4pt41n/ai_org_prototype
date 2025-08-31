@@ -11,16 +11,19 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import Optional
 
-from ai_org_backend.db import engine
-from ai_org_backend.metrics import prom_counter
-from ai_org_backend.models import Artifact, Task
 from neo4j import GraphDatabase
 from sqlmodel import Session
 
+from ai_org_backend.db import engine
+from ai_org_backend.metrics import prom_counter
+from ai_org_backend.models import Artifact, Task
+
 from .vector_store import VectorStore
 
-WORKSPACE = Path.cwd() / "workspace"
-WORKSPACE.mkdir(exist_ok=True)
+# Store artifacts under a fixed workspace directory within the backend package.
+WORKSPACE = Path(__file__).parent.parent / "workspace"
+# Ensure the directory exists even for nested paths.
+WORKSPACE.mkdir(parents=True, exist_ok=True)
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
@@ -60,18 +63,23 @@ def _mime(p: Path) -> str:
 
 def _git_commit(rel_path: str, message: str) -> None:
     subprocess.run(["git", "-C", str(WORKSPACE), "add", rel_path], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(WORKSPACE),
-            "commit",
-            "-m",
-            message,
-            "--quiet",
-        ],
-        check=True,
-    )
+    # Determine if a Git user is configured for this repository. If not, provide a
+    # default author to avoid failing commits in clean environments.
+    try:
+        user_name = subprocess.check_output(
+            ["git", "-C", str(WORKSPACE), "config", "--get", "user.name"],
+            text=True,
+        ).strip()
+        user_email = subprocess.check_output(
+            ["git", "-C", str(WORKSPACE), "config", "--get", "user.email"],
+            text=True,
+        ).strip()
+    except subprocess.CalledProcessError:
+        user_name = user_email = ""
+    commit_cmd = ["git", "-C", str(WORKSPACE), "commit", "-m", message, "--quiet"]
+    if not user_name or not user_email:
+        commit_cmd += ["--author", "ai-org-bot <noreply@ai.org>"]
+    subprocess.run(commit_cmd, check=True)
 
 
 def _link_neo4j(task_id: str, artefact_sha: str) -> None:
@@ -180,6 +188,7 @@ def register_artefact(
         sha256=sha,
     )
     text_content: Optional[str] = None
+    tokens = 0
     # Save artefact in database and link to task
     try:
         with Session(engine) as session:
@@ -193,8 +202,18 @@ def register_artefact(
                 except Exception as exc:  # pragma: no cover - defensive
                     logging.warning("Failed to read text content for %s: %s", tgt, exc)
                     word_count = 0
-                task_obj.tokens_actual += int(word_count * 1.5)
+                tokens = int(word_count * 1.5)
+                task_obj.tokens_actual += tokens
             session.commit()
+            # Deduct budget for the tenant based on tokens used
+            try:
+                from ai_org_backend.services.budget import charge_tokens
+
+                charge_tokens(task_obj.tenant_id, "", tokens)
+            except Exception as e:
+                logging.getLogger(__name__).error(
+                    "Budget charge failed for tenant %s: %s", task_obj.tenant_id, e
+                )
             session.refresh(artefact)
     except Exception as exc:  # pragma: no cover - defensive
         logging.error("Failed to register artifact in database: %s", exc)
@@ -226,12 +245,20 @@ def register_artefact(
         if should_embed(text_content):
             stored = False
             for attempt in range(1, VECTOR_STORE_RETRIES + 1):
-                if vector_store.store_vector(
-                    tenant_dir,
-                    artefact.id,
-                    text_content,
-                    {"task": task_id, "file": artefact.repo_path, "sha": sha},
-                ):
+                try:
+                    success = vector_store.store_vector(
+                        tenant_dir,
+                        artefact.id,
+                        text_content,
+                        {"task": task_id, "file": artefact.repo_path, "sha": sha},
+                    )
+                except Exception as exc:
+                    logging.warning(
+                        "Vector store attempt %s raised exception: %s", attempt, exc
+                    )
+                    time.sleep(1)
+                    continue
+                if success:
                     stored = True
                     break
                 logging.warning("Vector store attempt %s failed", attempt)
@@ -240,7 +267,7 @@ def register_artefact(
                 logging.error(
                     "Vector store persistence failed after %s attempts", VECTOR_STORE_RETRIES
                 )
-                raise RuntimeError("Vector store persistence failed")
+                # Do not raise to avoid blocking artifact saving
         else:
             logging.info(
                 "Skipping vector embedding for artifact due to irrelevance (content too short)."
@@ -255,6 +282,18 @@ def register_artefact(
     except Exception:
         # Fehler im Neo4j-Link wurden bereits geloggt
         pass
+    # Mark the task as done
+    try:
+        with Session(engine) as session:
+            t = session.get(Task, task_id)
+            if t:
+                t.status = "done"
+                session.add(t)
+                session.commit()
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Failed to update task status for Task %s: %s", task_id, e
+        )
     logging.info(f"Registered artefact for Task {task_id}: {artefact.repo_path} (SHA256={sha[:8]})")
     return artefact
 
