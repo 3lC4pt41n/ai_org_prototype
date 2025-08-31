@@ -23,17 +23,16 @@ except Exception:  # pragma: no cover
     QdrantClient = None  # type: ignore
     Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None  # type: ignore
 
-try:  # pragma: no cover - allow tests without openai package
-    import openai
-except Exception:  # pragma: no cover
-    openai = None  # type: ignore
+import importlib
 
 
 def _embedding_with_tokens(text: str) -> tuple[list[float], int]:
     """Return embedding vector and token count using OpenAI client, compatible with
     both legacy and new SDKs."""
-    if openai is None:
-        raise RuntimeError("openai package not available")
+    try:
+        openai = importlib.import_module("openai")
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("openai package not available") from exc
     if hasattr(openai, "OpenAI"):
         client = openai.OpenAI()
         resp = client.embeddings.create(model="text-embedding-3-small", input=text)
@@ -96,6 +95,10 @@ class VectorStore:
         retry the operation.
         """
 
+        try:
+            openai = importlib.import_module("openai")
+        except Exception:  # pragma: no cover
+            openai = None
         if not self.client or not text or openai is None:
             return True
         try:

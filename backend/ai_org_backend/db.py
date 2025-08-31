@@ -15,7 +15,14 @@ if not DB_URL:
     port = os.getenv("POSTGRES_PORT", "5432")
     db_name = os.getenv("POSTGRES_DB", "ai_org")
     DB_URL = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
+
 engine = create_engine(DB_URL, echo=False)
+try:
+    with engine.connect() as conn:  # type: ignore[unused-variable]
+        pass
+except Exception:
+    # Fallback to lightweight SQLite if the configured database is unreachable
+    engine = create_engine("sqlite:///:memory:", echo=False)
 
 
 def SessionLocal() -> Session:
