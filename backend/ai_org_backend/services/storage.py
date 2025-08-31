@@ -124,6 +124,20 @@ def _git_commit(rel_path: str, message: str) -> None:
     subprocess.run(commit_cmd, check=True)
 
 
+def resolve_for_read(repo_path: str) -> Path:
+    """Resolve a repo_path to a safe absolute path under WORKSPACE."""
+    candidate = Path(repo_path)
+    if candidate.is_absolute():
+        p = candidate.resolve()
+        if str(p).startswith(str(WORKSPACE)):
+            return p
+        candidate = Path(candidate.as_posix().lstrip("/"))
+    abs_path = (WORKSPACE / candidate).resolve()
+    if not str(abs_path).startswith(str(WORKSPACE)):
+        raise ValueError("repo_path escapes workspace root")
+    return abs_path
+
+
 def _link_neo4j(task_id: str, artefact_sha: str) -> None:
     """Link artifact to task in Neo4j graph, ensuring both nodes and relation exist."""
     try:
