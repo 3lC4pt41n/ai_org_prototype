@@ -5,7 +5,7 @@ import Nav from "./components/Nav";
 import AdminDashboard from "./pages/AdminDashboard";
 import TaskGraph from "./pages/TaskGraph";
 import TemplateStudio from "./pages/TemplateStudio";
-import PipelinePage from "./pages/PipelinePage";
+import PipelineView from "./pages/PipelineView";
 import Insights from "./pages/Insights";
 import ReportsPage from "./pages/ReportsPage";
 import Login from "./pages/Login";
@@ -51,7 +51,7 @@ export default function App() {
           path="/pipeline"
           element={
             <PrivateRoute>
-              <PipelinePage />
+              <PipelineView />
             </PrivateRoute>
           }
         />
@@ -91,4 +91,5 @@ export default function App() {
       </Routes>
     </BrowserRouter>
   );
+  // Neue Pipeline-View ist über die Route /pipeline erreichbar
 }
