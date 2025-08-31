@@ -158,6 +158,11 @@ services:
       - NEO4J_PASS=${NEO4J_PASS}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
+      - GIT_AUTHOR_NAME=ai-org-bot
+      - GIT_AUTHOR_EMAIL=noreply@ai.org
+      - GIT_COMMITTER_NAME=ai-org-bot
+      - GIT_COMMITTER_EMAIL=noreply@ai.org
+      - WORKSPACE_DIR=/app/ai_org_backend/workspace
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - ALGORITHM=${ALGORITHM}
@@ -178,6 +183,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    volumes:
+      - ../workspace:/app/ai_org_backend/workspace
 
   orchestrator:
     build:

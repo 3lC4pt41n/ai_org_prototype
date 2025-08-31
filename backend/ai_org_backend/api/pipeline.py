@@ -20,7 +20,13 @@ from ai_org_backend.models import (
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
-from ai_org_backend.services.storage import WORKSPACE, save_artefact, vector_store
+from ai_org_backend.services.storage import (
+    WORKSPACE,
+    resolve_for_read,
+    save_artefact,
+    vector_store,
+)
+from ai_org_backend.services import budget as budget_svc
 
 logger = logging.getLogger(__name__)
 
@@ -233,12 +239,27 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         session.commit()
         session.refresh(prd_task_obj)
 
-    save_artefact(
-        prd_task_obj.id,
-        prd_content.encode("utf-8"),
-        filename="requirements/product_requirements.md",
-        media_type="text/markdown",
-    )
+    repo_rel = "requirements/product_requirements.md"
+    try:
+        save_artefact(
+            prd_task_obj.id,
+            prd_content.encode("utf-8"),
+            filename=repo_rel,
+            media_type="text/markdown",
+        )
+    except Exception as e:
+        logger.exception(
+            "failed to persist artefact to workspace (%s): %s", repo_rel, e
+        )
+    try:
+        token_guess = max(1, len(prd_content) // 4)
+        budget_svc.debit(
+            purpose_id=purpose.id,
+            amount=token_guess,
+            reason="artifact:requirements",
+        )
+    except Exception as e:
+        logger.warning("budget debit failed (non-fatal): %s", e)
     Repo(tenant_id).update(
         prd_task_obj.id, status="done", owner="ProductOwner", notes="PRD completed"
     )
@@ -544,7 +565,7 @@ def download_artifact(artifact_id: str, current_tenant: Tenant = Depends(get_cur
         art = session.get(Artifact, artifact_id)
         if not art or (art.task and art.task.tenant_id != tenant_id):
             raise HTTPException(status_code=404, detail="Artifact not found")
-        file_path = WORKSPACE / art.repo_path
+        file_path = resolve_for_read(art.repo_path)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Artifact file not found")
     return FileResponse(file_path, media_type=art.media_type, filename=Path(art.repo_path).name)
