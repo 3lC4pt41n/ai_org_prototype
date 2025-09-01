@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import usePipelineStore from "../store/pipelineStore";
 import PhaseCascade from "../components/PhaseCascade";
 import ArtifactList from "../components/ArtifactList";
 import BacklogList from "../components/BacklogList";
 import FeedbackSection from "../components/FeedbackSection";
+import PurposeSelector from "../components/PurposeSelector";
 
 interface Task {
   id: string;
@@ -15,10 +16,30 @@ interface Task {
 
 export default function PipelineView() {
   const [paused, setPaused] = useState(false);
-  const { backlog, artifacts } = usePipelineStore((state) => ({
+  const {
+    backlog,
+    artifacts,
+    fetchPurposes,
+    setSelectedPurpose,
+    isLoading,
+  } = usePipelineStore((state) => ({
     backlog: state.backlog,
     artifacts: state.artifacts,
+    fetchPurposes: state.fetchPurposes,
+    setSelectedPurpose: state.setSelectedPurpose,
+    isLoading: state.isLoading,
   }));
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchPurposes();
+      const { purposes, selectedPurposeId } = usePipelineStore.getState();
+      if (purposes.length > 0 && !selectedPurposeId) {
+        setSelectedPurpose(purposes[0].id);
+      }
+    };
+    void init();
+  }, [fetchPurposes, setSelectedPurpose]);
 
   const tasks: Task[] = backlog.map((t) => ({
     id: t.id,
@@ -32,7 +53,8 @@ export default function PipelineView() {
   return (
     <div className="flex flex-col h-screen">
       {/* Steuerung */}
-      <div className="p-4 bg-gray-100 flex justify-end">
+      <div className="p-4 bg-gray-100 flex justify-between items-center">
+        <PurposeSelector />
         <button className="btn-primary" onClick={() => setPaused(!paused)}>
           {paused ? "Fortsetzen" : "Pause"}
         </button>
@@ -42,7 +64,15 @@ export default function PipelineView() {
       <div className="flex flex-1">
         {/* Zentrale Phasenkaskade */}
         <div className="flex-1 p-4">
-          <PhaseCascade tasks={tasks} paused={paused} />
+          {isLoading ? (
+            <p className="text-gray-500">Lade...</p>
+          ) : backlog.length === 0 ? (
+            <p className="text-gray-500">
+              Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
+            </p>
+          ) : (
+            <PhaseCascade tasks={tasks} paused={paused} />
+          )}
         </div>
 
         {/* Artefakte und Backlog */}
@@ -63,4 +93,3 @@ export default function PipelineView() {
     </div>
   );
 }
-
