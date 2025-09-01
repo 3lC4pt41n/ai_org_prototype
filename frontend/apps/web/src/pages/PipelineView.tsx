@@ -6,6 +6,18 @@ import BacklogList from "../components/BacklogList";
 import FeedbackSection from "../components/FeedbackSection";
 import PurposeSelector from "../components/PurposeSelector";
 
+// Minimale DTOs, passend zu den API-Responses des Stores
+type BacklogItem = {
+  id: string;
+  name: string;
+  status: string;
+};
+
+type ArtifactItem = {
+  id: string;
+  name: string;
+};
+
 interface Task {
   id: string;
   phase: string;
@@ -28,8 +40,8 @@ export default function PipelineView() {
     fetchGraphAndStatus,
     error,
   } = usePipelineStore((state) => ({
-    backlog: state.backlog,
-    artifacts: state.artifacts,
+    backlog: state.backlog as BacklogItem[],
+    artifacts: state.artifacts as ArtifactItem[],
     fetchPurposes: state.fetchPurposes,
     setSelectedPurpose: state.setSelectedPurpose,
     isLoading: state.isLoading,
@@ -51,7 +63,7 @@ export default function PipelineView() {
     void init();
   }, [fetchPurposes, setSelectedPurpose]);
 
-  // wenn ein Purpose gewählt ist: relevante Daten laden
+  // Daten nach Purpose-Wechsel laden
   useEffect(() => {
     if (!selectedPurposeId) return;
     fetchBacklog();
@@ -59,14 +71,14 @@ export default function PipelineView() {
     fetchGraphAndStatus(selectedPurposeId);
   }, [selectedPurposeId, fetchBacklog, fetchArtifacts, fetchGraphAndStatus]);
 
-  const tasks: Task[] = backlog.map((t) => ({
+  const tasks: Task[] = backlog.map((t: BacklogItem) => ({
     id: t.id,
     phase: t.status,
     description: t.name,
     status: t.status,
   }));
 
-  const artifactList = artifacts.map((a) => ({ name: a.name, url: a.id }));
+  const artifactList = artifacts.map((a: ArtifactItem) => ({ name: a.name, url: a.id }));
 
   return (
     <div className="flex flex-col h-screen">
@@ -78,11 +90,8 @@ export default function PipelineView() {
         </button>
       </div>
 
-      {/* Fehlerhinweis */}
       {error && (
-        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-          {String(error)}
-        </div>
+        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">{String(error)}</div>
       )}
 
       {/* Hauptbereich: Phasenkaskade und Seitenpanel */}
