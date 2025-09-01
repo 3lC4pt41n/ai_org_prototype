@@ -15,7 +15,7 @@ def post_feedback(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     tenant_id = current_tenant.id
-    text = (payload.get("content") or "").strip()
+    text = (payload.get("content") or payload.get("feedback") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Feedback content required")
 
