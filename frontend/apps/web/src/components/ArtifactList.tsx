@@ -1,27 +1,24 @@
 import React from "react";
-import usePipelineStore from "../store/pipelineStore";
 
-export default function ArtifactList() {
-  const { artifacts, selectArtifact } = usePipelineStore();
-  return (
-    <div className="border rounded p-2 mt-4">
-      <h2 className="font-semibold mb-2">Artefakte</h2>
-      {artifacts.length === 0 ? (
-        <p className="text-gray-500">Keine Artefakte verfügbar.</p>
-      ) : (
-        <ul className="space-y-1">
-          {artifacts.map((art) => (
-            <li key={art.id}>
-              <button
-                className="text-blue-500 underline"
-                onClick={() => selectArtifact(art.id)}
-              >
-                {art.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+interface Artifact {
+  name: string;
+  url: string;
 }
+
+const ArtifactList: React.FC<{ artifacts: Artifact[] }> = ({ artifacts }) => (
+  <div className="artifact-list">
+    <h3 className="mb-2 font-semibold">Artefakte</h3>
+    <ul>
+      {artifacts.map((a, i) => (
+        <li key={i}>
+          <a href={a.url} className="text-blue-600 underline">
+            {a.name}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
+export default ArtifactList;
+
