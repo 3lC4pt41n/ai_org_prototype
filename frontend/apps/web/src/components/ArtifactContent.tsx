@@ -30,7 +30,7 @@ export default function ArtifactContent() {
       <h3 className="font-semibold">Feedback</h3>
       {feedbacks.map((fb) => (
         <div key={fb.id} className="border rounded p-2 mb-2">
-          <p>{fb.comment}</p>
+          <p>{fb.content}</p>
           <p className="text-xs text-gray-500">
             von {fb.user} am {new Date(fb.timestamp).toLocaleString()}
           </p>
