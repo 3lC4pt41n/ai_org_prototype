@@ -22,6 +22,7 @@ interface GraphNode {
     x: number;
     y: number;
   };
+  style?: { [key: string]: string };
 }
 
 interface GraphEdge {
@@ -39,7 +40,7 @@ interface Artifact {
 interface Feedback {
   id: string;
   user: string;
-  comment: string;
+  content: string;
   timestamp: string;
 }
 
@@ -63,7 +64,7 @@ interface PipelineState {
   selectArtifact: (id: string) => void;
   fetchArtifactContent: (artifactId: string) => Promise<void>;
   fetchFeedbacks: (artifactId: string) => Promise<void>;
-  postFeedback: (artifactId: string, comment: string) => Promise<void>;
+  postFeedback: (artifactId: string, content: string) => Promise<void>;
   updateArtifact: (artifactId: string, content: string) => Promise<void>;
   pausePurpose: (purposeId: string) => Promise<void>;
   resumePurpose: (purposeId: string) => Promise<void>;
@@ -132,6 +133,14 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         id: node.id,
         data: { label: node.name || node.id, status: statusData[node.id] },
         position: { x: idx * 200, y: 0 },
+        style: {
+          borderColor:
+            statusData[node.id] === "done"
+              ? "#16a34a"
+              : statusData[node.id] === "doing"
+              ? "#f59e0b"
+              : "#cbd5e1",
+        },
       }));
       const edges: GraphEdge[] = graph.edges.map((edge: any) => ({
         id: edge.id,
@@ -190,10 +199,10 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     }
   },
 
-  postFeedback: async (artifactId: string, comment: string) => {
+  postFeedback: async (artifactId: string, content: string) => {
     set({ isLoading: true });
     try {
-      await axios.post(`/api/feedback/${artifactId}`, { comment });
+      await axios.post(`/api/feedback/${artifactId}`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
       console.error("Error posting feedback:", err);
