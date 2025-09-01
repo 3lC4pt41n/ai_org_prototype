@@ -1,13 +1,5 @@
 import { create } from "zustand";
-import axios from "axios";
-
-axios.interceptors.request.use((config) => {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  if (token) {
-    config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
-  }
-  return config;
-});
+import api from "../lib/api";
 
 interface Purpose {
   id: string;
@@ -106,7 +98,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchPurposes: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get("/api/purpose");
+      const res = await api.get("/api/purpose");
       set({ purposes: res.data });
     } catch (err) {
       console.error("Error fetching purposes:", err);
@@ -119,7 +111,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchBacklog: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get("/api/backlog");
+      const res = await api.get("/api/backlog");
       const selected = get().selectedPurposeId;
       const tasks: Task[] = res.data;
       set({ backlog: selected ? tasks.filter((t) => t.id.startsWith(selected)) : tasks });
@@ -135,8 +127,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const [graphRes, statusRes] = await Promise.all([
-        axios.get(`/api/purpose/${purposeId}/graph`),
-        axios.get(`/api/purpose/${purposeId}/status`),
+        api.get(`/api/purpose/${purposeId}/graph`),
+        api.get(`/api/purpose/${purposeId}/status`),
       ]);
       const graph = graphRes.data;
       const statusData: Record<string, string> = statusRes.data;
@@ -171,7 +163,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchArtifacts: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get("/api/artifacts");
+      const res = await api.get("/api/artifacts");
       const arts: Artifact[] = res.data;
       const selected = get().selectedPurposeId;
       set({ artifacts: selected ? arts.filter((a) => a.id.startsWith(selected)) : arts });
@@ -192,7 +184,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchArtifactContent: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get(`/api/artifact/${artifactId}`);
+      const res = await api.get(`/api/artifact/${artifactId}`);
       set({ artifactContent: res.data.content });
     } catch (err) {
       console.error("Error fetching artifact content:", err);
@@ -205,7 +197,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchFeedbacks: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get(`/api/feedback/${artifactId}`);
+      const res = await api.get(`/api/feedback/${artifactId}`);
       set({ feedbacks: res.data });
     } catch (err) {
       console.error("Error fetching feedbacks:", err);
@@ -218,7 +210,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   postFeedback: async (artifactId: string, content: string) => {
     set({ isLoading: true, error: null });
     try {
-      await axios.post(`/api/feedback/${artifactId}`, { content });
+      await api.post(`/api/feedback/${artifactId}`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
       console.error("Error posting feedback:", err);
@@ -231,7 +223,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   updateArtifact: async (artifactId: string, content: string) => {
     set({ isLoading: true, error: null });
     try {
-      await axios.put(`/api/artifact/${artifactId}`, { content });
+      await api.put(`/api/artifact/${artifactId}`, { content });
     } catch (err) {
       console.error("Error updating artifact:", err);
       set({ error: err });
@@ -242,7 +234,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
 
   pausePurpose: async (purposeId: string) => {
     try {
-      await axios.post(`/api/purpose/${purposeId}/pause`);
+      await api.post(`/api/purpose/${purposeId}/pause`);
     } catch (err) {
       console.error("Error pausing purpose:", err);
     }
@@ -250,7 +242,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
 
   resumePurpose: async (purposeId: string) => {
     try {
-      await axios.post(`/api/purpose/${purposeId}/resume`);
+      await api.post(`/api/purpose/${purposeId}/resume`);
     } catch (err) {
       console.error("Error resuming purpose:", err);
     }
@@ -260,7 +252,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const { purposes } = get();
     for (const p of purposes) {
       try {
-        await axios.post(`/api/purpose/${p.id}/pause`);
+        await api.post(`/api/purpose/${p.id}/pause`);
       } catch (err) {
         console.error(`Error pausing purpose ${p.id}:`, err);
       }
@@ -271,7 +263,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const { purposes } = get();
     for (const p of purposes) {
       try {
-        await axios.post(`/api/purpose/${p.id}/resume`);
+        await api.post(`/api/purpose/${p.id}/resume`);
       } catch (err) {
         console.error(`Error resuming purpose ${p.id}:`, err);
       }
