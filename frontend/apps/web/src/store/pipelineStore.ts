@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import axios from "axios";
 
+axios.interceptors.request.use((config) => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  if (token) {
+    config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
+  }
+  return config;
+});
+
 interface Purpose {
   id: string;
   name: string;
