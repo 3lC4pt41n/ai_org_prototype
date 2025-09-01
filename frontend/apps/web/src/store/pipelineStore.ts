@@ -64,6 +64,7 @@ interface PipelineState {
   artifactContent: string;
   feedbacks: Feedback[];
   isLoading: boolean;
+  error: unknown | null;
   setSelectedPurpose: (id: string) => void;
   fetchPurposes: () => Promise<void>;
   fetchBacklog: () => Promise<void>;
@@ -92,6 +93,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   artifactContent: "",
   feedbacks: [],
   isLoading: false,
+  error: null,
 
   setSelectedPurpose: (id: string) => {
     set({ selectedPurposeId: id });
@@ -102,19 +104,20 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   fetchPurposes: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await axios.get("/api/purpose");
       set({ purposes: res.data });
     } catch (err) {
       console.error("Error fetching purposes:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchBacklog: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await axios.get("/api/backlog");
       const selected = get().selectedPurposeId;
@@ -122,13 +125,14 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       set({ backlog: selected ? tasks.filter((t) => t.id.startsWith(selected)) : tasks });
     } catch (err) {
       console.error("Error fetching backlog:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchGraphAndStatus: async (purposeId: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const [graphRes, statusRes] = await Promise.all([
         axios.get(`/api/purpose/${purposeId}/graph`),
@@ -158,13 +162,14 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       set({ graphNodes: nodes, graphEdges: edges });
     } catch (err) {
       console.error("Error fetching graph or status:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchArtifacts: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await axios.get("/api/artifacts");
       const arts: Artifact[] = res.data;
@@ -172,6 +177,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       set({ artifacts: selected ? arts.filter((a) => a.id.startsWith(selected)) : arts });
     } catch (err) {
       console.error("Error fetching artifacts:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -184,47 +190,51 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   fetchArtifactContent: async (artifactId: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await axios.get(`/api/artifact/${artifactId}`);
       set({ artifactContent: res.data.content });
     } catch (err) {
       console.error("Error fetching artifact content:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchFeedbacks: async (artifactId: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await axios.get(`/api/feedback/${artifactId}`);
       set({ feedbacks: res.data });
     } catch (err) {
       console.error("Error fetching feedbacks:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   postFeedback: async (artifactId: string, content: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       await axios.post(`/api/feedback/${artifactId}`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
       console.error("Error posting feedback:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }
   },
 
   updateArtifact: async (artifactId: string, content: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       await axios.put(`/api/artifact/${artifactId}`, { content });
     } catch (err) {
       console.error("Error updating artifact:", err);
+      set({ error: err });
     } finally {
       set({ isLoading: false });
     }

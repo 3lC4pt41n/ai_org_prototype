@@ -22,12 +22,22 @@ export default function PipelineView() {
     fetchPurposes,
     setSelectedPurpose,
     isLoading,
+    selectedPurposeId,
+    fetchBacklog,
+    fetchArtifacts,
+    fetchGraphAndStatus,
+    error,
   } = usePipelineStore((state) => ({
     backlog: state.backlog,
     artifacts: state.artifacts,
     fetchPurposes: state.fetchPurposes,
     setSelectedPurpose: state.setSelectedPurpose,
     isLoading: state.isLoading,
+    selectedPurposeId: state.selectedPurposeId,
+    fetchBacklog: state.fetchBacklog,
+    fetchArtifacts: state.fetchArtifacts,
+    fetchGraphAndStatus: state.fetchGraphAndStatus,
+    error: state.error,
   }));
 
   useEffect(() => {
@@ -40,6 +50,14 @@ export default function PipelineView() {
     };
     void init();
   }, [fetchPurposes, setSelectedPurpose]);
+
+  // wenn ein Purpose gewählt ist: relevante Daten laden
+  useEffect(() => {
+    if (!selectedPurposeId) return;
+    fetchBacklog();
+    fetchArtifacts();
+    fetchGraphAndStatus(selectedPurposeId);
+  }, [selectedPurposeId, fetchBacklog, fetchArtifacts, fetchGraphAndStatus]);
 
   const tasks: Task[] = backlog.map((t) => ({
     id: t.id,
@@ -59,6 +77,13 @@ export default function PipelineView() {
           {paused ? "Fortsetzen" : "Pause"}
         </button>
       </div>
+
+      {/* Fehlerhinweis */}
+      {error && (
+        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
+          {String(error)}
+        </div>
+      )}
 
       {/* Hauptbereich: Phasenkaskade und Seitenpanel */}
       <div className="flex flex-1">
