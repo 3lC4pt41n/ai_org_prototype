@@ -282,7 +282,7 @@ export default function AdminDashboard() {
               <div>
                 <p className="text-sm">Budget left (USD)</p>
                 <p className="text-2xl font-bold">
-                  {budget !== null ? budget.toFixed(2) : "…"}{" "}
+                  {budget?.toFixed(2) ?? "…"}{" "}
                   <span className="text-base font-normal">
                     / {budgetTotal?.toFixed(2) ?? "…"} USD
                   </span>
