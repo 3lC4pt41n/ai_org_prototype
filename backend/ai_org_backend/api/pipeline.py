@@ -20,13 +20,13 @@ from ai_org_backend.models import (
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
+from ai_org_backend.services import budget as budget_svc
 from ai_org_backend.services.storage import (
     WORKSPACE,
     resolve_for_read,
     save_artefact,
     vector_store,
 )
-from ai_org_backend.services import budget as budget_svc
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ async def backlog(
     return [r.model_dump() for r in rows]
 
 
-@router.get("/artifacts")
+@router.get("/artifacts", tags=["artifacts"])
 async def list_artifacts(
     purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
 ):
@@ -174,7 +174,7 @@ async def list_artifacts(
                     "repo_path": art.repo_path,
                     "media_type": art.media_type,
                     "created_at": art.created_at.isoformat(),
-                    "url": f"/artifact/{art.id}",
+                    "url": f"/api/artifact/{art.id}",
                 }
             )
     return result
@@ -557,7 +557,7 @@ def get_feedback_history(
     return [e.model_dump() for e in entries]
 
 
-@router.get("/artifact/{artifact_id}")
+@router.get("/artifact/{artifact_id}", tags=["artifacts"])
 def download_artifact(artifact_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     """Download the content of an artifact file by ID."""
     tenant_id = current_tenant.id
