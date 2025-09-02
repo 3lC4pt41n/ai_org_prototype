@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect } from "react";
 import usePipelineStore from "../store/pipelineStore";
 import PhaseCascade from "../components/PhaseCascade";
 import ArtifactList from "../components/ArtifactList";
@@ -113,50 +113,25 @@ export default function PipelineView() {
               Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
             </p>
           ) : (
-            <ErrorBoundary>
-              <PhaseCascade tasks={tasks} paused={paused} />
-            </ErrorBoundary>
+            <PhaseCascade tasks={tasks} paused={paused} />
           )}
         </div>
 
         {/* Artefakte und Backlog */}
         <aside className="w-64 p-4 bg-gray-50 border-l">
-          <ErrorBoundary>
-            <ArtifactList artifacts={artifactList} />
-          </ErrorBoundary>
-          <ErrorBoundary>
-            <BacklogList tasks={tasks.filter((t) => t.status === "todo")} />
-          </ErrorBoundary>
+          <ArtifactList artifacts={artifactList} />
+          <BacklogList tasks={tasks.filter((t) => t.status === "todo")} />
         </aside>
       </div>
 
       {/* Feedbackeingabe (nur sichtbar bei Pause) */}
       {paused && (
         <div className="p-4 bg-yellow-50 border-t">
-          <ErrorBoundary>
-            <FeedbackSection
-              tasks={tasks.filter((t) => ["PRD", "Architektur"].includes(t.phase))}
-            />
-          </ErrorBoundary>
+          <FeedbackSection
+            tasks={tasks.filter((t) => ["PRD", "Architektur"].includes(t.phase))}
+          />
         </div>
       )}
     </div>
   );
-}
-
-function ErrorBoundary({ children }: { children: ReactNode }) {
-  const [err, setErr] = useState<Error | null>(null);
-  if (err) {
-    return (
-      <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-        Komponenterendering fehlgeschlagen: {err.message}
-      </div>
-    );
-  }
-  try {
-    return <>{children}</>;
-  } catch (e) {
-    setErr(e as Error);
-    return null;
-  }
 }

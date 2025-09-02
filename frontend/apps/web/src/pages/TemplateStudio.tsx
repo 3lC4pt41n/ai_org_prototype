@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
+import { API_BASE } from '@api'
 
 export default function TemplateStudio() {
   const [files, setFiles] = useState<string[]>([])
@@ -7,13 +8,13 @@ export default function TemplateStudio() {
   const [content, setContent] = useState('')
 
   useEffect(() => {
-    fetch('/api/templates', {
+    fetch(`${API_BASE}/templates`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
     }).then(r => r.json()).then(setFiles)
   }, [])
 
   const loadFile = (f: string) => {
-    fetch('/api/templates/' + f, {
+    fetch(`${API_BASE}/templates/${f}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
     })
       .then(r => r.json())
@@ -21,7 +22,7 @@ export default function TemplateStudio() {
   }
 
   const save = () =>
-    fetch('/api/templates/' + name, {
+    fetch(`${API_BASE}/templates/${name}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
