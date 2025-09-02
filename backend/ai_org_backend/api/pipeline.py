@@ -8,25 +8,12 @@ from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import (
-    Artifact,
-    Feedback,
-    FeedbackType,
-    Purpose,
-    Task,
-    TaskDependency,
-    Tenant,
-)
+from ai_org_backend.models import Artifact, ArtifactFeedback, Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services import budget as budget_svc
-from ai_org_backend.services.storage import (
-    WORKSPACE,
-    resolve_for_read,
-    save_artefact,
-    vector_store,
-)
+from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_artefact, vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +72,7 @@ def get_purpose_graph(purpose_id: str, current_tenant: Tenant = Depends(get_curr
     tenant_id = current_tenant.id
     with Session(engine) as session:
         tasks = session.exec(
-            select(Task).where(
-                Task.tenant_id == tenant_id, Task.purpose_id == purpose_id
-            )
+            select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id)
         ).all()
         deps = session.exec(
             select(TaskDependency).where(
@@ -118,9 +103,7 @@ async def backlog(
     purpose_id: str | None = None, current_tenant: Tenant = Depends(get_current_tenant)
 ):
     with Session(engine) as s:
-        query = select(Task).where(
-            Task.tenant_id == current_tenant.id, Task.status == "todo"
-        )
+        query = select(Task).where(Task.tenant_id == current_tenant.id, Task.status == "todo")
         if purpose_id:
             query = query.where(Task.purpose_id == purpose_id)
         rows = s.exec(query).all()
@@ -162,9 +145,7 @@ async def list_artifacts(
 def list_purposes(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
-        purposes = session.exec(
-            select(Purpose).where(Purpose.tenant_id == tenant_id)
-        ).all()
+        purposes = session.exec(select(Purpose).where(Purpose.tenant_id == tenant_id)).all()
     return [p.model_dump() for p in purposes]
 
 
@@ -226,9 +207,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             media_type="text/markdown",
         )
     except Exception as e:
-        logger.exception(
-            "failed to persist artefact to workspace (%s): %s", repo_rel, e
-        )
+        logger.exception("failed to persist artefact to workspace (%s): %s", repo_rel, e)
     try:
         token_guess = max(1, len(prd_content) // 4)
         budget_svc.debit(
@@ -355,182 +334,57 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
 
 
-@router.post("/purposes/{purpose_id}/feedback", tags=["purposes"])
-def post_feedback(
-    purpose_id: str,
+@router.post("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
+def post_artifact_feedback(
+    artifact_id: str,
     payload: dict,
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
-    """Submit feedback or approval for PRD or Blueprint."""
-
+    """Sende Feedback für ein Artefakt."""
     tenant_id = current_tenant.id
-    try:
-        ftype = FeedbackType(payload.get("type"))
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid feedback type")
-    text = (payload.get("text") or "").strip()
-    approve = bool(payload.get("approved"))
-
+    text = (payload.get("content") or payload.get("feedback") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Feedback content required")
     with Session(engine) as session:
-        purpose = session.get(Purpose, purpose_id)
-        if not purpose or purpose.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Purpose not found")
-
-        existing_approved = session.exec(
-            select(Feedback)
-            .where(
-                Feedback.purpose_id == purpose_id,
-                Feedback.type == ftype,
-                Feedback.approved.is_(True),
-            )
-        ).first()
-        if existing_approved:
-            raise HTTPException(status_code=400, detail="Feedback already approved")
-
-        if approve:
-            last_entry = session.exec(
-                select(Feedback)
-                .where(Feedback.purpose_id == purpose_id, Feedback.type == ftype)
-                .order_by(Feedback.version.desc())
-            ).first()
-            if last_entry:
-                last_entry.approved = True
-                session.add(last_entry)
-                session.commit()
-            else:
-                fb = Feedback(
-                    tenant_id=tenant_id,
-                    purpose_id=purpose_id,
-                    type=ftype,
-                    version=1,
-                    text="",
-                    approved=True,
-                )
-                session.add(fb)
-                session.commit()
-            return {"status": "approved"}
-
-        if not text:
-            raise HTTPException(status_code=400, detail="Feedback text required")
-
+        artifact = session.get(Artifact, artifact_id)
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        task = session.get(Task, artifact.task_id)
+        if not task or task.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Forbidden for this tenant")
         last_version = session.exec(
-            select(Feedback.version)
-            .where(Feedback.purpose_id == purpose_id, Feedback.type == ftype)
-            .order_by(Feedback.version.desc())
+            select(ArtifactFeedback.version)
+            .where(ArtifactFeedback.artifact_id == artifact_id)
+            .order_by(ArtifactFeedback.version.desc())
         ).first()
-        version = (last_version or 1) + 1
-        fb = Feedback(
+        version = (last_version or 0) + 1
+        fb = ArtifactFeedback(
+            artifact_id=artifact_id,
             tenant_id=tenant_id,
-            purpose_id=purpose_id,
-            type=ftype,
             version=version,
-            text=text,
+            content=text,
             approved=False,
         )
         session.add(fb)
         session.commit()
-
-        # Fetch current document content and previous task
-        if ftype == FeedbackType.PRD:
-            art_query = (
-                select(Artifact)
-                .where(
-                    Artifact.task.has(
-                        Task.tenant_id == tenant_id,
-                        Task.purpose_id == purpose_id,
-                        Task.description.like("Product Requirements Document%"),
-                    )
-                )
-                .order_by(Artifact.created_at.desc())
-            )
-        else:
-            art_query = (
-                select(Artifact)
-                .where(
-                    Artifact.task.has(
-                        Task.tenant_id == tenant_id,
-                        Task.purpose_id == purpose_id,
-                        Task.description.like("Architecture Blueprint%"),
-                    )
-                )
-                .order_by(Artifact.created_at.desc())
-            )
-        current_art = session.exec(art_query).first()
-        current_text = ""
-        prev_task = None
-        if current_art:
-            file_path = WORKSPACE / current_art.repo_path
-            if file_path.exists():
-                current_text = file_path.read_text(encoding="utf-8", errors="ignore")
-            prev_task = session.get(Task, current_art.task_id)
-
-        if ftype == FeedbackType.PRD:
-            from ai_org_backend.agents.product_owner import run_requirements_feedback
-
-            new_content = run_requirements_feedback(purpose, text, current_text)
-            desc = f"Product Requirements Document (v{version})"
-            filename = f"requirements/product_requirements_v{version}.md"
-            owner = "ProductOwner"
-        else:
-            from ai_org_backend.agents.architect import run_architect_feedback
-
-            new_content = run_architect_feedback(purpose, text, current_text)
-            desc = f"Architecture Blueprint (v{version})"
-            filename = f"blueprint/architecture_blueprint_v{version}.md"
-            owner = "Architect"
-
-        task = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose_id,
-            description=desc,
-            business_value=0.0,
-            tokens_plan=0,
-            purpose_relevance=1.0 if ftype == FeedbackType.PRD else 0.0,
-        )
-        session.add(task)
-        session.commit()
-        session.refresh(task)
-
-        if prev_task:
-            session.add(TaskDependency(from_id=prev_task.id, to_id=task.id))
-            session.commit()
-
-        save_artefact(
-            task.id,
-            new_content.encode("utf-8"),
-            filename=filename,
-            media_type="text/markdown",
-        )
-        Repo(tenant_id).update(
-            task.id,
-            status="done",
-            owner=owner,
-            notes="Updated from feedback",
-        )
-
-    try:
-        ingest(tenant_id)
-    except Exception as e:
-        print(f"[WARN] Neo4j ingest failed: {e}")
-
-    if ftype == FeedbackType.PRD:
-        return {"prdContent": new_content}
-    return {"blueprintContent": new_content}
+    return {"status": "saved", "version": version}
 
 
-@router.get("/purposes/{purpose_id}/feedback", tags=["purposes"])
-def get_feedback_history(
-    purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
-):
+@router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
+def get_artifact_feedback(artifact_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    """Hole Feedback-Historie für ein Artefakt."""
     tenant_id = current_tenant.id
     with Session(engine) as session:
-        purpose = session.get(Purpose, purpose_id)
-        if not purpose or purpose.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Purpose not found")
+        artifact = session.get(Artifact, artifact_id)
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        task = session.get(Task, artifact.task_id)
+        if not task or task.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Forbidden for this tenant")
         entries = session.exec(
-            select(Feedback)
-            .where(Feedback.purpose_id == purpose_id)
-            .order_by(Feedback.created_at)
+            select(ArtifactFeedback)
+            .where(ArtifactFeedback.artifact_id == artifact_id)
+            .order_by(ArtifactFeedback.version)
         ).all()
     return [e.model_dump() for e in entries]
 
