@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import usePipelineStore from "../store/pipelineStore";
 import PhaseCascade from "../components/PhaseCascade";
 import ArtifactList from "../components/ArtifactList";
+// NOTE: Debug-/Isolation-Tools, um White Screen Ursachen zu finden
 import BacklogList from "../components/BacklogList";
 import FeedbackSection from "../components/FeedbackSection";
 import PurposeSelector from "../components/PurposeSelector";
@@ -28,6 +29,10 @@ interface Task {
 
 export default function PipelineView() {
   const [paused, setPaused] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [showPhaseCascade, setShowPhaseCascade] = useState(true);
+  const [showSidePanels, setShowSidePanels] = useState(true);
+  const [useMock, setUseMock] = useState(false);
   const {
     backlog,
     artifacts,
@@ -74,31 +79,84 @@ export default function PipelineView() {
   const safeBacklog: BacklogItem[] = Array.isArray(backlog) ? backlog : [];
   const safeArtifacts: ArtifactItem[] = Array.isArray(artifacts) ? artifacts : [];
 
-  const tasks: Task[] = safeBacklog.map((t: BacklogItem) => ({
+  const tasksRaw: Task[] = safeBacklog.map((t: BacklogItem) => ({
     id: t.id,
     phase: t.status,
     description: t.name,
     status: t.status,
   }));
 
+  const mockTasks: Task[] = useMemo(
+    () => [
+      { id: "m1", phase: "PRD", description: "Mock PRD", status: "doing" },
+      { id: "m2", phase: "Architektur", description: "Mock Arch", status: "todo" },
+      { id: "m3", phase: "Build", description: "Mock Build", status: "todo" },
+    ],
+    []
+  );
+
+  const tasks = useMock ? mockTasks : tasksRaw;
+
   const artifactList = safeArtifacts.map((a: ArtifactItem) => ({
     name: a.name,
     url: a.id,
   }));
 
+  useEffect(() => {
+    // Sichtbares Logging im Dev-Console
+    console.log("[PipelineView] state =", {
+      selectedPurposeId,
+      isLoading,
+      backlog,
+      artifacts,
+      error,
+      tasksLen: tasks?.length,
+    });
+  }, [selectedPurposeId, isLoading, backlog, artifacts, error, tasks?.length]);
+
   return (
     <div className="flex flex-col h-screen">
       {/* Steuerung */}
-      <div className="p-4 bg-gray-100 flex justify-between items-center">
+      <div className="p-4 bg-gray-100 flex justify-between items-center gap-2">
         <PurposeSelector />
-        <button className="btn-primary" onClick={() => setPaused(!paused)}>
-          {paused ? "Fortsetzen" : "Pause"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-primary" onClick={() => setPaused(!paused)}>
+            {paused ? "Fortsetzen" : "Pause"}
+          </button>
+          <button className="px-2 py-1 border rounded" onClick={() => setShowDebug((v) => !v)}>
+            {showDebug ? "Debug aus" : "Debug an"}
+          </button>
+          {showDebug && (
+            <>
+              <button className="px-2 py-1 border rounded" onClick={() => setShowPhaseCascade((v) => !v)}>
+                {showPhaseCascade ? "PhaseCascade aus" : "PhaseCascade an"}
+              </button>
+              <button className="px-2 py-1 border rounded" onClick={() => setShowSidePanels((v) => !v)}>
+                {showSidePanels ? "Sidepanels aus" : "Sidepanels an"}
+              </button>
+              <button className="px-2 py-1 border rounded" onClick={() => setUseMock((v) => !v)}>
+                {useMock ? "Mock aus" : "Mock an"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {error && (
         <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
           {typeof error === "string" ? error : JSON.stringify(error)}
+        </div>
+      )}
+
+      {/* Debug Panel */}
+      {showDebug && (
+        <div className="p-3 text-xs bg-slate-50 border-b font-mono whitespace-pre-wrap">
+          <div><b>selectedPurposeId:</b> {String(selectedPurposeId)}</div>
+          <div><b>isLoading:</b> {String(isLoading)}</div>
+          <div><b>tasks.length:</b> {Array.isArray(tasks) ? tasks.length : "n/a"}</div>
+          <div><b>backlog type:</b> {Array.isArray(backlog) ? "array" : typeof backlog}</div>
+          <div><b>artifacts type:</b> {Array.isArray(artifacts) ? "array" : typeof artifacts}</div>
+          <div><b>error:</b> {typeof error === "string" ? error : JSON.stringify(error)}</div>
         </div>
       )}
 
@@ -113,15 +171,28 @@ export default function PipelineView() {
               Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
             </p>
           ) : (
-            <PhaseCascade tasks={tasks} paused={paused} />
+            showPhaseCascade ? (
+              <PhaseCascade tasks={tasks} paused={paused} />
+            ) : (
+              // Ersatz-Renderer zur Isolation: zeigt nur die Taskliste
+              <ul className="list-disc pl-6 text-sm">
+                {tasks.map((t) => (
+                  <li key={t.id}>
+                    {t.description} <span className="text-xs text-slate-500">({t.status})</span>
+                  </li>
+                ))}
+              </ul>
+            )
           )}
         </div>
 
         {/* Artefakte und Backlog */}
-        <aside className="w-64 p-4 bg-gray-50 border-l">
-          <ArtifactList artifacts={artifactList} />
-          <BacklogList tasks={tasks.filter((t) => t.status === "todo")} />
-        </aside>
+        {showSidePanels && (
+          <aside className="w-64 p-4 bg-gray-50 border-l">
+            <ArtifactList artifacts={artifactList} />
+            <BacklogList tasks={tasks.filter((t) => t.status === "todo")} />
+          </aside>
+        )}
       </div>
 
       {/* Feedbackeingabe (nur sichtbar bei Pause) */}
