@@ -71,14 +71,21 @@ export default function PipelineView() {
     fetchGraphAndStatus(selectedPurposeId);
   }, [selectedPurposeId, fetchBacklog, fetchArtifacts, fetchGraphAndStatus]);
 
-  const tasks: Task[] = backlog.map((t: BacklogItem) => ({
+  // Use safe arrays to avoid runtime crashes on undefined/null
+  const safeBacklog = Array.isArray(backlog) ? backlog : [];
+  const safeArtifacts = Array.isArray(artifacts) ? artifacts : [];
+
+  const tasks: Task[] = safeBacklog.map((t: BacklogItem) => ({
     id: t.id,
     phase: t.status,
     description: t.name,
     status: t.status,
   }));
 
-  const artifactList = artifacts.map((a: ArtifactItem) => ({ name: a.name, url: a.id }));
+  const artifactList = safeArtifacts.map((a: ArtifactItem) => ({
+    name: a.name,
+    url: a.id,
+  }));
 
   return (
     <div className="flex flex-col h-screen">
@@ -100,7 +107,7 @@ export default function PipelineView() {
         <div className="flex-1 p-4">
           {isLoading ? (
             <p className="text-gray-500">Lade...</p>
-          ) : backlog.length === 0 ? (
+          ) : safeBacklog.length === 0 ? (
             <p className="text-gray-500">
               Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
             </p>
