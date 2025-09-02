@@ -1,15 +1,17 @@
 # --------- Build Stage ---------------------------------------------------------
 FROM node:20 AS build
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable \
+ && corepack prepare pnpm@10.13.1 --activate
+ENV HUSKY=0
 WORKDIR /app
-
-# PNPM aktivieren (Corepack ist ab Node 20 enthalten)
-RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # 👉 Einmal den (kleinen) Frontend-Kontext kopieren – dank frontend/.dockerignore ohne node_modules etc.
 COPY . .
 
-# 👉 Install: wenn Lockfile da, strikt; sonst normal
-RUN if [ -f pnpm-lock.yaml ]; then HUSKY=0 pnpm install --frozen-lockfile; else HUSKY=0 pnpm install; fi
+# 👉 Install dependencies
+RUN pnpm install --ignore-scripts --frozen-lockfile || pnpm install --ignore-scripts --no-frozen-lockfile
 
 # 👉 Build: bevorzugt Workspace-App apps/web, sonst Root-Build-Script
 RUN set -eux; \
