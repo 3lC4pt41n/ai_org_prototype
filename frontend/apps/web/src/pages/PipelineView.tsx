@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import usePipelineStore from "../store/pipelineStore";
 import PhaseCascade from "../components/PhaseCascade";
 import ArtifactList from "../components/ArtifactList";
