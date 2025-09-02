@@ -101,8 +101,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       const res = await api.get("/purposes");
       set({ purposes: Array.isArray(res.data) ? res.data : [] });
     } catch (err) {
-      console.error("Error fetching purposes:", err);
-      set({ error: String(err), purposes: [] });
+      console.error('fetchPurposes failed', err);
+      set({ error: err, purposes: [] });
     } finally {
       set({ isLoading: false });
     }
@@ -116,8 +116,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       const tasks: Task[] = Array.isArray(res.data) ? res.data : [];
       set({ backlog: selected ? tasks.filter((t) => t.id.startsWith(selected)) : tasks });
     } catch (err) {
-      console.error("Error fetching backlog:", err);
-      set({ backlog: [], error: String(err) });
+      console.error('fetchBacklog failed', err);
+      set({ backlog: [], error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -171,8 +171,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         error: null,
       });
     } catch (err) {
-      console.error("fetchGraphAndStatus failed", err);
-      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: String(err) });
+      console.error('fetchGraphAndStatus failed', err);
+      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -186,8 +186,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       const selected = get().selectedPurposeId;
       set({ artifacts: selected ? arts.filter((a) => a.id.startsWith(selected)) : arts });
     } catch (err) {
-      console.error("Error fetching artifacts:", err);
-      set({ artifacts: [], error: String(err) });
+      console.error('fetchArtifacts failed', err);
+      set({ artifacts: [], error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -205,8 +205,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       const res = await api.get(`/artifact/${artifactId}`);
       set({ artifactContent: res.data.content });
     } catch (err) {
-      console.error("Error fetching artifact content:", err);
-      set({ artifactContent: "", error: String(err) });
+      console.error('fetchArtifactContent failed', err);
+      set({ artifactContent: '', error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -218,8 +218,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       const res = await api.get(`/feedback/${artifactId}`);
       set({ feedbacks: res.data });
     } catch (err) {
-      console.error("Error fetching feedbacks:", err);
-      set({ feedbacks: [], error: String(err) });
+      console.error('fetchFeedbacks failed', err);
+      set({ feedbacks: [], error: err });
     } finally {
       set({ isLoading: false });
     }
@@ -231,7 +231,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       await api.post(`/feedback/${artifactId}`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
-      console.error("Error posting feedback:", err);
+      console.error('postFeedback failed', err);
       set({ error: err });
     } finally {
       set({ isLoading: false });
@@ -243,7 +243,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     try {
       await api.put(`/artifact/${artifactId}`, { content });
     } catch (err) {
-      console.error("Error updating artifact:", err);
+      console.error('updateArtifact failed', err);
       set({ error: err });
     } finally {
       set({ isLoading: false });
@@ -254,7 +254,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     try {
       await api.post(`/purposes/${purposeId}/pause`);
     } catch (err) {
-      console.error("Error pausing purpose:", err);
+      console.error('pausePurpose failed', err);
+      set({ error: err });
     }
   },
 
@@ -262,7 +263,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     try {
       await api.post(`/purposes/${purposeId}/start`);
     } catch (err) {
-      console.error("Error starting purpose:", err);
+      console.error('startPurpose failed', err);
+      set({ error: err });
     }
   },
 
