@@ -88,33 +88,38 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   error: null,
 
   setSelectedPurpose: (id: string) => {
-    set({ selectedPurposeId: id });
-    get().fetchGraphAndStatus(id);
-    get().fetchBacklog();
-    get().fetchArtifacts();
-    set({ selectedArtifactId: null, artifactContent: "", feedbacks: [] });
+    set({
+      selectedPurposeId: id,
+      selectedArtifactId: null,
+      artifactContent: "",
+      feedbacks: [],
+    });
   },
 
   fetchPurposes: async () => {
     set({ isLoading: true, error: null });
     try {
       const res = await api.get("/purposes");
-      set({ purposes: Array.isArray(res.data) ? res.data : [] });
+      const list: Purpose[] = Array.isArray(res.data) ? res.data : [];
+      set({ purposes: list, isLoading: false });
+      const current = get().selectedPurposeId;
+      if (!current && list.length > 0) {
+        get().setSelectedPurpose(list[0].id);
+      }
     } catch (err) {
       console.error('fetchPurposes failed', err);
-      set({ error: err, purposes: [] });
-    } finally {
-      set({ isLoading: false });
+      set({ error: err, purposes: [], isLoading: false });
     }
   },
 
   fetchBacklog: async () => {
+    const selected = get().selectedPurposeId;
+    if (!selected) return;
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/backlog");
-      const selected = get().selectedPurposeId;
+      const res = await api.get("/backlog", { params: { purpose_id: selected } });
       const tasks: Task[] = Array.isArray(res.data) ? res.data : [];
-      set({ backlog: selected ? tasks.filter((t) => t.id.startsWith(selected)) : tasks });
+      set({ backlog: tasks });
     } catch (err) {
       console.error('fetchBacklog failed', err);
       set({ backlog: [], error: err });
@@ -179,12 +184,13 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   fetchArtifacts: async () => {
+    const selected = get().selectedPurposeId;
+    if (!selected) return;
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/artifacts");
+      const res = await api.get("/artifacts", { params: { purpose_id: selected } });
       const arts: Artifact[] = Array.isArray(res.data) ? res.data : [];
-      const selected = get().selectedPurposeId;
-      set({ artifacts: selected ? arts.filter((a) => a.id.startsWith(selected)) : arts });
+      set({ artifacts: arts });
     } catch (err) {
       console.error('fetchArtifacts failed', err);
       set({ artifacts: [], error: err });
