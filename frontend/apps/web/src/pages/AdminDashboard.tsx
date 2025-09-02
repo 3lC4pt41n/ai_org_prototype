@@ -4,9 +4,7 @@ import { Card, CardContent } from "@ui/Card";
 import { Gauge, History, Target, PlayCircle, PauseCircle, Package } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { getJson, postJson } from "@api";
-
-const API = import.meta.env.VITE_API_URL || "/api";
+import { getJson, postJson, API_BASE } from "@api";
 
 export default function AdminDashboard() {
   const [budget, setBudget] = useState<number | null>(null);
@@ -103,7 +101,7 @@ export default function AdminDashboard() {
 
   // Load research setting
   useEffect(() => {
-    fetch(`${API}/settings/research`, {
+    fetch(`${API_BASE}/settings/research`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
     })
       .then((r) => r.json())
@@ -171,7 +169,7 @@ export default function AdminDashboard() {
     if (updatingResearch) return;
     setUpdatingResearch(true);
     const next = !allowResearch;
-    fetch(`${API}/settings/research`, {
+    fetch(`${API_BASE}/settings/research`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -196,7 +194,7 @@ export default function AdminDashboard() {
     const endpoint = paused
       ? `/purposes/${currentPurposeId}/start`
       : `/purposes/${currentPurposeId}/pause`;
-    fetch(`${API}${endpoint}`, {
+    fetch(`${API_BASE}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -230,6 +228,27 @@ export default function AdminDashboard() {
     }
   }
 
+  function downloadArtifactFile(artifactId: string, filename: string) {
+    const token = localStorage.getItem("token");
+    fetch(`${API_BASE}/artifact/${artifactId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Download fehlgeschlagen");
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => toast.error("Download fehlgeschlagen"));
+  }
 
   return (
     <div className="min-h-screen p-4">
@@ -401,9 +420,11 @@ export default function AdminDashboard() {
                 <li key={a.id} className="border-b border-slate-200 py-1">
                   <span className="text-amber-400 font-mono mr-2">{a.task_id}</span>
                   <a
-                    href={a.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      downloadArtifactFile(a.id, a.repo_path.split("/").pop() || a.id);
+                    }}
                     className="text-amber-400 hover:underline"
                   >
                     {a.repo_path.replace(/^[^/]+\//, "")}
