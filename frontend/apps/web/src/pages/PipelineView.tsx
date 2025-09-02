@@ -70,19 +70,21 @@ export default function PipelineView() {
     fetchArtifacts();
     fetchGraphAndStatus(selectedPurposeId);
   }, [selectedPurposeId, fetchBacklog, fetchArtifacts, fetchGraphAndStatus]);
-  const tasks: Task[] =
-    backlog?.map((t: BacklogItem) => ({
-      id: t.id,
-      phase: t.status,
-      description: t.name,
-      status: t.status,
-    })) ?? [];
+  // Guards: sichere Arrays verwenden, um React Error #185 zu vermeiden
+  const safeBacklog: BacklogItem[] = Array.isArray(backlog) ? backlog : [];
+  const safeArtifacts: ArtifactItem[] = Array.isArray(artifacts) ? artifacts : [];
 
-  const artifactList =
-    artifacts?.map((a: ArtifactItem) => ({
-      name: a.name,
-      url: a.id,
-    })) ?? [];
+  const tasks: Task[] = safeBacklog.map((t: BacklogItem) => ({
+    id: t.id,
+    phase: t.status,
+    description: t.name,
+    status: t.status,
+  }));
+
+  const artifactList = safeArtifacts.map((a: ArtifactItem) => ({
+    name: a.name,
+    url: a.id,
+  }));
 
   return (
     <div className="flex flex-col h-screen">
@@ -95,7 +97,9 @@ export default function PipelineView() {
       </div>
 
       {error && (
-        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">{String(error)}</div>
+        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
+          {typeof error === "string" ? error : JSON.stringify(error)}
+        </div>
       )}
 
       {/* Hauptbereich: Phasenkaskade und Seitenpanel */}
