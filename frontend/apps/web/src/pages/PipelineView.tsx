@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
-import usePipelineStore from "../store/pipelineStore";
-import PhaseCascade from "../components/PhaseCascade";
-import ArtifactList from "../components/ArtifactList";
+import { useState, useEffect, useMemo } from 'react';
+import usePipelineStore from '../store/pipelineStore';
+import PhaseCascade from '../components/PhaseCascade';
+import ArtifactList from '../components/ArtifactList';
 // NOTE: Debug-/Isolation-Tools, um White Screen Ursachen zu finden
-import BacklogList from "../components/BacklogList";
-import FeedbackSection from "../components/FeedbackSection";
-import PurposeSelector from "../components/PurposeSelector";
+import BacklogList from '../components/BacklogList';
+import FeedbackSection from '../components/FeedbackSection';
+import PurposeSelector from '../components/PurposeSelector';
 
 // Minimale DTOs, passend zu den API-Responses des Stores
 type BacklogItem = {
@@ -16,7 +16,11 @@ type BacklogItem = {
 
 type ArtifactItem = {
   id: string;
-  name: string;
+  name?: string;
+  repo_path?: string;
+  url?: string;
+  created_at?: string;
+  media_type?: string;
 };
 
 interface Task {
@@ -88,23 +92,29 @@ export default function PipelineView() {
 
   const mockTasks: Task[] = useMemo(
     () => [
-      { id: "m1", phase: "PRD", description: "Mock PRD", status: "doing" },
-      { id: "m2", phase: "Architektur", description: "Mock Arch", status: "todo" },
-      { id: "m3", phase: "Build", description: "Mock Build", status: "todo" },
+      { id: 'm1', phase: 'PRD', description: 'Mock PRD', status: 'doing' },
+      { id: 'm2', phase: 'Architektur', description: 'Mock Arch', status: 'todo' },
+      { id: 'm3', phase: 'Build', description: 'Mock Build', status: 'todo' },
     ],
-    []
+    [],
   );
 
   const tasks = useMock ? mockTasks : tasksRaw;
-
-  const artifactList = safeArtifacts.map((a: ArtifactItem) => ({
-    name: a.name,
-    url: a.id,
-  }));
+  const artifactList = safeArtifacts.map((a: ArtifactItem) => {
+    const file =
+      typeof a.repo_path === 'string' ? a.repo_path.split('/').pop() || a.id : (a.name ?? a.id);
+    const link = a.url ?? `/api/artifact/${a.id}`;
+    return {
+      name: file,
+      url: link,
+      created_at: a.created_at,
+      media_type: a.media_type,
+    };
+  });
 
   useEffect(() => {
     // Sichtbares Logging im Dev-Console
-    console.log("[PipelineView] state =", {
+    console.log('[PipelineView] state =', {
       selectedPurposeId,
       isLoading,
       backlog,
@@ -121,21 +131,27 @@ export default function PipelineView() {
         <PurposeSelector />
         <div className="flex items-center gap-2">
           <button className="btn-primary" onClick={() => setPaused(!paused)}>
-            {paused ? "Fortsetzen" : "Pause"}
+            {paused ? 'Fortsetzen' : 'Pause'}
           </button>
           <button className="px-2 py-1 border rounded" onClick={() => setShowDebug((v) => !v)}>
-            {showDebug ? "Debug aus" : "Debug an"}
+            {showDebug ? 'Debug aus' : 'Debug an'}
           </button>
           {showDebug && (
             <>
-              <button className="px-2 py-1 border rounded" onClick={() => setShowPhaseCascade((v) => !v)}>
-                {showPhaseCascade ? "PhaseCascade aus" : "PhaseCascade an"}
+              <button
+                className="px-2 py-1 border rounded"
+                onClick={() => setShowPhaseCascade((v) => !v)}
+              >
+                {showPhaseCascade ? 'PhaseCascade aus' : 'PhaseCascade an'}
               </button>
-              <button className="px-2 py-1 border rounded" onClick={() => setShowSidePanels((v) => !v)}>
-                {showSidePanels ? "Sidepanels aus" : "Sidepanels an"}
+              <button
+                className="px-2 py-1 border rounded"
+                onClick={() => setShowSidePanels((v) => !v)}
+              >
+                {showSidePanels ? 'Sidepanels aus' : 'Sidepanels an'}
               </button>
               <button className="px-2 py-1 border rounded" onClick={() => setUseMock((v) => !v)}>
-                {useMock ? "Mock aus" : "Mock an"}
+                {useMock ? 'Mock aus' : 'Mock an'}
               </button>
             </>
           )}
@@ -144,19 +160,31 @@ export default function PipelineView() {
 
       {error && (
         <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-          {typeof error === "string" ? error : JSON.stringify(error)}
+          {typeof error === 'string' ? error : JSON.stringify(error)}
         </div>
       )}
 
       {/* Debug Panel */}
       {showDebug && (
         <div className="p-3 text-xs bg-slate-50 border-b font-mono whitespace-pre-wrap">
-          <div><b>selectedPurposeId:</b> {String(selectedPurposeId)}</div>
-          <div><b>isLoading:</b> {String(isLoading)}</div>
-          <div><b>tasks.length:</b> {Array.isArray(tasks) ? tasks.length : "n/a"}</div>
-          <div><b>backlog type:</b> {Array.isArray(backlog) ? "array" : typeof backlog}</div>
-          <div><b>artifacts type:</b> {Array.isArray(artifacts) ? "array" : typeof artifacts}</div>
-          <div><b>error:</b> {typeof error === "string" ? error : JSON.stringify(error)}</div>
+          <div>
+            <b>selectedPurposeId:</b> {String(selectedPurposeId)}
+          </div>
+          <div>
+            <b>isLoading:</b> {String(isLoading)}
+          </div>
+          <div>
+            <b>tasks.length:</b> {Array.isArray(tasks) ? tasks.length : 'n/a'}
+          </div>
+          <div>
+            <b>backlog type:</b> {Array.isArray(backlog) ? 'array' : typeof backlog}
+          </div>
+          <div>
+            <b>artifacts type:</b> {Array.isArray(artifacts) ? 'array' : typeof artifacts}
+          </div>
+          <div>
+            <b>error:</b> {typeof error === 'string' ? error : JSON.stringify(error)}
+          </div>
         </div>
       )}
 
@@ -170,19 +198,17 @@ export default function PipelineView() {
             <p className="text-gray-500">
               Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
             </p>
+          ) : showPhaseCascade ? (
+            <PhaseCascade tasks={tasks} paused={paused} />
           ) : (
-            showPhaseCascade ? (
-              <PhaseCascade tasks={tasks} paused={paused} />
-            ) : (
-              // Ersatz-Renderer zur Isolation: zeigt nur die Taskliste
-              <ul className="list-disc pl-6 text-sm">
-                {tasks.map((t) => (
-                  <li key={t.id}>
-                    {t.description} <span className="text-xs text-slate-500">({t.status})</span>
-                  </li>
-                ))}
-              </ul>
-            )
+            // Ersatz-Renderer zur Isolation: zeigt nur die Taskliste
+            <ul className="list-disc pl-6 text-sm">
+              {tasks.map((t) => (
+                <li key={t.id}>
+                  {t.description} <span className="text-xs text-slate-500">({t.status})</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
@@ -190,7 +216,7 @@ export default function PipelineView() {
         {showSidePanels && (
           <aside className="w-64 p-4 bg-gray-50 border-l">
             <ArtifactList artifacts={artifactList} />
-            <BacklogList tasks={tasks.filter((t) => t.status === "todo")} />
+            <BacklogList tasks={tasks.filter((t) => t.status === 'todo')} />
           </aside>
         )}
       </div>
@@ -198,9 +224,7 @@ export default function PipelineView() {
       {/* Feedbackeingabe (nur sichtbar bei Pause) */}
       {paused && (
         <div className="p-4 bg-yellow-50 border-t">
-          <FeedbackSection
-            tasks={tasks.filter((t) => ["PRD", "Architektur"].includes(t.phase))}
-          />
+          <FeedbackSection tasks={tasks.filter((t) => ['PRD', 'Architektur'].includes(t.phase))} />
         </div>
       )}
     </div>
