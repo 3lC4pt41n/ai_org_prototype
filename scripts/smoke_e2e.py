@@ -12,7 +12,7 @@ API = "http://localhost:8000"
 
 def main(tenant: str, purpose: str) -> int:
     # Purpose anlegen
-    r = requests.post(f"{API}/api/purpose", json={"tenant_id": tenant, "name": purpose})
+    r = requests.post(f"{API}/api/purposes", json={"tenant_id": tenant, "name": purpose})
     r.raise_for_status()
     purp_id = r.json()["id"]
     print("✅ Purpose created:", purp_id)

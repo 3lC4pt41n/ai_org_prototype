@@ -11,7 +11,7 @@ from ai_org_backend.services.storage import save_artefact
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 
 
-@router.post("/activate/{purpose_id}")
+@router.post("/{purpose_id}/activate")
 def activate_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
@@ -27,7 +27,7 @@ def activate_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_curre
     return {"status": "activated", "purpose_id": purpose_id}
 
 
-@router.post("/pause/{purpose_id}")
+@router.post("/{purpose_id}/pause")
 def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
@@ -40,7 +40,7 @@ def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
     return {"status": "paused", "purpose_id": purpose_id}
 
 
-@router.post("/start/{purpose_id}")
+@router.post("/{purpose_id}/start")
 def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:

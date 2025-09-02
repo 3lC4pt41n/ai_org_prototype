@@ -55,7 +55,7 @@ export default function AdminDashboard() {
 
   // Fetch list of purposes on mount
   useEffect(() => {
-    getJson("/purpose")
+    getJson("/purposes")
       .then((data) => {
         setPurposes(data);
         if (data.length > 0) {
@@ -71,10 +71,10 @@ export default function AdminDashboard() {
     const controller = new AbortController();
     const tick = () =>
       Promise.all([
-        getJson(`/purpose/${currentPurposeId}/status`),
+        getJson(`/purposes/${currentPurposeId}/status`),
         getJson(`/backlog?purpose_id=${currentPurposeId}`),
         getJson(`/artifacts?purpose_id=${currentPurposeId}`),
-        getJson(`/purpose/${currentPurposeId}/graph`)
+        getJson(`/purposes/${currentPurposeId}/graph`)
       ])
         .then(([statusData, backlogData, artifactsData, graphData]) => {
           setBudget(statusData.budget_left);
@@ -194,8 +194,8 @@ export default function AdminDashboard() {
   function togglePause() {
     if (!currentPurposeId) return;
     const endpoint = paused
-      ? `/purpose/${currentPurposeId}/resume`
-      : `/purpose/${currentPurposeId}/pause`;
+      ? `/purposes/${currentPurposeId}/start`
+      : `/purposes/${currentPurposeId}/pause`;
     fetch(`${API}${endpoint}`, {
       method: "POST",
       headers: {
@@ -218,12 +218,12 @@ export default function AdminDashboard() {
 
   async function handleCreatePurpose() {
     try {
-      const res = await postJson("/purpose", { purpose: purposeName });
+      const res = await postJson("/purposes", { purpose: purposeName });
       setCurrentPurposeId(res.purpose_id);
       setRequirements(res.requirements);
       setBlueprint(res.blueprint);
       setPurposeName("");
-      getJson("/purpose").then(setPurposes).catch(() => {});
+      getJson("/purposes").then(setPurposes).catch(() => {});
       getJson(`/artifacts?purpose_id=${res.purpose_id}`).then(setArtifacts).catch(() => {});
     } catch {
       toast.error("Failed to create purpose");
