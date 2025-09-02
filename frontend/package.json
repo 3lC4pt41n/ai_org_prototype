@@ -1,5 +1,6 @@
 {
   "name": "ai_org_prototype",
+  "packageManager": "pnpm@10.13.1",
   "private": true,
   "workspaces": [
     "apps/*",
