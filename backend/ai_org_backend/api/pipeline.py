@@ -80,7 +80,7 @@ def get_graph(current_tenant: Tenant = Depends(get_current_tenant)):
     return {"tasks": tasks_data, "dependencies": dependencies_data}
 
 
-@router.get("/purpose/{purpose_id}/graph")
+@router.get("/purposes/{purpose_id}/graph", tags=["purposes"])
 def get_purpose_graph(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
@@ -100,29 +100,7 @@ def get_purpose_graph(purpose_id: str, current_tenant: Tenant = Depends(get_curr
     return {"tasks": tasks_data, "dependencies": dependencies_data}
 
 
-@router.post("/purpose/{purpose_id}/pause")
-def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
-    tenant_id = current_tenant.id
-    try:
-        pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
-    except Exception as e:
-        logger.error("Redis set failed: %s", e)
-        raise HTTPException(status_code=503, detail="Cache unavailable")
-    return {"status": "paused"}
-
-
-@router.post("/purpose/{purpose_id}/resume")
-def resume_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
-    tenant_id = current_tenant.id
-    try:
-        pool.delete(f"pause:{tenant_id}:{purpose_id}")
-    except Exception as e:
-        logger.error("Redis delete failed: %s", e)
-        raise HTTPException(status_code=503, detail="Cache unavailable")
-    return {"status": "resumed"}
-
-
-@router.get("/purpose/{purpose_id}/status")
+@router.get("/purposes/{purpose_id}/status", tags=["purposes"])
 def get_purpose_status(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     try:
@@ -180,7 +158,7 @@ async def list_artifacts(
     return result
 
 
-@router.get("/purpose")
+@router.get("/purposes", tags=["purposes"])
 def list_purposes(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
@@ -190,7 +168,7 @@ def list_purposes(current_tenant: Tenant = Depends(get_current_tenant)):
     return [p.model_dump() for p in purposes]
 
 
-@router.post("/purpose")
+@router.post("/purposes", tags=["purposes"])
 def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_tenant)):
     """Create a new purpose and seed initial tasks via LLM agents."""
     name = payload.get("purpose") or "Untitled"
@@ -377,7 +355,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
 
 
-@router.post("/purpose/{purpose_id}/feedback")
+@router.post("/purposes/{purpose_id}/feedback", tags=["purposes"])
 def post_feedback(
     purpose_id: str,
     payload: dict,
@@ -540,7 +518,7 @@ def post_feedback(
     return {"blueprintContent": new_content}
 
 
-@router.get("/purpose/{purpose_id}/feedback")
+@router.get("/purposes/{purpose_id}/feedback", tags=["purposes"])
 def get_feedback_history(
     purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
 ):

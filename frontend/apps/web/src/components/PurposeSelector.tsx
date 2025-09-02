@@ -2,7 +2,7 @@ import React from "react";
 import usePipelineStore from "../store/pipelineStore";
 
 export default function PurposeSelector() {
-  const { purposes, selectedPurposeId, setSelectedPurpose, pausePurpose, resumePurpose } =
+  const { purposes, selectedPurposeId, setSelectedPurpose, pausePurpose, startPurpose } =
     usePipelineStore();
 
   return (
@@ -32,7 +32,7 @@ export default function PurposeSelector() {
           </button>
           <button
             className="px-3 py-1 bg-green-500 text-white rounded"
-            onClick={() => resumePurpose(selectedPurposeId)}
+            onClick={() => startPurpose(selectedPurposeId)}
           >
             Start Zweck
           </button>
