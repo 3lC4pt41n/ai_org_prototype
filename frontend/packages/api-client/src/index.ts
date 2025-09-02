@@ -45,7 +45,7 @@ export async function postJson<TBody extends object = any, TResp = any>(path: st
 // Purpose anlegen (Pipeline)
 export async function createPurpose(purpose: string) {
   return await postJson<{ purpose: string }, { purpose_id: string; requirements: string; blueprint: string }>(
-    "/purpose",
+    "/purposes",
     { purpose }
   );
 }
@@ -83,9 +83,9 @@ export async function getGraph() {
 }
 
 export async function getPurposeGraph(pid: string) {
-  return await getJson(`/purpose/${pid}/graph`);
+  return await getJson(`/purposes/${pid}/graph`);
 }
 
 export async function postFeedback(pid: string, payload: any) {
-  return await postJson(`/purpose/${pid}/feedback`, payload);
+  return await postJson(`/purposes/${pid}/feedback`, payload);
 }
