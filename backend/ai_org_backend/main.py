@@ -18,13 +18,11 @@ from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.api.pipeline import router as pipeline_router
+from ai_org_backend.api.purposes import router as purposes_router
 from ai_org_backend.api.reviews import router as reviews_router
 from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
-from ai_org_backend.api.purposes import router as purposes_router
-from ai_org_backend.api.feedback import router as feedback_router
-from ai_org_backend.db import engine
 from ai_org_backend.models import Tenant
 
 # ──────────────── ENV / constants ─────────────────────────────
@@ -127,10 +125,9 @@ app.include_router(settings_router)
 app.include_router(reviews_router)
 app.include_router(root_router)
 app.include_router(purposes_router)
-app.include_router(feedback_router)
 
 # ─────────────── Scheduler automatisch starten ─────────────────────────
-import asyncio
+import asyncio  # noqa: E402
 
 
 @app.on_event("startup")
@@ -138,6 +135,7 @@ async def start_scheduler():
     from ai_org_backend.orchestrator.scheduler import orchestrator
 
     asyncio.create_task(orchestrator())
+
 
 if os.getenv("DISABLE_METRICS") != "1":
     metrics_app = make_asgi_app()
