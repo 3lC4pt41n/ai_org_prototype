@@ -98,11 +98,11 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchPurposes: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/api/purpose");
-      set({ purposes: res.data });
+      const res = await api.get("/purposes");
+      set({ purposes: Array.isArray(res.data) ? res.data : [] });
     } catch (err) {
       console.error("Error fetching purposes:", err);
-      set({ error: err });
+      set({ error: String(err), purposes: [] });
     } finally {
       set({ isLoading: false });
     }
@@ -111,13 +111,13 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchBacklog: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/api/backlog");
+      const res = await api.get("/backlog");
       const selected = get().selectedPurposeId;
-      const tasks: Task[] = res.data;
+      const tasks: Task[] = Array.isArray(res.data) ? res.data : [];
       set({ backlog: selected ? tasks.filter((t) => t.id.startsWith(selected)) : tasks });
     } catch (err) {
       console.error("Error fetching backlog:", err);
-      set({ error: err });
+      set({ backlog: [], error: String(err) });
     } finally {
       set({ isLoading: false });
     }
@@ -127,34 +127,52 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const [graphRes, statusRes] = await Promise.all([
-        api.get(`/api/purpose/${purposeId}/graph`),
-        api.get(`/api/purpose/${purposeId}/status`),
+        api.get(`/purposes/${purposeId}/graph`),
+        api.get(`/purposes/${purposeId}/status`),
       ]);
+      if (graphRes.status !== 200 || statusRes.status !== 200) {
+        throw new Error(
+          `API not ok: graph=${graphRes.status} status=${statusRes.status}`
+        );
+      }
       const graph = graphRes.data;
-      const statusData: Record<string, string> = statusRes.data;
-      set({ tasksStatus: statusData });
-      const nodes: GraphNode[] = graph.nodes.map((node: any, idx: number) => ({
-        id: node.id,
-        data: { label: node.name || node.id, status: statusData[node.id] },
-        position: { x: idx * 200, y: 0 },
-        style: {
-          borderColor:
-            statusData[node.id] === "done"
-              ? "#16a34a"
-              : statusData[node.id] === "doing"
-              ? "#f59e0b"
-              : "#cbd5e1",
-        },
-      }));
-      const edges: GraphEdge[] = graph.edges.map((edge: any) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-      }));
-      set({ graphNodes: nodes, graphEdges: edges });
+      const status = statusRes.data;
+
+      const nodes: GraphNode[] = Array.isArray(graph?.nodes)
+        ? graph.nodes.map((node: any, idx: number) => ({
+            id: node.id,
+            data: {
+              label: node.name || node.id,
+              status: status?.[node.id],
+            },
+            position: { x: idx * 200, y: 0 },
+            style: {
+              borderColor:
+                status?.[node.id] === "done"
+                  ? "#16a34a"
+                  : status?.[node.id] === "doing"
+                  ? "#f59e0b"
+                  : "#cbd5e1",
+            },
+          }))
+        : [];
+      const edges: GraphEdge[] = Array.isArray(graph?.edges)
+        ? graph.edges.map((edge: any) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+          }))
+        : [];
+      set({
+        graphNodes: nodes,
+        graphEdges: edges,
+        tasksStatus: status ?? {},
+        isLoading: false,
+        error: null,
+      });
     } catch (err) {
-      console.error("Error fetching graph or status:", err);
-      set({ error: err });
+      console.error("fetchGraphAndStatus failed", err);
+      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: String(err) });
     } finally {
       set({ isLoading: false });
     }
@@ -163,13 +181,13 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchArtifacts: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/api/artifacts");
-      const arts: Artifact[] = res.data;
+      const res = await api.get("/artifacts");
+      const arts: Artifact[] = Array.isArray(res.data) ? res.data : [];
       const selected = get().selectedPurposeId;
       set({ artifacts: selected ? arts.filter((a) => a.id.startsWith(selected)) : arts });
     } catch (err) {
       console.error("Error fetching artifacts:", err);
-      set({ error: err });
+      set({ artifacts: [], error: String(err) });
     } finally {
       set({ isLoading: false });
     }
@@ -184,7 +202,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchArtifactContent: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get(`/api/artifact/${artifactId}`);
+      const res = await api.get(`/artifact/${artifactId}`);
       set({ artifactContent: res.data.content });
     } catch (err) {
       console.error("Error fetching artifact content:", err);
@@ -197,7 +215,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchFeedbacks: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get(`/api/feedback/${artifactId}`);
+      const res = await api.get(`/feedback/${artifactId}`);
       set({ feedbacks: res.data });
     } catch (err) {
       console.error("Error fetching feedbacks:", err);
@@ -210,7 +228,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   postFeedback: async (artifactId: string, content: string) => {
     set({ isLoading: true, error: null });
     try {
-      await api.post(`/api/feedback/${artifactId}`, { content });
+      await api.post(`/feedback/${artifactId}`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
       console.error("Error posting feedback:", err);
@@ -223,7 +241,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   updateArtifact: async (artifactId: string, content: string) => {
     set({ isLoading: true, error: null });
     try {
-      await api.put(`/api/artifact/${artifactId}`, { content });
+      await api.put(`/artifact/${artifactId}`, { content });
     } catch (err) {
       console.error("Error updating artifact:", err);
       set({ error: err });
@@ -234,7 +252,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
 
   pausePurpose: async (purposeId: string) => {
     try {
-      await api.post(`/api/purpose/${purposeId}/pause`);
+      await api.post(`/purposes/${purposeId}/pause`);
     } catch (err) {
       console.error("Error pausing purpose:", err);
     }
@@ -242,7 +260,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
 
   resumePurpose: async (purposeId: string) => {
     try {
-      await api.post(`/api/purpose/${purposeId}/resume`);
+      await api.post(`/purposes/${purposeId}/resume`);
     } catch (err) {
       console.error("Error resuming purpose:", err);
     }
@@ -252,7 +270,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const { purposes } = get();
     for (const p of purposes) {
       try {
-        await api.post(`/api/purpose/${p.id}/pause`);
+        await api.post(`/purposes/${p.id}/pause`);
       } catch (err) {
         console.error(`Error pausing purpose ${p.id}:`, err);
       }
@@ -263,7 +281,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const { purposes } = get();
     for (const p of purposes) {
       try {
-        await api.post(`/api/purpose/${p.id}/resume`);
+        await api.post(`/purposes/${p.id}/resume`);
       } catch (err) {
         console.error(`Error resuming purpose ${p.id}:`, err);
       }
