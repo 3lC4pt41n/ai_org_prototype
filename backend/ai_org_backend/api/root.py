@@ -16,3 +16,13 @@ def root():
         "budget_left": budget.get_left(tid),
         "budget_total": budget.get_total(tid),
     }
+
+
+@router.get("/api/")
+def api_index():
+    """Health/Index endpoint for the API prefix.
+
+    Prevents 404s when the frontend accidentally requests ``/api/``
+    without specifying a resource.
+    """
+    return {"ok": True, "message": "API index"}
