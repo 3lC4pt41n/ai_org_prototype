@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import usePipelineStore from '../store/pipelineStore';
-import PhaseCascade from '../components/PhaseCascade';
 import ArtifactList from '../components/ArtifactList';
 // NOTE: Debug-/Isolation-Tools, um White Screen Ursachen zu finden
 import BacklogList from '../components/BacklogList';
@@ -34,7 +33,6 @@ interface Task {
 export default function PipelineView() {
   const [paused, setPaused] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [showPhaseCascade, setShowPhaseCascade] = useState(true);
   const [showSidePanels, setShowSidePanels] = useState(true);
   const [useMock, setUseMock] = useState(false);
   const {
@@ -140,12 +138,6 @@ export default function PipelineView() {
             <>
               <button
                 className="px-2 py-1 border rounded"
-                onClick={() => setShowPhaseCascade((v) => !v)}
-              >
-                {showPhaseCascade ? 'PhaseCascade aus' : 'PhaseCascade an'}
-              </button>
-              <button
-                className="px-2 py-1 border rounded"
                 onClick={() => setShowSidePanels((v) => !v)}
               >
                 {showSidePanels ? 'Sidepanels aus' : 'Sidepanels an'}
@@ -198,12 +190,10 @@ export default function PipelineView() {
             <p className="text-gray-500">
               Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
             </p>
-          ) : showPhaseCascade ? (
-            <PhaseCascade tasks={tasks} paused={paused} />
           ) : (
-            // Ersatz-Renderer zur Isolation: zeigt nur die Taskliste
+            // Wenn das sichtbar ist, liegt der Fehler in PhaseCascade/Props
             <ul className="list-disc pl-6 text-sm">
-              {tasks.map((t) => (
+              {tasks.map(t => (
                 <li key={t.id}>
                   {t.description} <span className="text-xs text-slate-500">({t.status})</span>
                 </li>
