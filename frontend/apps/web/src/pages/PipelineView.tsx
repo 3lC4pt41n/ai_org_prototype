@@ -59,15 +59,15 @@ export default function PipelineView() {
     error: state.error,
   }));
 
+  // Beim ersten Render: Purposes laden und ggf. ersten auto-selektieren
   useEffect(() => {
-    const init = async () => {
+    (async () => {
       await fetchPurposes();
-      const { purposes, selectedPurposeId } = usePipelineStore.getState();
-      if (purposes.length > 0 && !selectedPurposeId) {
-        setSelectedPurpose(purposes[0].id);
+      const st = usePipelineStore.getState();
+      if (!st.selectedPurposeId && st.purposes.length > 0) {
+        setSelectedPurpose(st.purposes[0].id);
       }
-    };
-    void init();
+    })();
   }, [fetchPurposes, setSelectedPurpose]);
 
   // Daten nach Purpose-Wechsel laden
