@@ -41,7 +41,6 @@ export default function PipelineView() {
     backlog,
     artifacts,
     fetchPurposes,
-    setSelectedPurpose,
     isLoading,
     selectedPurposeId,
     fetchBacklog,
@@ -53,7 +52,6 @@ export default function PipelineView() {
     backlog: state.backlog as BacklogItem[],
     artifacts: state.artifacts as ArtifactItem[],
     fetchPurposes: state.fetchPurposes,
-    setSelectedPurpose: state.setSelectedPurpose,
     isLoading: state.isLoading,
     selectedPurposeId: state.selectedPurposeId,
     fetchBacklog: state.fetchBacklog,
@@ -68,14 +66,7 @@ export default function PipelineView() {
     (async () => {
       await fetchPurposes();
     })();
-  }, [fetchPurposes]);
-
-  // ⬅︎ NEU: Sobald Purposes da sind und noch nichts gewählt ist → ersten setzen
-  useEffect(() => {
-    if (!selectedPurposeId && Array.isArray(purposes) && purposes.length > 0) {
-      setSelectedPurpose(purposes[0].id);
-    }
-  }, [purposes, selectedPurposeId, setSelectedPurpose]);
+  }, []);
 
   // Daten nach Purpose-Wechsel laden
   useEffect(() => {
