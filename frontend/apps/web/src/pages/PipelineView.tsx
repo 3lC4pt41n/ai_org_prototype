@@ -33,6 +33,8 @@ interface Task {
 export default function PipelineView() {
   const [paused, setPaused] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  // ⬇︎ optional: im Debug anzeigen
+  const [showPhaseCascade, setShowPhaseCascade] = useState(true);
   const [showSidePanels, setShowSidePanels] = useState(true);
   const [useMock, setUseMock] = useState(false);
   const {
@@ -46,6 +48,7 @@ export default function PipelineView() {
     fetchArtifacts,
     fetchGraphAndStatus,
     error,
+    purposes, // ⬅︎ NEU: Purposes aus dem Store abonnieren
   } = usePipelineStore((state) => ({
     backlog: state.backlog as BacklogItem[],
     artifacts: state.artifacts as ArtifactItem[],
@@ -57,18 +60,22 @@ export default function PipelineView() {
     fetchArtifacts: state.fetchArtifacts,
     fetchGraphAndStatus: state.fetchGraphAndStatus,
     error: state.error,
+    purposes: (state as any).purposes ?? [], // falls nicht typisiert
   }));
 
-  // Beim ersten Render: Purposes laden und ggf. ersten auto-selektieren
+  // Beim ersten Render: Purposes laden
   useEffect(() => {
     (async () => {
       await fetchPurposes();
-      const st = usePipelineStore.getState();
-      if (!st.selectedPurposeId && st.purposes.length > 0) {
-        setSelectedPurpose(st.purposes[0].id);
-      }
     })();
-  }, [fetchPurposes, setSelectedPurpose]);
+  }, [fetchPurposes]);
+
+  // ⬅︎ NEU: Sobald Purposes da sind und noch nichts gewählt ist → ersten setzen
+  useEffect(() => {
+    if (!selectedPurposeId && Array.isArray(purposes) && purposes.length > 0) {
+      setSelectedPurpose(purposes[0].id);
+    }
+  }, [purposes, selectedPurposeId, setSelectedPurpose]);
 
   // Daten nach Purpose-Wechsel laden
   useEffect(() => {
@@ -119,8 +126,9 @@ export default function PipelineView() {
       artifacts,
       error,
       tasksLen: tasks?.length,
+      purposesLen: Array.isArray(purposes) ? purposes.length : 'n/a',
     });
-  }, [selectedPurposeId, isLoading, backlog, artifacts, error, tasks?.length]);
+  }, [selectedPurposeId, isLoading, backlog, artifacts, error, tasks?.length, purposes]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -134,19 +142,25 @@ export default function PipelineView() {
           <button className="px-2 py-1 border rounded" onClick={() => setShowDebug((v) => !v)}>
             {showDebug ? 'Debug aus' : 'Debug an'}
           </button>
-          {showDebug && (
-            <>
-              <button
-                className="px-2 py-1 border rounded"
-                onClick={() => setShowSidePanels((v) => !v)}
-              >
-                {showSidePanels ? 'Sidepanels aus' : 'Sidepanels an'}
-              </button>
-              <button className="px-2 py-1 border rounded" onClick={() => setUseMock((v) => !v)}>
-                {useMock ? 'Mock aus' : 'Mock an'}
-              </button>
-            </>
-          )}
+            {showDebug && (
+              <>
+                <button
+                  className="px-2 py-1 border rounded"
+                  onClick={() => setShowSidePanels((v) => !v)}
+                >
+                  {showSidePanels ? 'Sidepanels aus' : 'Sidepanels an'}
+                </button>
+                <button
+                  className="px-2 py-1 border rounded"
+                  onClick={() => setShowPhaseCascade((v) => !v)}
+                >
+                  {showPhaseCascade ? 'Phasenkaskade aus' : 'Phasenkaskade an'}
+                </button>
+                <button className="px-2 py-1 border rounded" onClick={() => setUseMock((v) => !v)}>
+                  {useMock ? 'Mock aus' : 'Mock an'}
+                </button>
+              </>
+            )}
         </div>
       </div>
 
@@ -177,30 +191,35 @@ export default function PipelineView() {
           <div>
             <b>error:</b> {typeof error === 'string' ? error : JSON.stringify(error)}
           </div>
+          <div>
+            <b>purposes.length:</b> {Array.isArray(purposes) ? purposes.length : 'n/a'}
+          </div>
         </div>
       )}
 
       {/* Hauptbereich: Phasenkaskade und Seitenpanel */}
       <div className="flex flex-1">
         {/* Zentrale Phasenkaskade */}
-        <div className="flex-1 p-4">
-          {isLoading ? (
-            <p className="text-gray-500">Lade...</p>
-          ) : tasks.length === 0 ? (
-            <p className="text-gray-500">
-              Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
-            </p>
-          ) : (
-            // Wenn das sichtbar ist, liegt der Fehler in PhaseCascade/Props
-            <ul className="list-disc pl-6 text-sm">
-              {tasks.map(t => (
-                <li key={t.id}>
-                  {t.description} <span className="text-xs text-slate-500">({t.status})</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {showPhaseCascade && (
+          <div className="flex-1 p-4">
+            {isLoading ? (
+              <p className="text-gray-500">Lade...</p>
+            ) : tasks.length === 0 ? (
+              <p className="text-gray-500">
+                Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
+              </p>
+            ) : (
+              // Wenn das sichtbar ist, liegt der Fehler in PhaseCascade/Props
+              <ul className="list-disc pl-6 text-sm">
+                {tasks.map(t => (
+                  <li key={t.id}>
+                    {t.description} <span className="text-xs text-slate-500">({t.status})</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Artefakte und Backlog */}
         {showSidePanels && (
