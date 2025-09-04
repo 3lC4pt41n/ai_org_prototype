@@ -28,6 +28,7 @@ interface Task {
   description: string;
   status: string;
   artifactUrl?: string;
+  artifactId?: string;
 }
 
 export default function PipelineView() {
@@ -78,12 +79,17 @@ export default function PipelineView() {
   const safeBacklog: BacklogItem[] = Array.isArray(backlog) ? backlog : [];
   const safeArtifacts: ArtifactItem[] = Array.isArray(artifacts) ? artifacts : [];
 
-  const tasksRaw: Task[] = safeBacklog.map((t: BacklogItem) => ({
-    id: t.id,
-    phase: t.status,
-    description: t.name,
-    status: t.status,
-  }));
+  const tasksRaw: Task[] = safeBacklog.map((t: BacklogItem) => {
+    const art = safeArtifacts.find((a: ArtifactItem) => a.task_id === t.id);
+    return {
+      id: t.id,
+      phase: t.status,
+      description: t.name,
+      status: t.status,
+      artifactUrl: art?.url,
+      artifactId: art?.id,
+    };
+  });
 
   const mockTasks: Task[] = useMemo(
     () => [

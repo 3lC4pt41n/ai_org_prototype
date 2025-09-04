@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
@@ -342,7 +344,15 @@ def post_artifact_feedback(
 ):
     """Sende Feedback für ein Artefakt."""
     tenant_id = current_tenant.id
-    text = (payload.get("content") or payload.get("feedback") or "").strip()
+
+    answers = payload.get("answers")
+    if answers:
+        if not isinstance(answers, list):
+            raise HTTPException(status_code=400, detail="Field 'answers' must be a list")
+        text = json.dumps(answers, ensure_ascii=False)
+    else:
+        text = (payload.get("content") or payload.get("feedback") or "").strip()
+
     if not text:
         raise HTTPException(status_code=400, detail="Feedback content required")
     with Session(engine) as session:
