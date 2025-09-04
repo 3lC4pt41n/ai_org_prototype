@@ -37,44 +37,43 @@ export default function PipelineView() {
   const [showPhaseCascade, setShowPhaseCascade] = useState(true);
   const [showSidePanels, setShowSidePanels] = useState(true);
   const [useMock, setUseMock] = useState(false);
-  const {
-    backlog,
-    artifacts,
-    fetchPurposes,
-    isLoading,
-    selectedPurposeId,
-    fetchBacklog,
-    fetchArtifacts,
-    fetchGraphAndStatus,
-    error,
-    purposes, // ⬅︎ NEU: Purposes aus dem Store abonnieren
-  } = usePipelineStore((state) => ({
-    backlog: state.backlog as BacklogItem[],
-    artifacts: state.artifacts as ArtifactItem[],
-    fetchPurposes: state.fetchPurposes,
-    isLoading: state.isLoading,
-    selectedPurposeId: state.selectedPurposeId,
-    fetchBacklog: state.fetchBacklog,
-    fetchArtifacts: state.fetchArtifacts,
-    fetchGraphAndStatus: state.fetchGraphAndStatus,
-    error: state.error,
-    purposes: (state as any).purposes ?? [], // falls nicht typisiert
-  }));
+  // ⚠️ Use separate selectors to avoid unstable object selectors re-creating on every render
+  const backlog = usePipelineStore((s) => s.backlog) as BacklogItem[];
+  const artifacts = usePipelineStore((s) => s.artifacts) as ArtifactItem[];
+  const purposes = usePipelineStore((s) => (s as any).purposes ?? []);
+  const isLoading = usePipelineStore((s) => s.isLoading);
+  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
+  const error = usePipelineStore((s) => s.error);
+  const fetchPurposes = usePipelineStore((s) => s.fetchPurposes);
+  const setSelectedPurpose = usePipelineStore((s) => s.setSelectedPurpose);
+  const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
+  const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
+  const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
 
   // Beim ersten Render: Purposes laden
   useEffect(() => {
-    (async () => {
-      await fetchPurposes();
-    })();
-  }, []);
+    fetchPurposes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // call once; fetchPurposes is a stable reference from Zustand
+
+  // Auto-select first purpose as soon as purposes arrive (and none selected)
+  useEffect(() => {
+    if (!selectedPurposeId && Array.isArray(purposes) && purposes.length > 0) {
+      setSelectedPurpose(purposes[0].id);
+    }
+  }, [purposes, selectedPurposeId, setSelectedPurpose]);
 
   // Daten nach Purpose-Wechsel laden
   useEffect(() => {
     if (!selectedPurposeId) return;
-    fetchBacklog();
-    fetchArtifacts();
-    fetchGraphAndStatus(selectedPurposeId);
-  }, [selectedPurposeId, fetchBacklog, fetchArtifacts, fetchGraphAndStatus]);
+    const controller = new AbortController();
+    const signal = controller.signal;
+    fetchBacklog(signal);
+    fetchArtifacts(signal);
+    fetchGraphAndStatus(selectedPurposeId, signal);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPurposeId]);
   // Guards: sichere Arrays verwenden, um React Error #185 zu vermeiden
   const safeBacklog: BacklogItem[] = Array.isArray(backlog) ? backlog : [];
   const safeArtifacts: ArtifactItem[] = Array.isArray(artifacts) ? artifacts : [];
