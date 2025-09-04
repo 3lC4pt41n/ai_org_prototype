@@ -1,30 +1,64 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 
-// Base URL for all API requests. Falls back to '/api' if not provided.
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
+// Resolve API base once. In Docker we proxy /api via nginx; in dev you can set VITE_API_URL
+export const API_BASE =
+  (import.meta as any).env?.VITE_API_URL?.replace(/\/+$/, "") || "/api";
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE,
 });
 
+// Attach token on every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
     config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${token}`;
+    (config.headers as any).Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
+// Global 401 handling
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("token");
+  (resp) => resp,
+  (err: AxiosError) => {
+    const status = err.response?.status;
+    if (status === 401) {
+      try {
+        localStorage.removeItem("token");
+      } catch {}
+      // Do a hard redirect to clear app state
       window.location.href = "/login";
     }
-    return Promise.reject(error);
-  },
+    return Promise.reject(err);
+  }
 );
 
-export default api;
+// Helper wrappers with AbortController support (Axios v1 supports `signal`)
+export async function getJson<T = any>(
+  url: string,
+  opts?: { signal?: AbortSignal; headers?: Record<string, string> }
+): Promise<T> {
+  const resp = await api.get<T>(url, {
+    signal: opts?.signal,
+    headers: opts?.headers,
+  });
+  return resp.data as T;
+}
+
+export async function postJson<T = any>(
+  url: string,
+  body?: any,
+  opts?: { signal?: AbortSignal; headers?: Record<string, string> }
+): Promise<T> {
+  const resp = await api.post<T>(url, body ?? {}, {
+    signal: opts?.signal,
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(opts?.headers ?? {}),
+    },
+  });
+  return resp.data as T;
+}
+
