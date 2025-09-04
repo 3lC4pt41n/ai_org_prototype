@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import api from "../lib/api";
+import { api, getJson } from "../lib/api";
 
 interface Purpose {
   id: string;
@@ -33,8 +33,11 @@ interface GraphEdge {
 
 interface Artifact {
   id: string;
-  name: string;
-  content?: string;
+  repo_path: string;
+  url?: string;
+  created_at: string;
+  media_type: string;
+  task_id: string;
 }
 
 interface Feedback {
@@ -99,41 +102,34 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchPurposes: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/purposes");
-      const list: Purpose[] = Array.isArray(res.data) ? res.data : [];
-      set({ purposes: list, isLoading: false });
+      const data = await getJson<Purpose[]>(`/purposes`);
+      const list = Array.isArray(data) ? data : [];
       const current = get().selectedPurposeId;
-      if (!current && list.length > 0) {
-        get().setSelectedPurpose(list[0].id);
-      }
+      const next = !current && list.length > 0 ? list[0].id : current;
+      set({ purposes: list, selectedPurposeId: next ?? null, isLoading: false });
     } catch (err) {
       console.error('fetchPurposes failed', err);
       set({ error: err, purposes: [], isLoading: false });
     }
   },
 
-  fetchBacklog: async () => {
+  fetchBacklog: async (signal?: AbortSignal) => {
     const selected = get().selectedPurposeId;
     if (!selected) return;
-    set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/backlog", { params: { purpose_id: selected } });
-      const tasks: Task[] = Array.isArray(res.data) ? res.data : [];
-      set({ backlog: tasks });
+      const data = await getJson<Task[]>(`/backlog?purpose_id=${encodeURIComponent(selected)}`, { signal });
+      set({ backlog: Array.isArray(data) ? data : [] });
     } catch (err) {
       console.error('fetchBacklog failed', err);
       set({ backlog: [], error: err });
-    } finally {
-      set({ isLoading: false });
     }
   },
 
-  fetchGraphAndStatus: async (purposeId: string) => {
-    set({ isLoading: true, error: null });
+  fetchGraphAndStatus: async (purposeId: string, signal?: AbortSignal) => {
     try {
       const [graphRes, statusRes] = await Promise.all([
-        api.get(`/purposes/${purposeId}/graph`),
-        api.get(`/purposes/${purposeId}/status`),
+        api.get(`/purposes/${purposeId}/graph`, { signal }),
+        api.get(`/purposes/${purposeId}/status`, { signal }),
       ]);
       if (graphRes.status !== 200 || statusRes.status !== 200) {
         throw new Error(
@@ -172,30 +168,23 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         graphNodes: nodes,
         graphEdges: edges,
         tasksStatus: status ?? {},
-        isLoading: false,
         error: null,
       });
     } catch (err) {
       console.error('fetchGraphAndStatus failed', err);
       set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: err });
-    } finally {
-      set({ isLoading: false });
     }
   },
 
-  fetchArtifacts: async () => {
+  fetchArtifacts: async (signal?: AbortSignal) => {
     const selected = get().selectedPurposeId;
     if (!selected) return;
-    set({ isLoading: true, error: null });
     try {
-      const res = await api.get("/artifacts", { params: { purpose_id: selected } });
-      const arts: Artifact[] = Array.isArray(res.data) ? res.data : [];
-      set({ artifacts: arts });
+      const data = await getJson<Artifact[]>(`/artifacts?purpose_id=${encodeURIComponent(selected)}`, { signal });
+      set({ artifacts: Array.isArray(data) ? data : [] });
     } catch (err) {
       console.error('fetchArtifacts failed', err);
       set({ artifacts: [], error: err });
-    } finally {
-      set({ isLoading: false });
     }
   },
 
