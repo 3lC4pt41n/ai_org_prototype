@@ -157,7 +157,11 @@ export default function PipelineView() {
 
       {error && (
         <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-          {typeof error === 'string' ? error : JSON.stringify(error)}
+          {typeof error === 'string'
+            ? error
+            : error instanceof Error
+            ? error.message
+            : String(error)}
         </div>
       )}
 
@@ -180,7 +184,12 @@ export default function PipelineView() {
             <b>artifacts type:</b> {Array.isArray(artifacts) ? 'array' : typeof artifacts}
           </div>
           <div>
-            <b>error:</b> {typeof error === 'string' ? error : JSON.stringify(error)}
+            <b>error:</b>{' '}
+            {typeof error === 'string'
+              ? error
+              : error instanceof Error
+              ? error.message
+              : String(error)}
           </div>
           <div>
             <b>purposes.length:</b> {Array.isArray(purposes) ? purposes.length : 'n/a'}
