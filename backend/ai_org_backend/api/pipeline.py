@@ -421,7 +421,7 @@ def post_artifact_feedback(
             select(func.max(ArtifactFeedback.version)).where(
                 ArtifactFeedback.artifact_id == artifact_id
             )
-        ).scalar()
+        ).first()
         version = (last_version or 0) + 1
 
         fb = ArtifactFeedback(
@@ -439,6 +439,22 @@ def post_artifact_feedback(
             session.rollback()
             # turn "500 mystery" into a readable 400
             raise HTTPException(status_code=400, detail=f"Failed to save feedback: {e}")
+
+        # 3) Create a follow-up backlog task for non-trivial feedback
+        trivial = {"ok", "fine", "okay", "thanks"}
+        if text.strip().lower() not in trivial:
+            review_desc = f"Review PRD based on feedback by {author}"
+            new_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=task.purpose_id,
+                description=review_desc,
+            )
+            session.add(new_task)
+            try:
+                session.commit()
+            except Exception as e:  # pragma: no cover - logging only
+                session.rollback()
+                logger.error("Failed to create review task for feedback: %s", e)
 
     return {"status": "saved", "version": version}
 
