@@ -38,6 +38,7 @@ interface Artifact {
   created_at: string;
   media_type: string;
   task_id: string;
+  task_desc?: string;
 }
 
 interface Feedback {
@@ -59,6 +60,7 @@ interface PipelineState {
   artifactContent: string;
   feedbacks: Feedback[];
   isLoading: boolean;
+  paused: boolean;
   error: unknown | null;
   setSelectedPurpose: (id: string) => void;
   fetchPurposes: () => Promise<void>;
@@ -88,6 +90,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   artifactContent: "",
   feedbacks: [],
   isLoading: false,
+  paused: false,
   error: null,
 
   setSelectedPurpose: (id: string) => {
@@ -136,43 +139,47 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
           `API not ok: graph=${graphRes.status} status=${statusRes.status}`
         );
       }
-      const graph = graphRes.data;
-      const status = statusRes.data;
+      const { tasks, dependencies } = graphRes.data;
+      const statusObj = statusRes.data;
 
-      const nodes: GraphNode[] = Array.isArray(graph?.nodes)
-        ? graph.nodes.map((node: any, idx: number) => ({
-            id: node.id,
-            data: {
-              label: node.name || node.id,
-              status: status?.[node.id],
-            },
+      const nodes: GraphNode[] = Array.isArray(tasks)
+        ? tasks.map((t: any, idx: number) => ({
+            id: t.id,
+            data: { label: t.description || t.name || t.id, status: t.status },
             position: { x: idx * 200, y: 0 },
             style: {
               borderColor:
-                status?.[node.id] === "done"
+                t.status === "done"
                   ? "#16a34a"
-                  : status?.[node.id] === "doing"
+                  : t.status === "doing"
                   ? "#f59e0b"
                   : "#cbd5e1",
             },
           }))
         : [];
-      const edges: GraphEdge[] = Array.isArray(graph?.edges)
-        ? graph.edges.map((edge: any) => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
+
+      const edges: GraphEdge[] = Array.isArray(dependencies)
+        ? dependencies.map((edge: any) => ({
+            id: `${edge.from_id}-${edge.to_id}`,
+            source: edge.from_id,
+            target: edge.to_id,
           }))
         : [];
+
+      const taskStatus: Record<string, string> = Array.isArray(tasks)
+        ? tasks.reduce((acc: any, t: any) => ({ ...acc, [t.id]: t.status }), {})
+        : {};
+
       set({
         graphNodes: nodes,
         graphEdges: edges,
-        tasksStatus: status ?? {},
+        tasksStatus: taskStatus,
+        paused: Boolean(statusObj?.paused),
         error: null,
       });
     } catch (err) {
       console.error('fetchGraphAndStatus failed', err);
-      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: err });
+      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, paused: false, error: err });
     }
   },
 
@@ -210,7 +217,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchFeedbacks: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get(`/feedback/${artifactId}`);
+      const res = await api.get(`/artifacts/${artifactId}/feedback`);
       set({ feedbacks: res.data });
     } catch (err) {
       console.error('fetchFeedbacks failed', err);
@@ -223,7 +230,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   postFeedback: async (artifactId: string, content: string) => {
     set({ isLoading: true, error: null });
     try {
-      await api.post(`/feedback/${artifactId}`, { content });
+      await api.post(`/artifacts/${artifactId}/feedback`, { content });
       get().fetchFeedbacks(artifactId);
     } catch (err) {
       console.error('postFeedback failed', err);
@@ -248,6 +255,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   pausePurpose: async (purposeId: string) => {
     try {
       await api.post(`/purposes/${purposeId}/pause`);
+      set({ paused: true });
     } catch (err) {
       console.error('pausePurpose failed', err);
       set({ error: err });
@@ -257,6 +265,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   startPurpose: async (purposeId: string) => {
     try {
       await api.post(`/purposes/${purposeId}/start`);
+      set({ paused: false });
     } catch (err) {
       console.error('startPurpose failed', err);
       set({ error: err });
