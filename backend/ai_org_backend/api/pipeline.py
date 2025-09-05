@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import func
 from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
@@ -392,10 +393,11 @@ def post_artifact_feedback(
     if answers:
         if not isinstance(answers, list):
             raise HTTPException(status_code=400, detail="Field 'answers' must be a list")
+        # store a compact JSON list of QA pairs
         try:
             text = json.dumps(answers, ensure_ascii=False)
-        except Exception as e:  # pragma: no cover - defensive
-            raise HTTPException(status_code=400, detail="Invalid 'answers' format") from e
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid answers format")
     else:
         text = (payload.get("content") or payload.get("feedback") or "").strip()
 
@@ -412,13 +414,13 @@ def post_artifact_feedback(
         if not task or task.tenant_id != tenant_id:
             raise HTTPException(status_code=403, detail="Forbidden for this tenant")
 
-        # Next version = max(version)+1 or 1
+        # robust scalar max() to avoid row/tuple surprises
         last_version = session.exec(
-            select(ArtifactFeedback.version)
-            .where(ArtifactFeedback.artifact_id == artifact_id)
-            .order_by(ArtifactFeedback.version.desc())
-        ).first()
-        version = int(last_version or 0) + 1
+            select(func.max(ArtifactFeedback.version)).where(
+                ArtifactFeedback.artifact_id == artifact_id
+            )
+        ).scalar()
+        version = (last_version or 0) + 1
 
         fb = ArtifactFeedback(
             artifact_id=artifact_id,
@@ -427,12 +429,13 @@ def post_artifact_feedback(
             content=text,
             approved=False,
         )
-        session.add(fb)
-        session.commit()
         try:
-            session.refresh(fb)
-        except Exception:  # pragma: no cover - refresh best effort
-            pass
+            session.add(fb)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            # turn "500 mystery" into a readable 400
+            raise HTTPException(status_code=400, detail=f"Failed to save feedback: {e}")
 
     return {"status": "saved", "version": version}
 
