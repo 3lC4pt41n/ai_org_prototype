@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
+import FileViewer from "./FileViewer";
 
 interface Artifact {
   id: string;
@@ -29,39 +29,65 @@ export default function ArtifactSection({
   showFeedback = false,
 }: Props) {
   const [content, setContent] = useState<string>("");
+  const [contentType, setContentType] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const filename = artifact?.url ? artifact.url.split("/").pop() || null : null;
 
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
   const [idx, setIdx] = useState<number>(0);
   const [draft, setDraft] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
 
-  // PRD/Blueprint laden (als Text/Markdown)
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
-        });
-        if (!res.ok) throw new Error(`artifact ${res.status}`);
+  async function loadArtifact(signal?: AbortSignal) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+        signal,
+      });
+      if (!res.ok) throw new Error(`artifact ${res.status}`);
+      const ct = res.headers.get("content-type");
+      setContentType(ct);
+      if (
+        ct?.startsWith("text/") ||
+        ct?.includes("json") ||
+        ct?.includes("xml") ||
+        ct?.includes("yaml") ||
+        ct?.includes("markdown") ||
+        ct?.includes("javascript")
+      ) {
         const text = await res.text();
-        if (!alive) return;
         setContent(text);
-      } catch (e: any) {
-        if (!alive) return;
+        if (blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          setBlobUrl(null);
+        }
+      } else {
+        const b = await res.blob();
+        const url = URL.createObjectURL(b);
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        setBlobUrl(url);
         setContent("");
-        setError("Artefakt konnte nicht geladen werden.");
-      } finally {
-        if (alive) setLoading(false);
       }
+    } catch {
+      setContent("");
+      setError("Artefakt konnte nicht geladen werden.");
+    } finally {
+      setLoading(false);
     }
-    load();
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadArtifact(controller.signal);
     return () => {
-      alive = false;
+      controller.abort();
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
     };
   }, [artifact.id, artifact.url]);
 
@@ -98,17 +124,7 @@ export default function ArtifactSection({
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       setIdx(list.length ? list.length - 1 : 0);
-      try {
-        const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
-        });
-        if (res.ok) {
-          const text = await res.text();
-          setContent(text);
-        }
-      } catch {
-        /* ignore refresh errors */
-      }
+      await loadArtifact();
     } catch {
       setSubmitState("err");
     }
@@ -150,9 +166,13 @@ export default function ArtifactSection({
         ) : error ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : (
-          <div className="prose prose-sm max-w-none">
-            <ReactMarkdown>{content}</ReactMarkdown>
-          </div>
+          <FileViewer
+            text={content}
+            blobUrl={blobUrl}
+            contentType={contentType}
+            filename={filename}
+            height={520}
+          />
         )}
       </div>
 
@@ -215,4 +235,3 @@ export default function ArtifactSection({
     </section>
   );
 }
-
