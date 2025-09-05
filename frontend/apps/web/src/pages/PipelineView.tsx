@@ -52,10 +52,10 @@ export default function PipelineView() {
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
-  const prdArtifact = artifacts.find(a => a.repo_path?.toLowerCase().includes('product_requirements_document'));
+  const prdArtifact = artifacts.find(a => a.repo_path?.toLowerCase().includes('product_requirements'));
   const archArtifact = artifacts.find(a => a.repo_path?.toLowerCase().includes('architecture_blueprint'));
 
-  const prdPending  = paused && !archArtifact;
+  const prdPending  = paused && !archArtifact;  // bleibt für Status-Icon Logik bestehen
   const archPending = paused && !!archArtifact;
   const prdStatusIcon  = prdPending  ? '🕓' : '✅';
   const archStatusIcon = archArtifact ? (archPending ? '🕓' : '✅') : '✅';
@@ -117,7 +117,7 @@ export default function PipelineView() {
               title="Product Requirements Document"
               artifact={prdArtifact}
               statusIcon={prdStatusIcon}
-              showFeedback={prdPending}
+              showFeedback={true}
             />
           )}
           {archArtifact && (
@@ -197,4 +197,3 @@ export default function PipelineView() {
     </div>
   );
 }
-
