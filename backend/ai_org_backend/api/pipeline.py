@@ -1,7 +1,6 @@
+import json
 import logging
 from pathlib import Path
-
-import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -336,25 +335,15 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
 
 
-@router.post("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
-def post_artifact_feedback(
+@router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
+def get_artifact_feedback(
     artifact_id: str,
-    payload: dict,
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
-    """Sende Feedback für ein Artefakt."""
+    """
+    Return all feedback entries for an artifact, sorted by version ascending.
+    """
     tenant_id = current_tenant.id
-
-    answers = payload.get("answers")
-    if answers:
-        if not isinstance(answers, list):
-            raise HTTPException(status_code=400, detail="Field 'answers' must be a list")
-        text = json.dumps(answers, ensure_ascii=False)
-    else:
-        text = (payload.get("content") or payload.get("feedback") or "").strip()
-
-    if not text:
-        raise HTTPException(status_code=400, detail="Feedback content required")
     with Session(engine) as session:
         artifact = session.get(Artifact, artifact_id)
         if not artifact:
@@ -362,12 +351,75 @@ def post_artifact_feedback(
         task = session.get(Task, artifact.task_id)
         if not task or task.tenant_id != tenant_id:
             raise HTTPException(status_code=403, detail="Forbidden for this tenant")
+
+        rows = session.exec(
+            select(ArtifactFeedback)
+            .where(ArtifactFeedback.artifact_id == artifact_id)
+            .order_by(ArtifactFeedback.version.asc())
+        ).all()
+
+        # Return plain dicts – avoids Pydantic/ORM serialization surprises
+        return [
+            {
+                "id": f.id,
+                "artifact_id": f.artifact_id,
+                "tenant_id": f.tenant_id,
+                "version": f.version,
+                "content": f.content,
+                "approved": f.approved,
+                "created_at": getattr(f, "created_at", None),
+            }
+            for f in rows
+        ]
+
+
+@router.post("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
+def post_artifact_feedback(
+    artifact_id: str,
+    payload: dict,
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """
+    Store feedback for an artifact.
+    Accepts either:
+      - {"content": "<free text>"}  OR
+      - {"answers": [{"question": "...", "answer": "..."}, ...]}
+    """
+    tenant_id = current_tenant.id
+
+    # 1) Normalize payload
+    answers = payload.get("answers")
+    if answers:
+        if not isinstance(answers, list):
+            raise HTTPException(status_code=400, detail="Field 'answers' must be a list")
+        try:
+            text = json.dumps(answers, ensure_ascii=False)
+        except Exception as e:  # pragma: no cover - defensive
+            raise HTTPException(status_code=400, detail="Invalid 'answers' format") from e
+    else:
+        text = (payload.get("content") or payload.get("feedback") or "").strip()
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Feedback content required")
+
+    # 2) Persist
+    with Session(engine) as session:
+        artifact = session.get(Artifact, artifact_id)
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+
+        task = session.get(Task, artifact.task_id)
+        if not task or task.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Forbidden for this tenant")
+
+        # Next version = max(version)+1 or 1
         last_version = session.exec(
             select(ArtifactFeedback.version)
             .where(ArtifactFeedback.artifact_id == artifact_id)
             .order_by(ArtifactFeedback.version.desc())
         ).first()
-        version = (last_version or 0) + 1
+        version = int(last_version or 0) + 1
+
         fb = ArtifactFeedback(
             artifact_id=artifact_id,
             tenant_id=tenant_id,
@@ -377,26 +429,12 @@ def post_artifact_feedback(
         )
         session.add(fb)
         session.commit()
+        try:
+            session.refresh(fb)
+        except Exception:  # pragma: no cover - refresh best effort
+            pass
+
     return {"status": "saved", "version": version}
-
-
-@router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
-def get_artifact_feedback(artifact_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
-    """Hole Feedback-Historie für ein Artefakt."""
-    tenant_id = current_tenant.id
-    with Session(engine) as session:
-        artifact = session.get(Artifact, artifact_id)
-        if not artifact:
-            raise HTTPException(status_code=404, detail="Artifact not found")
-        task = session.get(Task, artifact.task_id)
-        if not task or task.tenant_id != tenant_id:
-            raise HTTPException(status_code=403, detail="Forbidden for this tenant")
-        entries = session.exec(
-            select(ArtifactFeedback)
-            .where(ArtifactFeedback.artifact_id == artifact_id)
-            .order_by(ArtifactFeedback.version)
-        ).all()
-    return [e.model_dump() for e in entries]
 
 
 @router.get("/artifact/{artifact_id}", tags=["artifacts"])
