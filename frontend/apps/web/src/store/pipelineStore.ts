@@ -38,6 +38,7 @@ interface Artifact {
   created_at: string;
   media_type: string;
   task_id: string;
+  task_desc?: string;
 }
 
 interface Feedback {
@@ -59,6 +60,7 @@ interface PipelineState {
   artifactContent: string;
   feedbacks: Feedback[];
   isLoading: boolean;
+  paused: boolean;
   error: unknown | null;
   setSelectedPurpose: (id: string) => void;
   fetchPurposes: () => Promise<void>;
@@ -88,6 +90,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   artifactContent: "",
   feedbacks: [],
   isLoading: false,
+  paused: false,
   error: null,
 
   setSelectedPurpose: (id: string) => {
@@ -137,42 +140,52 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         );
       }
       const graph = graphRes.data;
-      const status = statusRes.data;
-
-      const nodes: GraphNode[] = Array.isArray(graph?.nodes)
-        ? graph.nodes.map((node: any, idx: number) => ({
-            id: node.id,
-            data: {
-              label: node.name || node.id,
-              status: status?.[node.id],
-            },
-            position: { x: idx * 200, y: 0 },
-            style: {
-              borderColor:
-                status?.[node.id] === "done"
-                  ? "#16a34a"
-                  : status?.[node.id] === "doing"
-                  ? "#f59e0b"
-                  : "#cbd5e1",
-            },
-          }))
+      const statusData = statusRes.data;
+      const tasks: any[] = Array.isArray(graph?.tasks) ? graph.tasks : [];
+      const deps: any[] = Array.isArray(graph?.dependencies)
+        ? graph.dependencies
         : [];
-      const edges: GraphEdge[] = Array.isArray(graph?.edges)
-        ? graph.edges.map((edge: any) => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-          }))
-        : [];
+      const nodes: GraphNode[] = tasks.map((t: any, idx: number) => ({
+        id: t.id,
+        data: {
+          label: t.description || t.id,
+          status: t.status,
+        },
+        position: { x: idx * 200, y: 0 },
+        style: {
+          borderColor:
+            t.status === "done"
+              ? "#16a34a"
+              : t.status === "doing"
+              ? "#f59e0b"
+              : "#cbd5e1",
+        },
+      }));
+      const edges: GraphEdge[] = deps.map((edge: any, i: number) => ({
+        id: `${edge.from_id}-${edge.to_id}-${i}`,
+        source: edge.from_id,
+        target: edge.to_id,
+      }));
+      const taskStatusMap: Record<string, string> = {};
+      tasks.forEach((t: any) => {
+        taskStatusMap[t.id] = t.status;
+      });
       set({
         graphNodes: nodes,
         graphEdges: edges,
-        tasksStatus: status ?? {},
+        tasksStatus: taskStatusMap,
+        paused: !!statusData?.paused,
         error: null,
       });
     } catch (err) {
       console.error('fetchGraphAndStatus failed', err);
-      set({ graphNodes: [], graphEdges: [], tasksStatus: {}, error: err });
+      set({
+        graphNodes: [],
+        graphEdges: [],
+        tasksStatus: {},
+        paused: false,
+        error: err,
+      });
     }
   },
 
@@ -248,6 +261,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   pausePurpose: async (purposeId: string) => {
     try {
       await api.post(`/purposes/${purposeId}/pause`);
+      set({ paused: true });
     } catch (err) {
       console.error('pausePurpose failed', err);
       set({ error: err });
@@ -257,6 +271,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   startPurpose: async (purposeId: string) => {
     try {
       await api.post(`/purposes/${purposeId}/start`);
+      set({ paused: false });
     } catch (err) {
       console.error('startPurpose failed', err);
       set({ error: err });
