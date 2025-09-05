@@ -37,32 +37,27 @@ export default function ArtifactSection({
   const [draft, setDraft] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
 
+  async function loadArtifact() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      });
+      if (!res.ok) throw new Error(`artifact ${res.status}`);
+      const text = await res.text();
+      setContent(text);
+    } catch (e: any) {
+      setContent("");
+      setError("Artefakt konnte nicht geladen werden.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // PRD/Blueprint laden (als Text/Markdown)
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
-        });
-        if (!res.ok) throw new Error(`artifact ${res.status}`);
-        const text = await res.text();
-        if (!alive) return;
-        setContent(text);
-      } catch (e: any) {
-        if (!alive) return;
-        setContent("");
-        setError("Artefakt konnte nicht geladen werden.");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      alive = false;
-    };
+    loadArtifact();
   }, [artifact.id, artifact.url]);
 
   // Feedback-Historie laden (neueste zuletzt)
@@ -98,6 +93,7 @@ export default function ArtifactSection({
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       setIdx(list.length ? list.length - 1 : 0);
+      await loadArtifact();
     } catch {
       setSubmitState("err");
     }
