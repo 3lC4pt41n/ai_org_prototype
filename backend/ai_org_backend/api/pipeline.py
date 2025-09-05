@@ -365,6 +365,7 @@ def get_artifact_feedback(
                 "id": f.id,
                 "artifact_id": f.artifact_id,
                 "tenant_id": f.tenant_id,
+                "author": f.author,
                 "version": f.version,
                 "content": f.content,
                 "approved": f.approved,
@@ -387,6 +388,7 @@ def post_artifact_feedback(
       - {"answers": [{"question": "...", "answer": "..."}, ...]}
     """
     tenant_id = current_tenant.id
+    author = payload.get("author") or current_tenant.name
 
     # 1) Normalize payload
     answers = payload.get("answers")
@@ -425,6 +427,7 @@ def post_artifact_feedback(
         fb = ArtifactFeedback(
             artifact_id=artifact_id,
             tenant_id=tenant_id,
+            author=author,
             version=version,
             content=text,
             approved=False,

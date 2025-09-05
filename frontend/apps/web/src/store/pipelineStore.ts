@@ -43,9 +43,11 @@ interface Artifact {
 
 interface Feedback {
   id: string;
-  user: string;
+  user?: string;
+  author?: string;
   content: string;
-  timestamp: string;
+  timestamp?: string;
+  created_at?: string;
 }
 
 interface PipelineState {
