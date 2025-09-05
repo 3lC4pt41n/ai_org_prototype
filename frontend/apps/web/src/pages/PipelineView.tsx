@@ -1,12 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
-import usePipelineStore from '../store/pipelineStore';
-import ArtifactList from '../components/ArtifactList';
-// NOTE: Debug-/Isolation-Tools, um White Screen Ursachen zu finden
-import BacklogList from '../components/BacklogList';
-import FeedbackSection from '../components/FeedbackSection';
-import PurposeSelector from '../components/PurposeSelector';
+import { useEffect } from "react";
+import usePipelineStore from "../store/pipelineStore";
+import ArtifactList from "../components/ArtifactList";
+import BacklogList from "../components/BacklogList";
+import PurposeSelector from "../components/PurposeSelector";
+import ArtifactSection from "../components/ArtifactSection";
+import GraphSection from "../components/GraphSection";
 
-// Minimale DTOs, passend zu den API-Responses des Stores
 type BacklogItem = {
   id: string;
   name: string;
@@ -15,56 +14,43 @@ type BacklogItem = {
 
 type ArtifactItem = {
   id: string;
-  name?: string;
   repo_path?: string;
   url?: string;
   created_at?: string;
   media_type?: string;
+  task_desc?: string;
 };
 
-interface Task {
-  id: string;
-  phase: string;
-  description: string;
-  status: string;
-  artifactUrl?: string;
-  artifactId?: string;
-}
-
 export default function PipelineView() {
-  const [paused, setPaused] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
-  // ⬇︎ optional: im Debug anzeigen
-  const [showPhaseCascade, setShowPhaseCascade] = useState(true);
-  const [showSidePanels, setShowSidePanels] = useState(true);
-  const [useMock, setUseMock] = useState(false);
-  // ⚠️ Use separate selectors to avoid unstable object selectors re-creating on every render
   const backlog = usePipelineStore((s) => s.backlog) as BacklogItem[];
   const artifacts = usePipelineStore((s) => s.artifacts) as ArtifactItem[];
   const purposes = usePipelineStore((s) => (s as any).purposes ?? []);
+  const graphNodes = usePipelineStore((s) => s.graphNodes);
+  const graphEdges = usePipelineStore((s) => s.graphEdges);
+  const tasksStatus = usePipelineStore((s) => s.tasksStatus);
+  const paused = usePipelineStore((s) => s.paused);
   const isLoading = usePipelineStore((s) => s.isLoading);
-  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const error = usePipelineStore((s) => s.error);
+  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const fetchPurposes = usePipelineStore((s) => s.fetchPurposes);
   const setSelectedPurpose = usePipelineStore((s) => s.setSelectedPurpose);
   const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
   const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
   const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
+  const pausePurpose = usePipelineStore((s) => s.pausePurpose);
+  const startPurpose = usePipelineStore((s) => s.startPurpose);
 
-  // Beim ersten Render: Purposes laden
   useEffect(() => {
     fetchPurposes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // call once; fetchPurposes is a stable reference from Zustand
+  }, []);
 
-  // Auto-select first purpose as soon as purposes arrive (and none selected)
   useEffect(() => {
     if (!selectedPurposeId && Array.isArray(purposes) && purposes.length > 0) {
       setSelectedPurpose(purposes[0].id);
     }
   }, [purposes, selectedPurposeId, setSelectedPurpose]);
 
-  // Daten nach Purpose-Wechsel laden
   useEffect(() => {
     if (!selectedPurposeId) return;
     const controller = new AbortController();
@@ -75,94 +61,57 @@ export default function PipelineView() {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPurposeId]);
-  // Guards: sichere Arrays verwenden, um React Error #185 zu vermeiden
+
   const safeBacklog: BacklogItem[] = Array.isArray(backlog) ? backlog : [];
   const safeArtifacts: ArtifactItem[] = Array.isArray(artifacts) ? artifacts : [];
 
-  const tasksRaw: Task[] = safeBacklog.map((t: BacklogItem) => {
-    const art = safeArtifacts.find((a: ArtifactItem) => a.task_id === t.id);
-    return {
-      id: t.id,
-      phase: t.status,
-      description: t.name,
-      status: t.status,
-      artifactUrl: art?.url,
-      artifactId: art?.id,
-    };
+  const artifactList = safeArtifacts.map((a) => {
+    const file =
+      typeof a.repo_path === "string"
+        ? a.repo_path.split("/").pop() || a.id
+        : a.id;
+    const link = a.url ?? `/api/artifact/${a.id}`;
+    return { name: file, url: link, created_at: a.created_at, media_type: a.media_type };
   });
 
-  const mockTasks: Task[] = useMemo(
-    () => [
-      { id: 'm1', phase: 'PRD', description: 'Mock PRD', status: 'doing' },
-      { id: 'm2', phase: 'Architektur', description: 'Mock Arch', status: 'todo' },
-      { id: 'm3', phase: 'Build', description: 'Mock Build', status: 'todo' },
-    ],
-    [],
+  const backlogList = safeBacklog.map((t) => ({ id: t.id, description: t.name }));
+
+  const prdArtifact = safeArtifacts.find(
+    (a) => a.task_desc === "Product Requirements Document"
+  );
+  const archArtifact = safeArtifacts.find(
+    (a) => a.task_desc === "Architecture Blueprint"
   );
 
-  const tasks = useMock ? mockTasks : tasksRaw;
-  const artifactList = safeArtifacts.map((a: ArtifactItem) => {
-    const file =
-      typeof a.repo_path === 'string' ? a.repo_path.split('/').pop() || a.id : (a.name ?? a.id);
-    const link = a.url ?? `/api/artifact/${a.id}`;
-    return {
-      name: file,
-      url: link,
-      created_at: a.created_at,
-      media_type: a.media_type,
-    };
-  });
+  const prdPending = paused && !archArtifact;
+  const archPending = paused && !!archArtifact;
+  const prdStatusIcon = prdPending ? "🕓" : "✅";
+  const archStatusIcon = archArtifact ? (archPending ? "🕓" : "✅") : null;
+  const tasksComplete = Object.values(tasksStatus || {}).every((s) => s === "done");
+  const graphStatusIcon = tasksComplete ? "✅" : "🕓";
 
-  useEffect(() => {
-    // Sichtbares Logging im Dev-Console
-    console.log('[PipelineView] state =', {
-      selectedPurposeId,
-      isLoading,
-      backlog,
-      artifacts,
-      error,
-      tasksLen: tasks?.length,
-      purposesLen: Array.isArray(purposes) ? purposes.length : 'n/a',
-    });
-  }, [selectedPurposeId, isLoading, backlog, artifacts, error, tasks?.length, purposes]);
+  const handlePauseToggle = async () => {
+    if (!selectedPurposeId) return;
+    if (paused) {
+      await startPurpose(selectedPurposeId);
+    } else {
+      await pausePurpose(selectedPurposeId);
+    }
+    await fetchGraphAndStatus(selectedPurposeId);
+  };
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Steuerung */}
       <div className="p-4 bg-gray-100 flex justify-between items-center gap-2">
         <PurposeSelector />
-        <div className="flex items-center gap-2">
-          <button className="btn-primary" onClick={() => setPaused(!paused)}>
-            {paused ? 'Fortsetzen' : 'Pause'}
-          </button>
-          <button className="px-2 py-1 border rounded" onClick={() => setShowDebug((v) => !v)}>
-            {showDebug ? 'Debug aus' : 'Debug an'}
-          </button>
-            {showDebug && (
-              <>
-                <button
-                  className="px-2 py-1 border rounded"
-                  onClick={() => setShowSidePanels((v) => !v)}
-                >
-                  {showSidePanels ? 'Sidepanels aus' : 'Sidepanels an'}
-                </button>
-                <button
-                  className="px-2 py-1 border rounded"
-                  onClick={() => setShowPhaseCascade((v) => !v)}
-                >
-                  {showPhaseCascade ? 'Phasenkaskade aus' : 'Phasenkaskade an'}
-                </button>
-                <button className="px-2 py-1 border rounded" onClick={() => setUseMock((v) => !v)}>
-                  {useMock ? 'Mock aus' : 'Mock an'}
-                </button>
-              </>
-            )}
-        </div>
+        <button className="btn-primary" onClick={handlePauseToggle}>
+          {paused ? "Fortsetzen" : "Pause"}
+        </button>
       </div>
 
       {error && (
         <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-          {typeof error === 'string'
+          {typeof error === "string"
             ? error
             : error instanceof Error
             ? error.message
@@ -170,77 +119,39 @@ export default function PipelineView() {
         </div>
       )}
 
-      {/* Debug Panel */}
-      {showDebug && (
-        <div className="p-3 text-xs bg-slate-50 border-b font-mono whitespace-pre-wrap">
-          <div>
-            <b>selectedPurposeId:</b> {String(selectedPurposeId)}
-          </div>
-          <div>
-            <b>isLoading:</b> {String(isLoading)}
-          </div>
-          <div>
-            <b>tasks.length:</b> {Array.isArray(tasks) ? tasks.length : 'n/a'}
-          </div>
-          <div>
-            <b>backlog type:</b> {Array.isArray(backlog) ? 'array' : typeof backlog}
-          </div>
-          <div>
-            <b>artifacts type:</b> {Array.isArray(artifacts) ? 'array' : typeof artifacts}
-          </div>
-          <div>
-            <b>error:</b>{' '}
-            {typeof error === 'string'
-              ? error
-              : error instanceof Error
-              ? error.message
-              : String(error)}
-          </div>
-          <div>
-            <b>purposes.length:</b> {Array.isArray(purposes) ? purposes.length : 'n/a'}
-          </div>
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {prdArtifact && (
+            <ArtifactSection
+              title="Product Requirements Document"
+              artifact={prdArtifact}
+              statusIcon={prdStatusIcon}
+              showFeedback={prdPending}
+            />
+          )}
+          {archArtifact && archStatusIcon && (
+            <ArtifactSection
+              title="Architektur"
+              artifact={archArtifact}
+              statusIcon={archStatusIcon}
+              showFeedback={archPending}
+            />
+          )}
+          <GraphSection
+            statusIcon={graphStatusIcon}
+            nodes={graphNodes}
+            edges={graphEdges}
+          />
+          {isLoading && (
+            <p className="text-sm text-gray-500">Lade Daten...</p>
+          )}
         </div>
-      )}
-
-      {/* Hauptbereich: Phasenkaskade und Seitenpanel */}
-      <div className="flex flex-1">
-        {/* Zentrale Phasenkaskade */}
-        {showPhaseCascade && (
-          <div className="flex-1 p-4">
-            {isLoading ? (
-              <p className="text-gray-500">Lade...</p>
-            ) : tasks.length === 0 ? (
-              <p className="text-gray-500">
-                Noch keine Tasks vorhanden. Bitte einen Zweck auswählen.
-              </p>
-            ) : (
-              // Wenn das sichtbar ist, liegt der Fehler in PhaseCascade/Props
-              <ul className="list-disc pl-6 text-sm">
-                {tasks.map(t => (
-                  <li key={t.id}>
-                    {t.description} <span className="text-xs text-slate-500">({t.status})</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {/* Artefakte und Backlog */}
-        {showSidePanels && (
-          <aside className="w-64 p-4 bg-gray-50 border-l">
-            <ArtifactList artifacts={artifactList} />
-            <BacklogList tasks={tasks.filter((t) => t.status === 'todo')} />
-          </aside>
-        )}
+        <aside className="w-64 p-4 bg-gray-50 border-l overflow-y-auto">
+          <ArtifactList artifacts={artifactList} />
+          <BacklogList tasks={backlogList} />
+        </aside>
       </div>
-
-      {/* Feedbackeingabe (nur sichtbar bei Pause) */}
-      {paused && (
-        <div className="p-4 bg-yellow-50 border-t">
-          <FeedbackSection tasks={tasks.filter((t) => ['PRD', 'Architektur'].includes(t.phase))} />
-        </div>
-      )}
     </div>
   );
 }
+
