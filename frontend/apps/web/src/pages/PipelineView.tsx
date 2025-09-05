@@ -117,7 +117,7 @@ export default function PipelineView() {
               title="Product Requirements Document"
               artifact={prdArtifact}
               statusIcon={prdStatusIcon}
-              showFeedback={true}
+              showFeedback={paused}
             />
           )}
           {archArtifact && (

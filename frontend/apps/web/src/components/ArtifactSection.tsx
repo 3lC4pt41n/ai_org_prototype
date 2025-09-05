@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
 import FileViewer from "./FileViewer";
 
@@ -12,6 +13,7 @@ interface FeedbackEntry {
   version: number;
   content: string;
   created_at?: string;
+  author?: string;
 }
 
 interface Props {
@@ -36,7 +38,6 @@ export default function ArtifactSection({
   const filename = artifact?.url ? artifact.url.split("/").pop() || null : null;
 
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
-  const [idx, setIdx] = useState<number>(0);
   const [draft, setDraft] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
 
@@ -100,7 +101,6 @@ export default function ArtifactSection({
         const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
         if (!alive) return;
         setHistory(list);
-        setIdx(list.length ? list.length - 1 : 0);
       } catch {
         if (!alive) return;
         setHistory([]);
@@ -123,16 +123,13 @@ export default function ArtifactSection({
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
-      setIdx(list.length ? list.length - 1 : 0);
       await loadArtifact();
     } catch {
       setSubmitState("err");
     }
   }
 
-  function renderFeedback(fb: FeedbackEntry | undefined) {
-    if (!fb) return null;
-    // Falls jemand Antworten (JSON) geschickt hat, nett darstellen – sonst plain.
+  function renderFeedback(fb: FeedbackEntry) {
     try {
       const parsed = JSON.parse(fb.content);
       if (Array.isArray(parsed)) {
@@ -140,17 +137,21 @@ export default function ArtifactSection({
           <ul className="list-disc ml-4 text-sm">
             {parsed.map((qa: any, i: number) => (
               <li key={i} className="mb-1">
-                <p><b>Q:</b> {qa.question}</p>
-                <p><b>A:</b> {qa.answer}</p>
+                <p>
+                  <b>Q:</b> {qa.question}
+                </p>
+                <p>
+                  <b>A:</b> {qa.answer}
+                </p>
               </li>
             ))}
           </ul>
         );
       }
     } catch {
-      /* ignore – plain text */
+      /* ignore – treat as markdown */
     }
-    return <p className="whitespace-pre-wrap text-sm">{fb.content}</p>;
+    return <ReactMarkdown className="prose prose-sm">{fb.content}</ReactMarkdown>;
   }
 
   return (
@@ -178,29 +179,20 @@ export default function ArtifactSection({
 
       {/* Feedback-Historie */}
       {history.length > 0 && (
-        <div className="mb-3 p-3 border rounded bg-white">
-          <div className="flex items-center justify-between mb-2 text-sm">
-            <button
-              className="px-2 py-1 border rounded disabled:opacity-50"
-              onClick={() => setIdx(i => Math.max(0, i - 1))}
-              disabled={idx === 0}
-              aria-label="vorheriges Feedback"
-            >
-              ◀
-            </button>
-            <span>
-              Feedback {idx + 1} / {history.length}
-            </span>
-            <button
-              className="px-2 py-1 border rounded disabled:opacity-50"
-              onClick={() => setIdx(i => Math.min(history.length - 1, i + 1))}
-              disabled={idx === history.length - 1}
-              aria-label="nächstes Feedback"
-            >
-              ▶
-            </button>
-          </div>
-          {renderFeedback(history[idx])}
+        <div className="mb-3 p-3 border rounded bg-white space-y-3">
+          {history.map((fb) => (
+            <div key={fb.id} className="border-b pb-2 last:border-b-0">
+              <div className="text-xs text-gray-600 mb-1">
+                {fb.author || "User"}
+                {fb.created_at && (
+                  <span className="ml-1">
+                    {new Date(fb.created_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {renderFeedback(fb)}
+            </div>
+          ))}
         </div>
       )}
 
