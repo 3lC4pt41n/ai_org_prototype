@@ -98,6 +98,17 @@ export default function ArtifactSection({
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       setIdx(list.length ? list.length - 1 : 0);
+      try {
+        const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+        });
+        if (res.ok) {
+          const text = await res.text();
+          setContent(text);
+        }
+      } catch {
+        /* ignore refresh errors */
+      }
     } catch {
       setSubmitState("err");
     }
