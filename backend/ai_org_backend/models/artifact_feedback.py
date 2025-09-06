@@ -6,6 +6,7 @@ from sqlmodel import SQLModel, Field, Relationship
 
 
 class ArtifactFeedback(SQLModel, table=True):
+    __tablename__ = "artifactfeedback"  # ← konsistent mit der Migration
     """Feedback entries for a specific artifact.
 
     Each new submission for an artifact increments the version counter.
