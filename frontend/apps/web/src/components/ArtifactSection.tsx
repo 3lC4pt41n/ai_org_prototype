@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
+import { toast } from "react-hot-toast";
 import FileViewer from "./FileViewer";
 
 interface Artifact {
@@ -40,6 +41,7 @@ export default function ArtifactSection({
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
   const [draft, setDraft] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
+  const [submitting, setSubmitting] = useState<boolean>(false);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
   async function loadArtifact(signal?: AbortSignal) {
@@ -118,12 +120,18 @@ export default function ArtifactSection({
   }, [history.length]);
 
   async function sendFeedback() {
-    if (!draft.trim()) return;
+    if (!draft.trim()) {
+      toast.error("Bitte Feedback eingeben.");
+      return;
+    }
+    setSubmitting(true);
     setSubmitState("idle");
+    const tId = toast.loading("Feedback wird gespeichert …");
     try {
       await api.post(`/artifacts/${artifact.id}/feedback`, { content: draft.trim() });
       setDraft("");
       setSubmitState("ok");
+      toast.success("Feedback gespeichert – Product Owner aktualisiert das PRD.", { id: tId });
       // neu laden
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
@@ -131,11 +139,16 @@ export default function ArtifactSection({
       await loadArtifact();
     } catch {
       setSubmitState("err");
+      toast.error("Speichern fehlgeschlagen.", { id: tId });
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function approveFeedback() {
     setSubmitState("idle");
+    setSubmitting(true);
+    const tId = toast.loading("Freigabe wird verarbeitet …");
     try {
       await api.post(`/artifacts/${artifact.id}/feedback`, {
         content: draft.trim() || "",
@@ -143,12 +156,16 @@ export default function ArtifactSection({
       });
       setDraft("");
       setSubmitState("ok");
+      toast.success("Freigegeben – Architektur wird erstellt & Plan erzeugt.", { id: tId });
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       await loadArtifact();
     } catch {
       setSubmitState("err");
+      toast.error("Freigabe fehlgeschlagen.", { id: tId });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -235,13 +252,14 @@ export default function ArtifactSection({
             <button
               className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
               onClick={sendFeedback}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || submitting}
             >
               Feedback senden
             </button>
             <button
               className="px-3 py-1 bg-green-600 text-white rounded text-sm"
               onClick={approveFeedback}
+              disabled={submitting}
             >
               Freigeben
             </button>

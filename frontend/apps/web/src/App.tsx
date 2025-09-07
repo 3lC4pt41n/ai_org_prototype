@@ -17,7 +17,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return token ? (
     <>
       <Nav />
-      <Toaster position="top-right" />
       {children}
     </>
   ) : (
@@ -28,6 +27,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
