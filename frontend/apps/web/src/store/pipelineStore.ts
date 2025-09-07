@@ -274,7 +274,13 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     try {
       await api.post(`/purposes/${purposeId}/start`);
       set({ paused: false });
-    } catch (err) {
+    } catch (err: any) {
+      // Idempotent behandeln: falls Backend aus alten Ständen noch 400 lieferte
+      const detail = err?.response?.data?.detail;
+      if (detail && /PRD already exists/i.test(detail)) {
+        set({ paused: false, error: null });
+        return;
+      }
       console.error('startPurpose failed', err);
       set({ error: err });
     }
