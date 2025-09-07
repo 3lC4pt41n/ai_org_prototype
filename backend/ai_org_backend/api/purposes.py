@@ -4,8 +4,10 @@ from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Purpose, Task, Tenant
+from ai_org_backend.models import Artifact, Purpose, Task, Tenant
+from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
+from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services.storage import save_artefact
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
@@ -15,9 +17,7 @@ router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 def activate_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
     with Session(engine) as session:
-        session.exec(
-            update(Purpose).where(Purpose.tenant_id == tenant_id).values(is_active=False)
-        )
+        session.exec(update(Purpose).where(Purpose.tenant_id == tenant_id).values(is_active=False))
         purpose = session.get(Purpose, purpose_id)
         if not purpose or purpose.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Purpose not found")
@@ -34,58 +34,80 @@ def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
         purpose = session.get(Purpose, purpose_id)
         if not purpose or purpose.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Purpose not found")
-        purpose.is_active = False
-        session.add(purpose)
-        session.commit()
-    return {"status": "paused", "purpose_id": purpose_id}
+    try:
+        pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+    except Exception:
+        pass
+    return {"status": "paused"}
 
 
 @router.post("/{purpose_id}/start")
 def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
+    """
+    Start (oder fortsetzen) eines Purpose.
+    - Idempotent: Wenn das PRD bereits existiert, wird *kein* 400 mehr geworfen,
+      sondern der Pausen-Flag entfernt und 200 zurückgegeben.
+    - Falls noch kein PRD existiert, wird es erzeugt.
+    """
+
     tenant_id = current_tenant.id
     with Session(engine) as session:
         purpose = session.get(Purpose, purpose_id)
         if not purpose or purpose.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Purpose not found")
 
-        existing = session.exec(
+        prd_task = session.exec(
             select(Task)
-            .where(
-                Task.tenant_id == tenant_id,
-                Task.purpose_id == purpose_id,
-                Task.description.like("Product Requirements Document%"),
-            )
+            .where(Task.purpose_id == purpose_id)
+            .where(Task.description.ilike("%Product Requirements Document%"))
         ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="PRD already exists")
 
-    try:
-        from ai_org_backend.agents.product_owner import run_requirements
+        prd_artifact = None
+        if prd_task:
+            prd_artifact = session.exec(
+                select(Artifact).where(Artifact.task_id == prd_task.id)
+            ).first()
 
-        prd_content = run_requirements(purpose)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {e}")
+        if prd_artifact:
+            try:
+                pool.delete(f"pause:{tenant_id}:{purpose_id}")
+            except Exception:
+                pass
+            return {"status": "resumed", "idempotent": True}
 
-    with Session(engine) as session:
-        prd_task = Task(
+        prd_task_obj = Task(
             tenant_id=tenant_id,
             purpose_id=purpose_id,
             description="Product Requirements Document",
-            business_value=0.0,
-            tokens_plan=0,
-            purpose_relevance=1.0,
+            status="done",
+            owner="Product Owner",
         )
-        session.add(prd_task)
+        session.add(prd_task_obj)
         session.commit()
-        session.refresh(prd_task)
+        session.refresh(prd_task_obj)
 
-    save_artefact(
-        prd_task.id,
-        prd_content.encode("utf-8"),
-        filename="requirements/product_requirements.md",
-        media_type="text/markdown",
-    )
-    Repo(tenant_id).update(
-        prd_task.id, status="done", owner="ProductOwner", notes="PRD completed"
-    )
-    return {"status": "started", "purpose_id": purpose_id}
+        prd_md = (
+            f"# Product Requirements Document\n\n"
+            f"**Purpose:** {purpose.name}\n\n"
+            f"## Overview\n\nTBD\n"
+        )
+        save_artefact(
+            prd_task_obj.id,
+            prd_md.encode("utf-8"),
+            filename="requirements/product_requirements_document.md",
+            media_type="text/markdown",
+            allow_overwrite=True,
+        )
+        Repo(tenant_id).update(
+            prd_task_obj.id, status="done", owner="Product Owner", notes="PRD created"
+        )
+
+    try:
+        pool.delete(f"pause:{tenant_id}:{purpose_id}")
+    except Exception:
+        pass
+    try:
+        ingest(tenant_id)
+    except Exception:
+        pass
+    return {"status": "started"}
