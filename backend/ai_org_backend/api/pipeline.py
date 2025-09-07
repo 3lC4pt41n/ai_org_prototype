@@ -317,7 +317,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         save_artefact(
             blueprint_task_id,
             blueprint.encode("utf-8"),
-            filename="blueprint/architecture_blueprint.md",
+            filename="blueprints/architecture_blueprint.md",
             media_type="text/markdown",
         )
         Repo(tenant_id).update(
@@ -403,7 +403,8 @@ def post_artifact_feedback(
     else:
         text = (payload.get("content") or payload.get("feedback") or "").strip()
 
-    if not text:
+    approved_flag = bool(payload.get("approved"))
+    if not text and not approved_flag:
         raise HTTPException(status_code=400, detail="Feedback content required")
 
     # 2) Persist
@@ -415,6 +416,7 @@ def post_artifact_feedback(
         task = session.get(Task, artifact.task_id)
         if not task or task.tenant_id != tenant_id:
             raise HTTPException(status_code=403, detail="Forbidden for this tenant")
+        purpose = session.get(Purpose, task.purpose_id)
 
         # robust scalar max() to avoid row/tuple surprises
         last_version = session.exec(
@@ -430,31 +432,101 @@ def post_artifact_feedback(
             author=author,
             version=version,
             content=text,
-            approved=False,
+            approved=approved_flag,
         )
         try:
             session.add(fb)
             session.commit()
         except Exception as e:
             session.rollback()
-            # turn "500 mystery" into a readable 400
             raise HTTPException(status_code=400, detail=f"Failed to save feedback: {e}")
 
-        # 3) Create a follow-up backlog task for non-trivial feedback
-        trivial = {"ok", "fine", "okay", "thanks"}
-        if text.strip().lower() not in trivial:
-            review_desc = f"Review PRD based on feedback by {author}"
-            new_task = Task(
-                tenant_id=tenant_id,
-                purpose_id=task.purpose_id,
-                description=review_desc,
-            )
-            session.add(new_task)
+        trivial = {"ok", "fine", "okay", "thanks", "passt", "danke"}
+        if text.lower() in trivial:
+            ai_reply = "Verstanden, wird übernommen."
+        else:
+            from ai_org_backend.agents.product_owner import run_requirements_feedback
+
+            current_prd = ""
             try:
-                session.commit()
+                file_path = resolve_for_read(artifact.repo_path)
+                current_prd = file_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+            try:
+                updated_prd_md = run_requirements_feedback(
+                    purpose, feedback=text, current_prd=current_prd
+                )
+                save_artefact(
+                    artifact.task_id,
+                    updated_prd_md.encode("utf-8"),
+                    filename=artifact.repo_path,
+                    media_type=artifact.media_type,
+                    allow_overwrite=True,
+                )
             except Exception as e:  # pragma: no cover - logging only
-                session.rollback()
-                logger.error("Failed to create review task for feedback: %s", e)
+                logger.error("PRD update failed: %s", e)
+            ai_reply = "Ich arbeite das ein."
+
+        ai_fb = ArtifactFeedback(
+            artifact_id=artifact_id,
+            tenant_id=tenant_id,
+            author="Product Owner (AI)",
+            content=ai_reply,
+            version=version + 1,
+            approved=False,
+        )
+        session.add(ai_fb)
+        session.commit()
+
+    if approved_flag:
+        try:
+            from ai_org_backend.agents.architect import run_architect
+            from ai_org_backend.agents.planner import run_planner
+
+            blueprint_md = run_architect(purpose)
+            with Session(engine) as session:
+                blueprint_task = Task(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose.id,
+                    description="Architecture Blueprint",
+                    status="done",
+                )
+                session.add(blueprint_task)
+                session.commit()
+                session.refresh(blueprint_task)
+
+            save_artefact(
+                blueprint_task.id,
+                blueprint_md.encode("utf-8"),
+                filename="blueprints/architecture_blueprint.md",
+                media_type="text/markdown",
+                allow_overwrite=True,
+            )
+            Repo(tenant_id).update(
+                blueprint_task.id, status="done", owner="Architect", notes="Blueprint completed"
+            )
+            tasks_plan = run_planner(blueprint_md)
+            with Session(engine) as session:
+                for t in tasks_plan:
+                    task_obj = Task(
+                        tenant_id=tenant_id,
+                        purpose_id=purpose.id,
+                        description=t.get("description", ""),
+                        business_value=float(t.get("business_value", 1.0)),
+                        tokens_plan=int(t.get("tokens_plan", 0)),
+                        purpose_relevance=float(t.get("purpose_relevance", 0.0)),
+                        status="todo",
+                    )
+                    session.add(task_obj)
+                session.commit()
+        except Exception as e:  # pragma: no cover - logging only
+            logger.error("Blueprint generation failed: %s", e)
+        finally:
+            try:
+                pool.delete(f"pause:{tenant_id}:{purpose.id}")
+            except Exception as e:  # pragma: no cover - logging only
+                logger.error("Redis delete failed: %s", e)
 
     return {"status": "saved", "version": version}
 
