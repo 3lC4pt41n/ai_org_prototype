@@ -82,7 +82,7 @@ export default function FileViewer({ text, blobUrl, contentType, filename, heigh
   // Markdown
   if (isMarkdown(contentType, filename) && text != null) {
     return (
-      <div className="prose max-w-none">
+      <div className="prose prose-blue max-h-96 overflow-y-auto p-4 border rounded">
         <ReactMarkdown>{text}</ReactMarkdown>
       </div>
     );
