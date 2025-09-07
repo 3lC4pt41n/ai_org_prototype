@@ -112,12 +112,13 @@ export default function PipelineView() {
       <div className="flex flex-1 overflow-hidden">
         <div className="main-panel flex-1 overflow-y-auto p-4">
           {isLoading && <p className="text-gray-500">Lade...</p>}
+          {/* Show feedback UI for PRD only if paused and waiting on PRD (no architecture yet) */}
           {prdArtifact && (
             <ArtifactSection
               title="Product Requirements Document"
               artifact={prdArtifact}
               statusIcon={prdStatusIcon}
-              showFeedback={paused}  {/* bei Pause: Feedback + Approve-Button sichtbar */}
+              showFeedback={prdPending}
             />
           )}
           {archArtifact && (
