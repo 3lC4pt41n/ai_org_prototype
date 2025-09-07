@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
 import { toast } from "react-hot-toast";
 import FileViewer from "./FileViewer";
+import usePipelineStore from "../store/pipelineStore";
 
 interface Artifact {
   id: string;
@@ -43,6 +44,12 @@ export default function ArtifactSection({
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
   const [submitting, setSubmitting] = useState<boolean>(false);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Pipeline store functions for UI updates
+  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
+  const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
+  const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
+  const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
 
   async function loadArtifact(signal?: AbortSignal) {
     setLoading(true);
@@ -131,7 +138,14 @@ export default function ArtifactSection({
       await api.post(`/artifacts/${artifact.id}/feedback`, { content: draft.trim() });
       setDraft("");
       setSubmitState("ok");
-      toast.success("Feedback gespeichert – Product Owner aktualisiert das PRD.", { id: tId });
+      // Success message depending on artifact type
+      const successMsg =
+        title.includes("Architektur")
+          ? "Feedback gespeichert – Architekt aktualisiert den Blueprint."
+          : title.includes("Product Requirements Document")
+          ? "Feedback gespeichert – Product Owner aktualisiert das PRD."
+          : "Feedback gespeichert.";
+      toast.success(successMsg, { id: tId });
       // neu laden
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
@@ -156,11 +170,30 @@ export default function ArtifactSection({
       });
       setDraft("");
       setSubmitState("ok");
-      toast.success("Freigegeben – Architektur wird erstellt & Plan erzeugt.", { id: tId });
+      // Success message depending on artifact type
+      const successMsg =
+        title.includes("Architektur")
+          ? "Freigegeben – Aufgabenplan wird erstellt."
+          : title.includes("Product Requirements Document")
+          ? "Freigegeben – Architektur-Blueprint wird erstellt."
+          : "Freigabe erfolgreich.";
+      toast.success(successMsg, { id: tId });
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       await loadArtifact();
+      // Update UI status depending on step
+      if (title.includes("Architektur")) {
+        await fetchBacklog();
+        if (selectedPurposeId) {
+          await fetchGraphAndStatus(selectedPurposeId);
+        }
+      } else if (title.includes("Product Requirements Document")) {
+        await fetchArtifacts();
+        if (selectedPurposeId) {
+          await fetchGraphAndStatus(selectedPurposeId);
+        }
+      }
     } catch {
       setSubmitState("err");
       toast.error("Freigabe fehlgeschlagen.", { id: tId });

@@ -19,7 +19,6 @@ ARCHITECT_RUNS = prom_counter("ai_architect_runs_total", "Architect executions")
 ARCHITECT_LATENCY = prom_hist("ai_architect_latency_seconds", "Architect latency")
 
 PROMPT_TMPL = load_template("architect.j2")
-PROMPT_FEEDBACK_TMPL = load_template("architect_feedback.j2")
 
 
 def run_architect(purpose: Purpose, task: str | None = None) -> str:
@@ -66,31 +65,20 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
     finally:
         ARCHITECT_LATENCY.observe(time.time() - start)
 
+def run_architect_feedback(purpose, feedback: str, current_blueprint: str) -> str:
+    """Very simple fallback to append feedback into the blueprint.
 
-def run_architect_feedback(purpose: Purpose, feedback: str, current_blueprint: str) -> str:
-    """Update existing architecture blueprint based on user feedback."""
+    Replace or extend with a richer LLM-backed implementation as needed.
+    """
 
-    ctx = {
-        "purpose": purpose.name,
-        "feedback": feedback,
-        "current_blueprint": current_blueprint,
-    }
-    prompt = PROMPT_FEEDBACK_TMPL.render(**ctx)
-    start = time.time()
-    try:
-        resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
-            model=MODEL_PRO,
-            tenant_id=purpose.tenant_id,
-            usage_label="architect_feedback",
-        )
-        ARCHITECT_RUNS.inc()
-        content = resp["choices"][0]["message"]["content"]
-        return content
-    except BudgetExceededError:
-        return "⚠️ Budget exhausted during architecture update."
-    finally:
-        ARCHITECT_LATENCY.observe(time.time() - start)
+    header = "## Incorporated Feedback\n"
+    block = f"{header}\n{feedback.strip()}\n"
+    if not current_blueprint:
+        return f"# Architecture Blueprint\n\n{block}"
+    if header in current_blueprint:
+        # append under the existing section
+        return current_blueprint.strip() + "\n\n" + block
+    return current_blueprint.strip() + "\n\n" + block
 
 
 @shared_task(name="architect.seed_graph", queue="architect")
