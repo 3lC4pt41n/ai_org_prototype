@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
 import FileViewer from "./FileViewer";
@@ -40,6 +40,7 @@ export default function ArtifactSection({
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
   const [draft, setDraft] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
+  const historyEndRef = useRef<HTMLDivElement | null>(null);
 
   async function loadArtifact(signal?: AbortSignal) {
     setLoading(true);
@@ -112,6 +113,10 @@ export default function ArtifactSection({
     };
   }, [artifact.id]);
 
+  useEffect(() => {
+    historyEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [history.length]);
+
   async function sendFeedback() {
     if (!draft.trim()) return;
     setSubmitState("idle");
@@ -120,6 +125,24 @@ export default function ArtifactSection({
       setDraft("");
       setSubmitState("ok");
       // neu laden
+      const r = await api.get(`/artifacts/${artifact.id}/feedback`);
+      const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
+      setHistory(list);
+      await loadArtifact();
+    } catch {
+      setSubmitState("err");
+    }
+  }
+
+  async function approveFeedback() {
+    setSubmitState("idle");
+    try {
+      await api.post(`/artifacts/${artifact.id}/feedback`, {
+        content: draft.trim() || "",
+        approved: true,
+      });
+      setDraft("");
+      setSubmitState("ok");
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
@@ -179,7 +202,7 @@ export default function ArtifactSection({
 
       {/* Feedback-Historie */}
       {history.length > 0 && (
-        <div className="mb-3 p-3 border rounded bg-white space-y-3">
+        <div className="mb-3 p-3 border rounded bg-white space-y-3 max-h-60 overflow-y-auto">
           {history.map((fb) => (
             <div key={fb.id} className="border-b pb-2 last:border-b-0">
               <div className="text-xs text-gray-600 mb-1">
@@ -193,6 +216,7 @@ export default function ArtifactSection({
               {renderFeedback(fb)}
             </div>
           ))}
+          <div ref={historyEndRef} />
         </div>
       )}
 
@@ -214,6 +238,12 @@ export default function ArtifactSection({
               disabled={!draft.trim()}
             >
               Feedback senden
+            </button>
+            <button
+              className="px-3 py-1 bg-green-600 text-white rounded text-sm"
+              onClick={approveFeedback}
+            >
+              Freigeben
             </button>
             {submitState === "ok" && (
               <span className="text-green-600 text-xs">Gespeichert.</span>
