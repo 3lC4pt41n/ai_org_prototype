@@ -441,37 +441,80 @@ def post_artifact_feedback(
             session.rollback()
             raise HTTPException(status_code=400, detail=f"Failed to save feedback: {e}")
 
+        # Determine artifact type
+        is_prd = "product requirements document" in task.description.lower()
+        is_blueprint = "architecture blueprint" in task.description.lower()
+
         trivial = {"ok", "fine", "okay", "thanks", "passt", "danke"}
         if text.lower() in trivial:
             ai_reply = "Verstanden, wird übernommen."
         else:
-            from ai_org_backend.agents.product_owner import run_requirements_feedback
+            if is_prd:
+                # PRD feedback handled by Product Owner agent
+                from ai_org_backend.agents.product_owner import run_requirements_feedback
 
-            current_prd = ""
-            try:
-                file_path = resolve_for_read(artifact.repo_path)
-                current_prd = file_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
-            try:
-                updated_prd_md = run_requirements_feedback(
-                    purpose, feedback=text, current_prd=current_prd
-                )
-                save_artefact(
-                    artifact.task_id,
-                    updated_prd_md.encode("utf-8"),
-                    filename=artifact.repo_path,
-                    media_type=artifact.media_type,
-                    allow_overwrite=True,
-                )
-            except Exception as e:  # pragma: no cover - logging only
-                logger.error("PRD update failed: %s", e)
-            ai_reply = "Ich arbeite das ein."
+                current_doc = ""
+                try:
+                    file_path = resolve_for_read(artifact.repo_path)
+                    current_doc = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    updated_prd_md = run_requirements_feedback(
+                        purpose, feedback=text, current_prd=current_doc
+                    )
+                    save_artefact(
+                        artifact.task_id,
+                        updated_prd_md.encode("utf-8"),
+                        filename=artifact.repo_path,
+                        media_type=artifact.media_type,
+                        allow_overwrite=True,
+                    )
+                except Exception as e:  # pragma: no cover - logging only
+                    logger.error("PRD update failed: %s", e)
+                ai_reply = "Ich arbeite das ein."
+            elif is_blueprint:
+                # Blueprint feedback handled by Architect agent
+                from ai_org_backend.agents.architect import run_architect_feedback
+
+                current_bp = ""
+                try:
+                    file_path = resolve_for_read(artifact.repo_path)
+                    current_bp = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    updated_bp_md = run_architect_feedback(
+                        purpose, feedback=text, current_blueprint=current_bp
+                    )
+                    save_artefact(
+                        artifact.task_id,
+                        updated_bp_md.encode("utf-8"),
+                        filename=artifact.repo_path,
+                        media_type=artifact.media_type,
+                        allow_overwrite=True,
+                    )
+                except Exception as e:  # pragma: no cover - logging only
+                    logger.error("Blueprint update failed: %s", e)
+                ai_reply = "Ich arbeite das ein."
+            else:
+                # Other artifacts – no automatic processing
+                ai_reply = "Verstanden, wird berücksichtigt."
+
+        # Set AI author based on artifact type
+        if task.owner:
+            ai_author = f"{task.owner} (AI)"
+        elif is_blueprint:
+            ai_author = "Architect (AI)"
+        elif is_prd:
+            ai_author = "Product Owner (AI)"
+        else:
+            ai_author = "Assistant (AI)"
 
         ai_fb = ArtifactFeedback(
             artifact_id=artifact_id,
             tenant_id=tenant_id,
-            author="Product Owner (AI)",
+            author=ai_author,
             content=ai_reply,
             version=version + 1,
             approved=False,
@@ -480,53 +523,92 @@ def post_artifact_feedback(
         session.commit()
 
     if approved_flag:
-        try:
-            from ai_org_backend.agents.architect import run_architect
-            from ai_org_backend.agents.planner import run_planner
+        if is_prd:
+            # PRD approved: generate architecture blueprint
+            try:
+                from ai_org_backend.agents.architect import run_architect
 
-            blueprint_md = run_architect(purpose)
-            with Session(engine) as session:
-                blueprint_task = Task(
-                    tenant_id=tenant_id,
-                    purpose_id=purpose.id,
-                    description="Architecture Blueprint",
-                    status="done",
-                )
-                session.add(blueprint_task)
-                session.commit()
-                session.refresh(blueprint_task)
-
-            save_artefact(
-                blueprint_task.id,
-                blueprint_md.encode("utf-8"),
-                filename="blueprints/architecture_blueprint.md",
-                media_type="text/markdown",
-                allow_overwrite=True,
-            )
-            Repo(tenant_id).update(
-                blueprint_task.id, status="done", owner="Architect", notes="Blueprint completed"
-            )
-            tasks_plan = run_planner(blueprint_md)
-            with Session(engine) as session:
-                for t in tasks_plan:
-                    task_obj = Task(
+                blueprint_md = run_architect(purpose)
+                with Session(engine) as session:
+                    blueprint_task = Task(
                         tenant_id=tenant_id,
                         purpose_id=purpose.id,
-                        description=t.get("description", ""),
-                        business_value=float(t.get("business_value", 1.0)),
-                        tokens_plan=int(t.get("tokens_plan", 0)),
-                        purpose_relevance=float(t.get("purpose_relevance", 0.0)),
-                        status="todo",
+                        description="Architecture Blueprint",
+                        status="done",
+                        owner="Architect",
                     )
-                    session.add(task_obj)
-                session.commit()
-        except Exception as e:  # pragma: no cover - logging only
-            logger.error("Blueprint generation failed: %s", e)
-        finally:
-            try:
-                pool.delete(f"pause:{tenant_id}:{purpose.id}")
+                    session.add(blueprint_task)
+                    session.commit()
+                    session.refresh(blueprint_task)
+
+                save_artefact(
+                    blueprint_task.id,
+                    blueprint_md.encode("utf-8"),
+                    filename="blueprints/architecture_blueprint.md",
+                    media_type="text/markdown",
+                    allow_overwrite=True,
+                )
+                Repo(tenant_id).update(
+                    blueprint_task.id,
+                    status="done",
+                    owner="Architect",
+                    notes="Blueprint completed",
+                )
             except Exception as e:  # pragma: no cover - logging only
-                logger.error("Redis delete failed: %s", e)
+                logger.error("Blueprint generation failed: %s", e)
+            # Pipeline remains paused waiting for blueprint approval
+        elif is_blueprint:
+            # Blueprint approved: generate task plan
+            try:
+                from ai_org_backend.agents.planner import run_planner
+
+                blueprint_text = ""
+                try:
+                    file_path = resolve_for_read(artifact.repo_path)
+                    blueprint_text = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                tasks_plan = run_planner(blueprint_text)
+                with Session(engine) as session:
+                    id_map: dict[str, str] = {}
+                    for t in tasks_plan:
+                        task_obj = Task(
+                            tenant_id=tenant_id,
+                            purpose_id=purpose.id,
+                            description=t.get("description", ""),
+                            business_value=float(t.get("business_value", 1.0)),
+                            tokens_plan=int(t.get("tokens_plan", 0)),
+                            purpose_relevance=float(t.get("purpose_relevance", 0.0)),
+                            status="todo",
+                        )
+                        session.add(task_obj)
+                        session.flush()
+                        id_map[t["id"]] = task_obj.id
+                    for t in tasks_plan:
+                        dep_id = t.get("depends_on") or t.get("depends_on_id")
+                        if dep_id and dep_id in id_map:
+                            session.add(
+                                TaskDependency(from_id=id_map[dep_id], to_id=id_map[t["id"]])
+                            )
+                    session.commit()
+            except Exception as e:  # pragma: no cover - logging only
+                logger.error("Task planning failed: %s", e)
+            finally:
+                try:
+                    pool.delete(f"pause:{tenant_id}:{purpose.id}")
+                except Exception as e:  # pragma: no cover - logging only
+                    logger.error("Redis delete failed: %s", e)
+        else:
+            # Other artifact approved: mark task done and resume
+            try:
+                Repo(tenant_id).update(task.id, status="done", notes="Approved by user")
+            except Exception as e:  # pragma: no cover - logging only
+                logger.error("Task status update failed: %s", e)
+            finally:
+                try:
+                    pool.delete(f"pause:{tenant_id}:{purpose.id}")
+                except Exception as e:  # pragma: no cover - logging only
+                    logger.error("Redis delete failed: %s", e)
 
     return {"status": "saved", "version": version}
 
