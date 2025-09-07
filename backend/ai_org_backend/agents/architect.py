@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+import logging
 from celery import shared_task
 
 from .utils import load_template
@@ -21,26 +22,31 @@ ARCHITECT_LATENCY = prom_hist("ai_architect_latency_seconds", "Architect latency
 PROMPT_TMPL = load_template("architect.j2")
 PROMPT_FEEDBACK_TMPL = load_template("architect_feedback.j2")
 
+logger = logging.getLogger(__name__)
+
 
 def run_architect(purpose: Purpose, task: str | None = None) -> str:
-    """Render template prompt and call OpenAI to produce an architecture blueprint.
-
-    If the tenant opted in, a short deep-research step is executed first and
-    references are injected into the prompt.
-    """
-    ctx = {"purpose": purpose.name, "task": task or "n/a", "external_references": ""}
+    """Render template prompt and call OpenAI to produce an architecture blueprint."""
 
     allow_research = False
     with SessionLocal() as db:
-        tenant = db.get(Tenant, purpose.tenant_id)
+        fresh_purpose = db.get(Purpose, purpose.id)
+        if not fresh_purpose:
+            logger.error("Purpose %s not found for run_architect", purpose.id)
+            return "⚠️ Purpose not found; cannot generate architecture blueprint."
+        tenant = db.get(Tenant, fresh_purpose.tenant_id)
         allow_research = bool(tenant and tenant.allow_web_research)
+        purpose_name = fresh_purpose.name
+        tenant_id = fresh_purpose.tenant_id
+
+    ctx = {"purpose": purpose_name, "task": task or "n/a", "external_references": ""}
 
     if allow_research:
         q = (
-            f"Find best practices and recent high-quality references for building: {purpose.name}. "
+            f"Find best practices and recent high-quality references for building: {purpose_name}. "
             "Focus on architecture, security, scalability, and representative open-source examples."
         )
-        research = run_deep_research(purpose.tenant_id, q, model=MODEL_PRO)
+        research = run_deep_research(tenant_id, q, model=MODEL_PRO)
         refs_lines = [f"- {s['title']} ({s['url']})" for s in research["sources"]][:5]
         ctx["external_references"] = "\n".join(refs_lines)
 
@@ -50,7 +56,7 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         resp = chat_with_tools(
             messages=[{"role": "user", "content": prompt}],
             model=MODEL_PRO,
-            tenant_id=purpose.tenant_id,
+            tenant_id=tenant_id,
             usage_label="architect",
         )
         ARCHITECT_RUNS.inc()
@@ -58,7 +64,7 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         return content
     except BudgetExceededError:
         save_artefact(
-            tenant_id=purpose.tenant_id,
+            tenant_id=tenant_id,
             filename="architect_budget.md",
             content=b"Budget exhausted during architecture planning. Please top up and retry.",
         )
@@ -70,8 +76,16 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
 def run_architect_feedback(purpose: Purpose, feedback: str, current_blueprint: str) -> str:
     """Update existing architecture blueprint based on user feedback."""
 
+    with SessionLocal() as db:
+        fresh_purpose = db.get(Purpose, purpose.id)
+        if not fresh_purpose:
+            logger.error("Purpose %s not found for run_architect_feedback", purpose.id)
+            return "⚠️ Purpose not found; cannot update architecture blueprint."
+        purpose_name = fresh_purpose.name
+        tenant_id = fresh_purpose.tenant_id
+
     ctx = {
-        "purpose": purpose.name,
+        "purpose": purpose_name,
         "feedback": feedback,
         "current_blueprint": current_blueprint,
     }
@@ -81,7 +95,7 @@ def run_architect_feedback(purpose: Purpose, feedback: str, current_blueprint: s
         resp = chat_with_tools(
             messages=[{"role": "user", "content": prompt}],
             model=MODEL_PRO,
-            tenant_id=purpose.tenant_id,
+            tenant_id=tenant_id,
             usage_label="architect_feedback",
         )
         ARCHITECT_RUNS.inc()
