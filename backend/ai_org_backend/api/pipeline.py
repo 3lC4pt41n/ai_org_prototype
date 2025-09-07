@@ -175,53 +175,85 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
         ).all()
         existing_desc_map = {t.description: t.id for t in existing_tasks}
-    if existing_tasks:
-        raise HTTPException(status_code=400, detail="Purpose already has tasks")
-
-    # 1) Generate requirements via Product Owner agent
-    try:
-        from ai_org_backend.agents.product_owner import run_requirements
-
-        prd_content = run_requirements(purpose)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {e}")
-
-    # Persist PRD task and artefact
-    with Session(engine) as session:
-        prd_task_obj = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose.id,
-            description="Product Requirements Document",
-            business_value=0.0,
-            tokens_plan=0,
-            purpose_relevance=1.0,
+        existing_prd = next(
+            (
+                t
+                for t in existing_tasks
+                if (t.description or "").lower().startswith("product requirements document")
+            ),
+            None,
         )
-        session.add(prd_task_obj)
-        session.commit()
-        session.refresh(prd_task_obj)
 
-    repo_rel = "requirements/product_requirements.md"
-    try:
-        save_artefact(
+    prd_task_obj = existing_prd
+    prd_content = ""
+    if existing_prd:
+        logger.info("Purpose %s already has a PRD, skipping creation", purpose.id)
+        with Session(engine) as session:
+            art = (
+                session.exec(
+                    select(Artifact)
+                    .where(Artifact.task_id == existing_prd.id)
+                    .order_by(Artifact.created_at.desc())
+                ).first()
+            )
+        if art:
+            try:
+                file_path = resolve_for_read(art.repo_path)
+                prd_content = file_path.read_text(encoding="utf-8")
+            except Exception as e:
+                logger.warning(
+                    "Failed to load existing PRD artefact for task %s: %s",
+                    existing_prd.id,
+                    e,
+                )
+    else:
+        # 1) Generate requirements via Product Owner agent
+        try:
+            from ai_org_backend.agents.product_owner import run_requirements
+
+            prd_content = run_requirements(purpose)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {e}")
+
+        # Persist PRD task and artefact
+        with Session(engine) as session:
+            prd_task_obj = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose.id,
+                description="Product Requirements Document",
+                business_value=0.0,
+                tokens_plan=0,
+                purpose_relevance=1.0,
+            )
+            session.add(prd_task_obj)
+            session.commit()
+            session.refresh(prd_task_obj)
+
+        repo_rel = "requirements/product_requirements.md"
+        try:
+            save_artefact(
+                prd_task_obj.id,
+                prd_content.encode("utf-8"),
+                filename=repo_rel,
+                media_type="text/markdown",
+            )
+        except Exception as e:
+            logger.exception("failed to persist artefact to workspace (%s): %s", repo_rel, e)
+        try:
+            token_guess = max(1, len(prd_content) // 4)
+            budget_svc.debit(
+                purpose_id=purpose.id,
+                amount=token_guess,
+                reason="artifact:requirements",
+            )
+        except Exception as e:
+            logger.warning("budget debit failed (non-fatal): %s", e)
+        Repo(tenant_id).update(
             prd_task_obj.id,
-            prd_content.encode("utf-8"),
-            filename=repo_rel,
-            media_type="text/markdown",
+            status="done",
+            owner="ProductOwner",
+            notes="PRD completed",
         )
-    except Exception as e:
-        logger.exception("failed to persist artefact to workspace (%s): %s", repo_rel, e)
-    try:
-        token_guess = max(1, len(prd_content) // 4)
-        budget_svc.debit(
-            purpose_id=purpose.id,
-            amount=token_guess,
-            reason="artifact:requirements",
-        )
-    except Exception as e:
-        logger.warning("budget debit failed (non-fatal): %s", e)
-    Repo(tenant_id).update(
-        prd_task_obj.id, status="done", owner="ProductOwner", notes="PRD completed"
-    )
 
     # 2) Generate blueprint and task plan via Architect and Planner agents
     try:
