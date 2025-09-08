@@ -17,3 +17,8 @@ input,
 button {
   outline: none;
 }
+
+/* leichte Lesbarkeit in der Prosa */
+.prose {
+  max-width: none;
+}
