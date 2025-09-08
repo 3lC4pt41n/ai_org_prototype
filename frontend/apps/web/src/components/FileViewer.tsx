@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import Editor from "@monaco-editor/react";
 
 type Props = {
@@ -82,8 +83,10 @@ export default function FileViewer({ text, blobUrl, contentType, filename, heigh
   // Markdown
   if (isMarkdown(contentType, filename) && text != null) {
     return (
-      <div className="prose prose-blue max-h-96 overflow-y-auto p-4 border rounded">
-        <ReactMarkdown>{text}</ReactMarkdown>
+      <div className="prose prose-slate max-h-96 overflow-y-auto p-4 border rounded bg-white">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {text}
+        </ReactMarkdown>
       </div>
     );
   }
