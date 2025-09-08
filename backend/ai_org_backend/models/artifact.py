@@ -1,26 +1,23 @@
-import uuid
 import hashlib
+import uuid
 from datetime import datetime as dt
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, List
 
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .task import Task
     from .artifact_feedback import ArtifactFeedback
+    from .task import Task
 
 
 class Artifact(SQLModel, table=True):
     """Binary or text output of a task stored on disk."""
 
-    id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()), 
-        primary_key=True
-    )
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
 
     task_id: str = Field(foreign_key="task.id", nullable=False)
-    
+
     task: "Task" = Relationship(back_populates="artifacts")
     feedback: List["ArtifactFeedback"] = Relationship(back_populates="artifact")
 
@@ -29,6 +26,7 @@ class Artifact(SQLModel, table=True):
     size: int = Field(default=0, ge=0)
     sha256: str = Field(nullable=False, min_length=64, max_length=64)
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)
+    released: bool = Field(default=False)
 
     @classmethod
     def create_from_file(
@@ -39,10 +37,10 @@ class Artifact(SQLModel, table=True):
     ) -> "Artifact":
         if not abs_path.exists():
             raise FileNotFoundError(f"Source file not found: {abs_path}")
-        
+
         repo_root.mkdir(exist_ok=True, parents=True)
         tgt = repo_root / abs_path.name
-        
+
         counter = 1
         original_tgt = tgt
         while tgt.exists():
@@ -50,10 +48,10 @@ class Artifact(SQLModel, table=True):
             suffix = original_tgt.suffix
             tgt = repo_root / f"{stem}_{counter}{suffix}"
             counter += 1
-        
+
         tgt.write_bytes(abs_path.read_bytes())
         sha = hashlib.sha256(tgt.read_bytes()).hexdigest()
-        
+
         return cls(
             task_id=task_id,
             repo_path=str(tgt.relative_to(repo_root)),
@@ -65,14 +63,14 @@ class Artifact(SQLModel, table=True):
 
 def _guess_media_type(p: Path) -> str:
     suffix_lower = p.suffix.lower()
-    
+
     if suffix_lower in {".md", ".txt", ".rst"}:
         return "text/markdown"
-    
+
     if suffix_lower in {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".json"}:
         return "text/x-source"
-    
+
     if suffix_lower in {".png", ".jpg", ".jpeg", ".gif", ".svg"}:
         return f"image/{suffix_lower.lstrip('.')}"
-    
+
     return "application/octet-stream"

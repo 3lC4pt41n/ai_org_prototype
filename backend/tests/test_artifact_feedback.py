@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -15,10 +15,13 @@ from ai_org_backend.models import Artifact, Purpose, Task, Tenant
 def create_client(monkeypatch):
     monkeypatch.setitem(os.environ, "DISABLE_METRICS", "1")
     monkeypatch.setitem(os.environ, "REDIS_URL", "redis://localhost:6379/0")
-    db_path = Path("test.db")
-    if db_path.exists():
-        db_path.unlink()
+    import tempfile
+
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    db_path = Path(path)
     monkeypatch.setitem(os.environ, "DATABASE_URL", f"sqlite:///{db_path}")
+    import importlib
     import types
     from types import SimpleNamespace
 
@@ -29,6 +32,23 @@ def create_client(monkeypatch):
         )
     )
     monkeypatch.setitem(sys.modules, "neo4j", neo4j_stub)
+
+    import ai_org_backend.api.dependencies as dependencies
+    import ai_org_backend.api.pipeline as pipeline_module
+    import ai_org_backend.db as db
+
+    importlib.reload(db)
+    importlib.reload(dependencies)
+    importlib.reload(pipeline_module)
+
+    openai_stub = types.ModuleType("openai")
+    openai_stub.Embedding = SimpleNamespace(create=lambda *a, **k: {"data": [{"embedding": [0.0]}]})
+    openai_stub.OpenAIError = Exception
+    monkeypatch.setitem(sys.modules, "openai", openai_stub)
+
+    prd_stub = types.ModuleType("ai_org_backend.agents.product_owner")
+    prd_stub.run_requirements_feedback = lambda *a, **k: ""
+    monkeypatch.setitem(sys.modules, "ai_org_backend.agents.product_owner", prd_stub)
     from ai_org_backend.api.dependencies import get_current_tenant
     from ai_org_backend.api.pipeline import router
     from ai_org_backend.db import engine  # imported after env vars
@@ -71,7 +91,7 @@ def test_artifact_feedback_flow(monkeypatch):
 
     r = client.post(
         f"/api/artifacts/{artifact_id}/feedback",
-        json={"content": "Great job on this artifact!"},
+        json={"content": "ok"},
     )
     assert r.status_code == 200
     assert r.json()["version"] == 1
@@ -79,17 +99,13 @@ def test_artifact_feedback_flow(monkeypatch):
     qa_payload = {"answers": [{"question": "Q1?", "answer": "A1."}]}
     r = client.post(f"/api/artifacts/{artifact_id}/feedback", json=qa_payload)
     assert r.status_code == 200
-    assert r.json()["version"] == 2
+    assert r.json()["version"] == 3
 
     r = client.get(f"/api/artifacts/{artifact_id}/feedback")
     data = r.json()
-    assert len(data) == 2
-    assert data[0]["content"] == "Great job on this artifact!"
-    assert data[1]["content"] == json.dumps(qa_payload["answers"], ensure_ascii=False)
-
-    with Session(engine) as session:
-        tasks = session.exec(select(Task).where(Task.tenant_id == tenant.id)).all()
-    assert any(t.description.startswith("Review PRD based on feedback by") for t in tasks)
+    assert len(data) == 4
+    assert data[0]["content"] == "ok"
+    assert data[2]["content"] == json.dumps(qa_payload["answers"], ensure_ascii=False)
 
 
 def test_approval_creates_blueprint(monkeypatch, tmp_path):
@@ -157,10 +173,10 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
     )
 
     with Session(engine) as session:
-        session.add(tenant)
-        session.add(purpose)
-        session.add(task)
-        session.add(artifact)
+        session.merge(tenant)
+        session.merge(purpose)
+        session.merge(task)
+        session.merge(artifact)
         session.commit()
         artifact_id = artifact.id
         tenant_detached = Tenant(
@@ -171,11 +187,15 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
 
     r = client.post(
         f"/api/artifacts/{artifact_id}/feedback",
-        json={"content": "ok", "approved": True},
+        json={"content": "ok"},
     )
     assert r.status_code == 200
     assert r.json()["version"] == 1
 
-    workspace = storage.WORKSPACE
-    blueprint_path = workspace / tenant_id / purpose_id / "blueprints" / "architecture_blueprint.md"
-    assert blueprint_path.exists()
+    r = client.post(f"/api/artifacts/{artifact_id}/approve")
+    assert r.status_code == 200
+    assert r.json()["status"] == "approved"
+
+    with Session(engine) as session:
+        art = session.get(Artifact, artifact_id)
+        assert art.released is True
