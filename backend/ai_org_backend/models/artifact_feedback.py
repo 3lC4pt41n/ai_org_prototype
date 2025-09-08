@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class ArtifactFeedback(SQLModel, table=True):
@@ -18,7 +18,6 @@ class ArtifactFeedback(SQLModel, table=True):
     author: Optional[str] = Field(default=None, nullable=True)
     version: int = Field(default=1, ge=1)
     content: str = Field(nullable=False)
-    approved: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     artifact: Optional["Artifact"] = Relationship(back_populates="feedback")
