@@ -449,6 +449,11 @@ def post_artifact_feedback(
         if not task or task.tenant_id != tenant_id:
             raise HTTPException(status_code=403, detail="Forbidden for this tenant")
         purpose = session.get(Purpose, task.purpose_id)
+        # Capture purpose data before session closes/commits so it can be
+        # safely used after the session is gone. Otherwise the ORM instance
+        # becomes detached and accessing attributes triggers a refresh which
+        # fails with "Instance <Purpose ...> is not bound to a Session".
+        purpose_id = purpose.id if purpose else None
 
         # robust scalar max() to avoid row/tuple surprises
         last_version = session.exec(
@@ -516,11 +521,13 @@ def post_artifact_feedback(
             from ai_org_backend.agents.architect import run_architect
             from ai_org_backend.agents.planner import run_planner
 
-            blueprint_md = run_architect(purpose)
+            # use a detached Purpose instance carrying only the ID
+            purpose_ref = Purpose(id=purpose_id)
+            blueprint_md = run_architect(purpose_ref)
             with Session(engine) as session:
                 blueprint_task = Task(
                     tenant_id=tenant_id,
-                    purpose_id=purpose.id,
+                    purpose_id=purpose_id,
                     description="Architecture Blueprint",
                     status="done",
                 )
@@ -543,7 +550,7 @@ def post_artifact_feedback(
                 for t in tasks_plan:
                     task_obj = Task(
                         tenant_id=tenant_id,
-                        purpose_id=purpose.id,
+                        purpose_id=purpose_id,
                         description=t.get("description", ""),
                         business_value=float(t.get("business_value", 1.0)),
                         tokens_plan=int(t.get("tokens_plan", 0)),
@@ -556,7 +563,7 @@ def post_artifact_feedback(
             logger.error("Blueprint generation failed: %s", e)
         finally:
             try:
-                pool.delete(f"pause:{tenant_id}:{purpose.id}")
+                pool.delete(f"pause:{tenant_id}:{purpose_id}")
             except Exception as e:  # pragma: no cover - logging only
                 logger.error("Redis delete failed: %s", e)
 
