@@ -417,10 +417,6 @@ def approve_artifact(
     purpose_id = task.purpose_id
     if artifact.released:
         raise HTTPException(status_code=409, detail="Artifact already released")
-    artifact.released = True
-    session.add(artifact)
-    session.commit()
-    logger.info("Artifact %s released for tenant %s", artifact_id, tenant_id)
 
     try:
         from ai_org_backend.agents.architect import run_architect
@@ -461,6 +457,11 @@ def approve_artifact(
             )
             session.add(task_obj)
         session.commit()
+        # Mark as released only after successful blueprint + tasks
+        artifact.released = True
+        session.add(artifact)
+        session.commit()
+        logger.info("Artifact %s released for tenant %s", artifact_id, tenant_id)
         try:
             ingest(tenant_id)
         except Exception as e:  # pragma: no cover - logging only
