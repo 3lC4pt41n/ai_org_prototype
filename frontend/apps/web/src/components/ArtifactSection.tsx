@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../lib/api";
 import { toast } from "react-hot-toast";
 import FileViewer from "./FileViewer";
@@ -191,7 +192,11 @@ export default function ArtifactSection({
     } catch {
       /* ignore – treat as markdown */
     }
-    return <ReactMarkdown className="prose prose-sm">{fb.content}</ReactMarkdown>;
+    return (
+      <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
+        {fb.content}
+      </ReactMarkdown>
+    );
   }
 
   return (

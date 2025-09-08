@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../lib/api";
 
 interface Task {
@@ -87,7 +88,9 @@ const FeedbackSection: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
           </p>
           {contents[task.id] && (
             <div className="my-2 p-2 border rounded bg-white max-h-64 overflow-auto text-sm">
-              <ReactMarkdown>{contents[task.id]}</ReactMarkdown>
+              <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
+                {contents[task.id]}
+              </ReactMarkdown>
             </div>
           )}
           {(questions[task.id] || []).map((q, idx) => (
@@ -125,4 +128,3 @@ const FeedbackSection: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
 };
 
 export default FeedbackSection;
-
