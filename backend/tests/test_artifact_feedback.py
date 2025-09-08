@@ -199,3 +199,6 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
     with Session(engine) as session:
         art = session.get(Artifact, artifact_id)
         assert art.released is True
+
+    r2 = client.post(f"/api/artifacts/{artifact_id}/approve")
+    assert r2.status_code == 409
