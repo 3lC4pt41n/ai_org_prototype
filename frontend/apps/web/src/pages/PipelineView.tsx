@@ -1,11 +1,11 @@
-import { useEffect } from "react";
-import { History, Package } from "lucide-react";
-import { toast } from "react-hot-toast";
-import usePipelineStore from "../store/pipelineStore";
-import PurposeSelector from "../components/PurposeSelector";
-import ArtifactSection from "../components/ArtifactSection";
-import GraphSection from "../components/GraphSection";
-import { API_BASE } from "../lib/api";
+import { useEffect } from 'react';
+import { History, Package } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import usePipelineStore from '../store/pipelineStore';
+import PurposeSelector from '../components/PurposeSelector';
+import ArtifactSection from '../components/ArtifactSection';
+import GraphSection from '../components/GraphSection';
+import { API_BASE } from '../lib/api';
 
 interface ArtifactItem {
   id: string;
@@ -13,6 +13,7 @@ interface ArtifactItem {
   url?: string;
   created_at?: string;
   media_type?: string;
+  released?: boolean;
 }
 
 export default function PipelineView() {
@@ -52,40 +53,44 @@ export default function PipelineView() {
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
-  const prdArtifact = artifacts.find(a => a.repo_path?.toLowerCase().includes('product_requirements'));
-  const archArtifact = artifacts.find(a => a.repo_path?.toLowerCase().includes('architecture_blueprint'));
+  const prdArtifact = artifacts.find((a) =>
+    a.repo_path?.toLowerCase().includes('product_requirements'),
+  );
+  const archArtifact = artifacts.find((a) =>
+    a.repo_path?.toLowerCase().includes('architecture_blueprint'),
+  );
 
-  const prdPending  = paused && !archArtifact;  // bleibt für Status-Icon Logik bestehen
+  const prdPending = paused && !archArtifact; // bleibt für Status-Icon Logik bestehen
   const archPending = paused && !!archArtifact;
-  const prdStatusIcon  = prdPending  ? '🕓' : '✅';
+  const prdStatusIcon = prdPending ? '🕓' : '✅';
   const archStatusIcon = archArtifact ? (archPending ? '🕓' : '✅') : '✅';
   const graphStatusIcon = paused ? '🕓' : '✅';
 
   const statusInfo: Record<string, { label: string; color: string }> = {
-    todo: { label: "Todo", color: "bg-yellow-500 text-black" },
-    doing: { label: "In Progress", color: "bg-blue-500 text-white" },
-    done: { label: "Done", color: "bg-green-600 text-white" },
-    failed: { label: "Failed", color: "bg-red-600 text-white" },
-    blocked: { label: "Blocked", color: "bg-gray-500 text-white" },
-    skipped: { label: "Skipped", color: "bg-gray-500 text-white" },
+    todo: { label: 'Todo', color: 'bg-yellow-500 text-black' },
+    doing: { label: 'In Progress', color: 'bg-blue-500 text-white' },
+    done: { label: 'Done', color: 'bg-green-600 text-white' },
+    failed: { label: 'Failed', color: 'bg-red-600 text-white' },
+    blocked: { label: 'Blocked', color: 'bg-gray-500 text-white' },
+    skipped: { label: 'Skipped', color: 'bg-gray-500 text-white' },
     budget_exceeded: {
-      label: "Blocked (Budget)",
-      color: "bg-gray-500 text-white",
+      label: 'Blocked (Budget)',
+      color: 'bg-gray-500 text-white',
     },
   };
 
   function downloadArtifactFile(artifactId: string, filename: string) {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem('token');
     fetch(`${API_BASE}/artifact/${artifactId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Download fehlgeschlagen");
+        if (!res.ok) throw new Error('Download fehlgeschlagen');
         return res.blob();
       })
       .then((blob) => {
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
+        const a = document.createElement('a');
         a.href = url;
         a.download = filename;
         document.body.appendChild(a);
@@ -93,7 +98,7 @@ export default function PipelineView() {
         a.remove();
         URL.revokeObjectURL(url);
       })
-      .catch(() => toast.error("Download fehlgeschlagen"));
+      .catch(() => toast.error('Download fehlgeschlagen'));
   }
 
   return (
@@ -105,7 +110,11 @@ export default function PipelineView() {
 
       {error && (
         <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
-          {typeof error === 'string' ? error : error instanceof Error ? error.message : String(error)}
+          {typeof error === 'string'
+            ? error
+            : error instanceof Error
+              ? error.message
+              : String(error)}
         </div>
       )}
 
@@ -129,11 +138,7 @@ export default function PipelineView() {
               showFeedback={archPending}
             />
           )}
-          <GraphSection
-            statusIcon={graphStatusIcon}
-            nodes={graphNodes}
-            edges={graphEdges}
-          />
+          <GraphSection statusIcon={graphStatusIcon} nodes={graphNodes} edges={graphEdges} />
         </div>
 
         <aside className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
@@ -159,9 +164,7 @@ export default function PipelineView() {
                 </span>
               </li>
             ))}
-            {backlog.length === 0 && (
-              <li className="italic">Queue is empty 🎉</li>
-            )}
+            {backlog.length === 0 && <li className="italic">Queue is empty 🎉</li>}
           </ul>
 
           <h2 className="flex items-center gap-2 text-lg mt-4 mb-2">
@@ -175,23 +178,19 @@ export default function PipelineView() {
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    downloadArtifactFile(
-                      a.id,
-                      a.repo_path?.split("/").pop() || a.id
-                    );
+                    downloadArtifactFile(a.id, a.repo_path?.split('/').pop() || a.id);
                   }}
                   className="text-amber-400 hover:underline"
                 >
-                  {a.repo_path?.replace(/^[^/]+\//, "")}
-                </a>{" "}
+                  {a.repo_path?.replace(/^[^/]+\//, '')}
+                </a>{' '}
                 <span className="text-slate-600 text-xs">
                   ({a.media_type}, {new Date(a.created_at!).toLocaleString()})
                 </span>
+                {a.released && <span className="ml-1 text-green-600 text-xs">released</span>}
               </li>
             ))}
-            {artifacts.length === 0 && (
-              <li className="italic">No artifacts yet</li>
-            )}
+            {artifacts.length === 0 && <li className="italic">No artifacts yet</li>}
           </ul>
         </aside>
       </div>

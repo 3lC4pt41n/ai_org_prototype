@@ -1,5 +1,5 @@
-import { create } from "zustand";
-import { api, getJson } from "../lib/api";
+import { create } from 'zustand';
+import { api, getJson } from '../lib/api';
 
 interface Purpose {
   id: string;
@@ -39,6 +39,7 @@ interface Artifact {
   media_type: string;
   task_id: string;
   task_desc?: string;
+  released?: boolean;
 }
 
 interface Feedback {
@@ -89,7 +90,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   tasksStatus: {},
   artifacts: [],
   selectedArtifactId: null,
-  artifactContent: "",
+  artifactContent: '',
   feedbacks: [],
   isLoading: false,
   paused: false,
@@ -99,7 +100,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     set({
       selectedPurposeId: id,
       selectedArtifactId: null,
-      artifactContent: "",
+      artifactContent: '',
       feedbacks: [],
     });
   },
@@ -122,7 +123,9 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const selected = get().selectedPurposeId;
     if (!selected) return;
     try {
-      const data = await getJson<Task[]>(`/backlog?purpose_id=${encodeURIComponent(selected)}`, { signal });
+      const data = await getJson<Task[]>(`/backlog?purpose_id=${encodeURIComponent(selected)}`, {
+        signal,
+      });
       set({ backlog: Array.isArray(data) ? data : [] });
     } catch (err) {
       console.error('fetchBacklog failed', err);
@@ -137,16 +140,12 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         api.get(`/purposes/${purposeId}/status`, { signal }),
       ]);
       if (graphRes.status !== 200 || statusRes.status !== 200) {
-        throw new Error(
-          `API not ok: graph=${graphRes.status} status=${statusRes.status}`
-        );
+        throw new Error(`API not ok: graph=${graphRes.status} status=${statusRes.status}`);
       }
       const graph = graphRes.data;
       const statusData = statusRes.data;
       const tasks: any[] = Array.isArray(graph?.tasks) ? graph.tasks : [];
-      const deps: any[] = Array.isArray(graph?.dependencies)
-        ? graph.dependencies
-        : [];
+      const deps: any[] = Array.isArray(graph?.dependencies) ? graph.dependencies : [];
       const nodes: GraphNode[] = tasks.map((t: any, idx: number) => ({
         id: t.id,
         data: {
@@ -156,11 +155,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         position: { x: idx * 200, y: 0 },
         style: {
           borderColor:
-            t.status === "done"
-              ? "#16a34a"
-              : t.status === "doing"
-              ? "#f59e0b"
-              : "#cbd5e1",
+            t.status === 'done' ? '#16a34a' : t.status === 'doing' ? '#f59e0b' : '#cbd5e1',
         },
       }));
       const edges: GraphEdge[] = deps.map((edge: any, i: number) => ({
@@ -195,7 +190,10 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
     const selected = get().selectedPurposeId;
     if (!selected) return;
     try {
-      const data = await getJson<Artifact[]>(`/artifacts?purpose_id=${encodeURIComponent(selected)}`, { signal });
+      const data = await getJson<Artifact[]>(
+        `/artifacts?purpose_id=${encodeURIComponent(selected)}`,
+        { signal },
+      );
       set({ artifacts: Array.isArray(data) ? data : [] });
     } catch (err) {
       console.error('fetchArtifacts failed', err);
@@ -204,7 +202,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   selectArtifact: (id: string) => {
-    set({ selectedArtifactId: id, artifactContent: "", feedbacks: [] });
+    set({ selectedArtifactId: id, artifactContent: '', feedbacks: [] });
     get().fetchArtifactContent(id);
     get().fetchFeedbacks(id);
   },

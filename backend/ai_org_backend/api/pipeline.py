@@ -137,6 +137,7 @@ async def list_artifacts(
                     "repo_path": art.repo_path,
                     "media_type": art.media_type,
                     "created_at": art.created_at.isoformat(),
+                    "released": art.released,
                     "url": f"/api/artifact/{art.id}",
                 }
             )
@@ -174,7 +175,6 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         existing_tasks = session.exec(
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
         ).all()
-        existing_desc_map = {t.description: t.id for t in existing_tasks}
         existing_prd = next(
             (
                 t
@@ -253,117 +253,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             notes="PRD completed",
         )
 
-    # 2) Generate blueprint and task plan via Architect and Planner agents
-    try:
-        from ai_org_backend.agents.architect import run_architect
-        from ai_org_backend.agents.planner import run_planner
-
-        blueprint = run_architect(purpose)
-        tasks_plan = run_planner(blueprint)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Seed generation failed: {e}")
-
-    if not tasks_plan or not isinstance(tasks_plan, list):
-        raise HTTPException(status_code=500, detail="No tasks generated")
-
-    # Insert repository initialization task if not present
-    if not any(
-        str(t.get("description", "")).lower().startswith("initialize repository")
-        for t in tasks_plan
-    ):
-        tasks_plan.insert(
-            0,
-            {
-                "id": "repo_init",
-                "description": "Initialize repository scaffolding",
-                "business_value": 1.0,
-                "tokens_plan": 0,
-                "purpose_relevance": 0.0,
-            },
-        )
-
-    # Append Architecture Blueprint task
-    tasks_plan.append(
-        {
-            "id": "blueprint",
-            "description": "Architecture Blueprint",
-            "business_value": 0.0,
-            "tokens_plan": 0,
-            "purpose_relevance": 0.0,
-        }
-    )
-
-    # Filter out duplicates (if any)
-    new_tasks = []
-    id_map: dict[str, str] = {}
-    for t in tasks_plan:
-        desc = t["description"]
-        if desc in existing_desc_map:
-            id_map[t["id"]] = existing_desc_map[desc]
-        else:
-            new_tasks.append(t)
-    tasks_plan = new_tasks
-
-    # Save new tasks in database
-    with Session(engine) as session:
-        for t in tasks_plan:
-            task_obj = Task(
-                tenant_id=tenant_id,
-                purpose_id=purpose.id,
-                description=t["description"],
-                business_value=t.get("business_value", 1.0),
-                tokens_plan=t.get("tokens_plan", 0),
-                purpose_relevance=t.get("purpose_relevance", 0.0),
-            )
-            session.add(task_obj)
-            session.flush()  # obtain task_obj.id
-            id_map[t["id"]] = task_obj.id
-        session.commit()
-
-        # Create dependency relations
-        for t in tasks_plan:
-            dep = t.get("depends_on") or t.get("depends_on_id")
-            if dep and dep in id_map:
-                session.add(TaskDependency(from_id=id_map[dep], to_id=id_map[t["id"]]))
-
-        # Ensure proper task order dependencies
-        repo_id = id_map.get("repo_init")
-        blueprint_id = id_map.get("blueprint")
-        if blueprint_id and repo_id:
-            session.add(TaskDependency(from_id=prd_task_obj.id, to_id=blueprint_id))
-            session.add(TaskDependency(from_id=blueprint_id, to_id=repo_id))
-            for slug, tid in id_map.items():
-                if slug not in ("repo_init", "blueprint"):
-                    session.add(TaskDependency(from_id=repo_id, to_id=tid))
-        elif repo_id:
-            for slug, tid in id_map.items():
-                if slug != "repo_init":
-                    session.add(TaskDependency(from_id=repo_id, to_id=tid))
-        session.commit()
-
-    # Save initial blueprint artefact and mark task done
-    blueprint_task_id = id_map.get("blueprint")
-    if blueprint_task_id:
-        save_artefact(
-            blueprint_task_id,
-            blueprint.encode("utf-8"),
-            filename="blueprints/architecture_blueprint.md",
-            media_type="text/markdown",
-        )
-        Repo(tenant_id).update(
-            blueprint_task_id,
-            status="done",
-            owner="Architect",
-            notes="Blueprint completed",
-        )
-
-    # Update Neo4j graph
-    try:
-        ingest(tenant_id)
-    except Exception as e:
-        print(f"[WARN] Neo4j ingest failed: {e}")
-
-    return {"purpose_id": purpose.id, "requirements": prd_content, "blueprint": blueprint}
+    return {"purpose_id": purpose.id, "requirements": prd_content}
 
 
 @router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
@@ -419,6 +309,9 @@ def post_artifact_feedback(
     """
     tenant_id = current_tenant.id
     author = payload.get("author") or current_tenant.name
+
+    if "approved" in payload:
+        logger.warning("Deprecated 'approved' flag received in feedback payload")
 
     # 1) Normalize payload
     answers = payload.get("answers")
@@ -522,9 +415,12 @@ def approve_artifact(
     if not task or task.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Forbidden for this tenant")
     purpose_id = task.purpose_id
+    if artifact.released:
+        raise HTTPException(status_code=409, detail="Artifact already released")
     artifact.released = True
     session.add(artifact)
     session.commit()
+    logger.info("Artifact %s released for tenant %s", artifact_id, tenant_id)
 
     try:
         from ai_org_backend.agents.architect import run_architect
@@ -565,6 +461,10 @@ def approve_artifact(
             )
             session.add(task_obj)
         session.commit()
+        try:
+            ingest(tenant_id)
+        except Exception as e:  # pragma: no cover - logging only
+            logger.warning("Neo4j ingest failed: %s", e)
     except Exception as e:  # pragma: no cover - logging only
         logger.error("Blueprint generation failed: %s", e)
     finally:

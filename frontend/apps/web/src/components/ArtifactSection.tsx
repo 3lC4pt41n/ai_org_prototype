@@ -1,13 +1,15 @@
-import { useEffect, useState, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { api } from "../lib/api";
-import { toast } from "react-hot-toast";
-import FileViewer from "./FileViewer";
+import { useEffect, useState, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { api, approveArtifact as approveArtifactApi } from '../lib/api';
+import { toast } from 'react-hot-toast';
+import FileViewer from './FileViewer';
+import usePipelineStore from '../store/pipelineStore';
 
 interface Artifact {
   id: string;
   url?: string;
+  released?: boolean;
 }
 
 interface FeedbackEntry {
@@ -32,37 +34,42 @@ export default function ArtifactSection({
   statusIcon,
   showFeedback = false,
 }: Props) {
-  const [content, setContent] = useState<string>("");
+  const [content, setContent] = useState<string>('');
   const [contentType, setContentType] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const filename = artifact?.url ? artifact.url.split("/").pop() || null : null;
+  const filename = artifact?.url ? artifact.url.split('/').pop() || null : null;
 
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
-  const [draft, setDraft] = useState<string>("");
-  const [submitState, setSubmitState] = useState<"idle" | "ok" | "err">("idle");
+  const [draft, setDraft] = useState<string>('');
+  const [submitState, setSubmitState] = useState<'idle' | 'ok' | 'err'>('idle');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
+  const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
+  const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
+  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
 
   async function loadArtifact(signal?: AbortSignal) {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
         signal,
       });
       if (!res.ok) throw new Error(`artifact ${res.status}`);
-      const ct = res.headers.get("content-type");
+      const ct = res.headers.get('content-type');
       setContentType(ct);
       if (
-        ct?.startsWith("text/") ||
-        ct?.includes("json") ||
-        ct?.includes("xml") ||
-        ct?.includes("yaml") ||
-        ct?.includes("markdown") ||
-        ct?.includes("javascript")
+        ct?.startsWith('text/') ||
+        ct?.includes('json') ||
+        ct?.includes('xml') ||
+        ct?.includes('yaml') ||
+        ct?.includes('markdown') ||
+        ct?.includes('javascript')
       ) {
         const text = await res.text();
         setContent(text);
@@ -75,11 +82,11 @@ export default function ArtifactSection({
         const url = URL.createObjectURL(b);
         if (blobUrl) URL.revokeObjectURL(blobUrl);
         setBlobUrl(url);
-        setContent("");
+        setContent('');
       }
     } catch {
-      setContent("");
-      setError("Artefakt konnte nicht geladen werden.");
+      setContent('');
+      setError('Artefakt konnte nicht geladen werden.');
     } finally {
       setLoading(false);
     }
@@ -117,54 +124,53 @@ export default function ArtifactSection({
   }, [artifact.id]);
 
   useEffect(() => {
-    historyEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history.length]);
 
   async function sendFeedback() {
     if (!draft.trim()) {
-      toast.error("Bitte Feedback eingeben.");
+      toast.error('Bitte Feedback eingeben.');
       return;
     }
     setSubmitting(true);
-    setSubmitState("idle");
-    const tId = toast.loading("Feedback wird gespeichert …");
+    setSubmitState('idle');
+    const tId = toast.loading('Feedback wird gespeichert …');
     try {
       await api.post(`/artifacts/${artifact.id}/feedback`, { content: draft.trim() });
-      setDraft("");
-      setSubmitState("ok");
-      toast.success("Feedback gespeichert – Product Owner aktualisiert das PRD.", { id: tId });
+      setDraft('');
+      setSubmitState('ok');
+      toast.success('Feedback gespeichert – Product Owner aktualisiert das PRD.', { id: tId });
       // neu laden
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       await loadArtifact();
     } catch {
-      setSubmitState("err");
-      toast.error("Speichern fehlgeschlagen.", { id: tId });
+      setSubmitState('err');
+      toast.error('Speichern fehlgeschlagen.', { id: tId });
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function approveFeedback() {
-    setSubmitState("idle");
+  async function approve() {
+    setSubmitState('idle');
     setSubmitting(true);
-    const tId = toast.loading("Freigabe wird verarbeitet …");
+    const tId = toast.loading('Freigabe wird verarbeitet …');
     try {
-      await api.post(`/artifacts/${artifact.id}/feedback`, {
-        content: draft.trim() || "",
-        approved: true,
-      });
-      setDraft("");
-      setSubmitState("ok");
-      toast.success("Freigegeben – Architektur wird erstellt & Plan erzeugt.", { id: tId });
-      const r = await api.get(`/artifacts/${artifact.id}/feedback`);
-      const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
-      setHistory(list);
+      await approveArtifactApi(artifact.id);
+      setDraft('');
+      setSubmitState('ok');
+      toast.success('Freigegeben – Architektur wird erstellt & Plan erzeugt.', { id: tId });
       await loadArtifact();
+      await fetchArtifacts();
+      if (selectedPurposeId) {
+        await fetchBacklog();
+        await fetchGraphAndStatus(selectedPurposeId);
+      }
     } catch {
-      setSubmitState("err");
-      toast.error("Freigabe fehlgeschlagen.", { id: tId });
+      setSubmitState('err');
+      toast.error('Freigabe fehlgeschlagen.', { id: tId });
     } finally {
       setSubmitting(false);
     }
@@ -228,11 +234,9 @@ export default function ArtifactSection({
           {history.map((fb) => (
             <div key={fb.id} className="border-b pb-2 last:border-b-0">
               <div className="text-xs text-gray-600 mb-1">
-                {fb.author || "User"}
+                {fb.author || 'User'}
                 {fb.created_at && (
-                  <span className="ml-1">
-                    {new Date(fb.created_at).toLocaleString()}
-                  </span>
+                  <span className="ml-1">{new Date(fb.created_at).toLocaleString()}</span>
                 )}
               </div>
               {renderFeedback(fb)}
@@ -261,17 +265,19 @@ export default function ArtifactSection({
             >
               Feedback senden
             </button>
-            <button
-              className="px-3 py-1 bg-green-600 text-white rounded text-sm"
-              onClick={approveFeedback}
-              disabled={submitting}
-            >
-              Freigeben
-            </button>
-            {submitState === "ok" && (
-              <span className="text-green-600 text-xs">Gespeichert.</span>
+            {!artifact.released ? (
+              <button
+                className="px-3 py-1 bg-green-600 text-white rounded text-sm"
+                onClick={approve}
+                disabled={submitting}
+              >
+                Freigeben
+              </button>
+            ) : (
+              <span className="text-green-600 text-sm">Freigegeben</span>
             )}
-            {submitState === "err" && (
+            {submitState === 'ok' && <span className="text-green-600 text-xs">Gespeichert.</span>}
+            {submitState === 'err' && (
               <span className="text-red-600 text-xs">Speichern fehlgeschlagen.</span>
             )}
           </div>
