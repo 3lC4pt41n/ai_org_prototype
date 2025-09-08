@@ -1,9 +1,8 @@
-import React from "react";
+import React from 'react';
 
 interface FeedbackItem {
   version: number;
   text: string;
-  approved: boolean;
 }
 
 interface FeedbackFormProps {
@@ -23,7 +22,7 @@ export default function FeedbackForm({
   history,
   disabled = false,
 }: FeedbackFormProps) {
-  const canSend = value.trim() !== "" && !disabled;
+  const canSend = value.trim() !== '' && !disabled;
   return (
     <div className="mt-4">
       <label className="block mb-1">Feedback</label>
@@ -48,10 +47,7 @@ export default function FeedbackForm({
           <ul className="text-sm list-disc ml-5">
             {history.map((h) => (
               <li key={h.version}>
-                <b>Version {h.version}:</b> {h.text || "(ohne Text)"}{" "}
-                {h.approved && (
-                  <span className="text-green-600">(freigegeben)</span>
-                )}
+                <b>Version {h.version}:</b> {h.text || '(ohne Text)'}{' '}
               </li>
             ))}
           </ul>
