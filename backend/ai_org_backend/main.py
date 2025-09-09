@@ -17,6 +17,7 @@ import ai_org_backend.hooks.tests_hook  # noqa: F401
 from ai_org_backend.api.agents import router as agent_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.chat import router as chat_router
+from ai_org_backend.api.chat import ws_router as chat_ws_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.purposes import router as purposes_router
@@ -127,6 +128,7 @@ app.include_router(reviews_router)
 app.include_router(root_router)
 app.include_router(purposes_router)
 app.include_router(chat_router)
+app.include_router(chat_ws_router)
 
 # ─────────────── Scheduler automatisch starten ─────────────────────────
 import asyncio  # noqa: E402

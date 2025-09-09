@@ -26,3 +26,11 @@ class ChatMessage(SQLModel, table=True):
     role: ChatRole = Field(nullable=False)
     content: str = Field(nullable=False, max_length=5000)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class ChatThreadContext(SQLModel, table=True):
+    """Summary context for chat threads."""
+
+    purpose_id: str = Field(primary_key=True, foreign_key="purpose.id")
+    summary: str = Field(nullable=False, max_length=5000)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
