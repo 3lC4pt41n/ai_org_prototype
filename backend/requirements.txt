@@ -4,6 +4,8 @@ passlib[bcrypt]>=1.7.4
 # Pin gegen lästige "(trapped) error reading bcrypt version" Logs
 bcrypt<4.0.0
 psycopg2-binary>=2.9
+# Web search via Google Custom Search API
+google-api-python-client
 # ...
 
 # redis-py ist ohnehin Dependency – Stelle sicher, dass eine v>=4 installiert ist
