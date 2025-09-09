@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type ChangeEvent } from 'react';
+import { useEffect, useState, useRef, useMemo, type ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, postJson } from '../lib/api';
@@ -60,12 +60,16 @@ export default function ArtifactSection({
     created_at?: string;
     media_type: string;
   }
-  const artifactVersions: ArtifactFull[] = (allArtifacts as ArtifactFull[]).filter(
-    (a) => a.task_id === (artifact as any).task_id,
-  );
-  artifactVersions.sort(
-    (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
-  );
+  const artifactVersions: ArtifactFull[] = useMemo(() => {
+    const list = (allArtifacts as ArtifactFull[]).filter(
+      (a) => a.task_id === (artifact as any).task_id,
+    );
+    // defensiv kopieren vor Sort (keine Mutation von Store-Arrays)
+    return [...list].sort(
+      (a, b) =>
+        new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime(),
+    );
+  }, [allArtifacts, (artifact as any).task_id]);
 
   const [selectedArtifactId, setSelectedArtifactId] = useState<string>(artifact.id);
   const currentArtifact =
@@ -152,6 +156,8 @@ export default function ArtifactSection({
   const isLatestVersion =
     artifactVersions.length > 0 &&
     selectedArtifactId === artifactVersions[artifactVersions.length - 1].id;
+  const latestId =
+    artifactVersions.length > 0 ? artifactVersions[artifactVersions.length - 1].id : null;
 
   // Feedback-Historie laden (neueste zuletzt)
   useEffect(() => {
@@ -286,6 +292,7 @@ export default function ArtifactSection({
             className="text-sm border border-gray-300 rounded px-2 py-1 disabled:opacity-50"
             onClick={() => handlePrevNext('prev')}
             disabled={artifactVersions[0].id === selectedArtifactId}
+            aria-label="Vorherige Version"
           >
             Vorherige
           </button>
@@ -293,6 +300,7 @@ export default function ArtifactSection({
             className="text-sm border border-gray-300 rounded px-2 py-1"
             value={selectedArtifactId}
             onChange={handleVersionChange}
+            aria-label="Version auswählen"
           >
             {artifactVersions.map((art, idx) => {
               const versionNum = idx + 1;
@@ -317,9 +325,26 @@ export default function ArtifactSection({
             className="text-sm border border-gray-300 rounded px-2 py-1 disabled:opacity-50"
             onClick={() => handlePrevNext('next')}
             disabled={artifactVersions[artifactVersions.length - 1].id === selectedArtifactId}
+            aria-label="Nächste Version"
           >
             Nächste
           </button>
+        </div>
+      )}
+      {/* Hinweis bei älteren Versionen */}
+      {!isLatestVersion && (
+        <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Sie betrachten eine <b>ältere Version</b> (Nur-Leseansicht).{' '}
+          {latestId && (
+            <button
+              className="underline hover:no-underline"
+              onClick={() => setSelectedArtifactId(latestId)}
+              aria-label="Zur neuesten Version springen"
+              title="Zur neuesten Version springen"
+            >
+              Zur neuesten Version wechseln
+            </button>
+          )}
         </div>
       )}
 
