@@ -537,6 +537,12 @@ def approve_artifact(
         Repo(tenant_id).update(
             blueprint_task.id, status="done", owner="Architect", notes="Blueprint completed"
         )
+        # Resolve the just-created blueprint artifact for FE redirect
+        blueprint_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task_id == blueprint_task.id)
+            .order_by(Artifact.created_at.desc())
+        ).first()
         # Generate implementation tasks only if none exist yet (skip if an implementation plan already exists)
         existing_task = session.exec(
             select(Task)
@@ -592,7 +598,18 @@ def approve_artifact(
             except Exception as e:
                 logger.error("Consistency check failed: %s", e)
 
-    return {"status": "approved"}
+    # Include redirect info for FE if we have a blueprint artifact
+    redirect_id = (
+        blueprint_artifact.id
+        if "blueprint_artifact" in locals() and blueprint_artifact
+        else None
+    )
+    redirect_url = f"/api/artifact/{redirect_id}" if redirect_id else None
+    return {
+        "status": "approved",
+        "artifact_redirect_id": redirect_id,
+        "artifact_redirect_url": redirect_url,
+    }
 
 
 @router.get("/artifact/{artifact_id}", tags=["artifacts"])
