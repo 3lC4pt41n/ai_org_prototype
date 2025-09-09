@@ -52,6 +52,7 @@ export default function ArtifactSection({
   const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
   const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const selectArtifact = usePipelineStore((s) => s.selectArtifact);
+  const setActiveTab = usePipelineStore((s) => s.setActiveTab);
 
   async function loadArtifact(signal?: AbortSignal) {
     setLoading(true);
@@ -173,8 +174,18 @@ export default function ArtifactSection({
       }
       // Auto-jump to the newly created blueprint if provided by backend
       if (resp?.artifact_redirect_id) {
+        // wähle und öffne automatisch die Blueprint-Ansicht
         selectArtifact(resp.artifact_redirect_id);
-        toast.success('Architekturvorschlag erstellt – geöffnet.');
+        if (setActiveTab) {
+          setActiveTab('artifacts');
+        }
+        toast.success('Architekturvorschlag erstellt – automatisch geöffnet.');
+        // optional: direkt laden, um Viewer sofort mit Inhalt zu füllen
+        try {
+          await loadArtifact();
+        } catch {
+          /* ignore load error */
+        }
       }
     } catch {
       setSubmitState('err');
