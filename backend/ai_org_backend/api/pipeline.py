@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, ArtifactFeedback, Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.models.chat import ChatMessage, ChatRole
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
@@ -397,6 +398,23 @@ def post_artifact_feedback(
     )
     session.add(ai_fb)
     session.commit()
+    # Add a system chat message with consistency hints (AImar agent)
+    hint_content = None
+    if artifact.repo_path.lower().endswith("product_requirements.md"):
+        hint_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
+    elif "architecture_blueprint" in artifact.repo_path.lower():
+        hint_content = "Hinweis: Stelle sicher, dass PRD, Tests und UI-Dokumentation an die Architekturänderungen angepasst werden."
+    if hint_content:
+        agent_msg = ChatMessage(
+            tenant_id=tenant_id,
+            purpose_id=purpose.id,
+            artifact_id=artifact_id,
+            role=ChatRole.AGENT,
+            content=hint_content,
+            metadata={"betroffene_artefakte": []},
+        )
+        session.add(agent_msg)
+        session.commit()
 
     return {"status": "saved", "version": version}
 
