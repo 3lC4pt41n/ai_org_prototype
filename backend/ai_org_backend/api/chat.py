@@ -178,6 +178,16 @@ def post_chat(
             except Exception as e:  # pragma: no cover - PRD update failure
                 logger.error("PRD update failed: %s", e)
             assistant_content = "Ich arbeite das ein."
+            agent_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
+            agent_msg = ChatMessage(
+                tenant_id=tenant_id,
+                purpose_id=purpose_id,
+                artifact_id=artifact_id,
+                role=ChatRole.AGENT,
+                content=agent_content,
+                metadata={"betroffene_artefakte": []},
+            )
+            session.add(agent_msg)
 
     if assistant_content is None:
         messages: list[dict] = []

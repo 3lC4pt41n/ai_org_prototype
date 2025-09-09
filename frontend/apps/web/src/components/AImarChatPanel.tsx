@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson } from '../lib/api';
+import { Info } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -151,9 +152,12 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
             className={`my-1 max-w-[80%] p-2 rounded text-sm ${
               m.role === 'user'
                 ? 'bg-blue-100 text-blue-900 ml-auto'
-                : 'bg-gray-100 text-gray-800 mr-auto'
+                : m.role === 'assistant'
+                ? 'bg-gray-100 text-gray-800 mr-auto'
+                : 'bg-gray-200 text-gray-800 mr-auto'
             }`}
           >
+            {m.role === 'agent' && <Info className="w-4 h-4 inline mr-1 text-gray-600" />}
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
           </div>
         ))}
