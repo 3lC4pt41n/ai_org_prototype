@@ -129,17 +129,17 @@ export default function ArtifactSection({
 
   async function sendFeedback() {
     if (!draft.trim()) {
-      toast.error('Bitte Feedback eingeben.');
+      toast.error('Bitte einen Korrekturvorschlag eingeben.');
       return;
     }
     setSubmitting(true);
     setSubmitState('idle');
-    const tId = toast.loading('Feedback wird gespeichert …');
+    const tId = toast.loading('Korrektur wird gespeichert …');
     try {
       await api.post(`/artifacts/${artifact.id}/feedback`, { content: draft.trim() });
       setDraft('');
       setSubmitState('ok');
-      toast.success('Feedback gespeichert – Product Owner aktualisiert das PRD.', { id: tId });
+      toast.success('Korrekturvorschlag gespeichert – Product Owner aktualisiert das PRD.', { id: tId });
       // neu laden
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
@@ -249,11 +249,11 @@ export default function ArtifactSection({
       {/* Eingabe (nur bei Pause) */}
       {showFeedback && (
         <div className="p-3 border rounded bg-white">
-          <label className="block text-sm font-medium mb-1">Dein Feedback</label>
+          <label className="block text-sm font-medium mb-1">Dein Korrekturvorschlag</label>
           <textarea
             rows={4}
             className="w-full p-2 border rounded text-sm"
-            placeholder="Schreibe freies Feedback oder Rückfragen…"
+            placeholder="Schreibe einen Korrekturvorschlag oder eine Rückfrage…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
@@ -263,7 +263,7 @@ export default function ArtifactSection({
               onClick={sendFeedback}
               disabled={!draft.trim() || submitting}
             >
-              Feedback senden
+              Korrektur anfordern
             </button>
             {!artifact.released ? (
               <button
