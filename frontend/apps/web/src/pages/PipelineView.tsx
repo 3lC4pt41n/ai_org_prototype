@@ -106,7 +106,17 @@ export default function PipelineView() {
     <div className="flex flex-col h-screen">
       <div className="p-4 bg-gray-100 flex justify-between items-center gap-2">
         <PurposeSelector />
-        {/* Pause/Resume handled in AdminDashboard; hier nur Anzeige */}
+        {paused ? (
+          <span className="text-sm">
+            <span className="font-medium">Status:</span>{' '}
+            <span className="font-semibold text-red-600">Pausiert</span>
+          </span>
+        ) : (
+          <span className="text-sm">
+            <span className="font-medium">Status:</span>{' '}
+            <span className="font-semibold text-green-600">Läuft</span>
+          </span>
+        )}
       </div>
 
       {error && (

@@ -209,7 +209,7 @@ export default function AdminDashboard() {
       .then(() => {
         const newState = !paused;
         setPaused(newState);
-        toast.success(newState ? "Purpose paused" : "Purpose resumed");
+        toast.success(newState ? "Pipeline pausiert" : "Pipeline fortgesetzt");
       })
       .catch(() => toast.error("Failed to update pipeline state"));
   }
@@ -351,18 +351,24 @@ export default function AdminDashboard() {
             <p className="text-sm mb-1">
               <span className="font-medium">Current Purpose:</span> {currentPurpose || "—"}
             </p>
-            <p className="text-sm mb-3">
+            <p className="text-sm mb-1">
               <span className="font-medium">Planned:</span> {counts.planned}{" "}
               <span className="font-medium">Running:</span> {counts.running}{" "}
               <span className="font-medium">Done:</span> {counts.done}
             </p>
-            <button
-              onClick={togglePause}
-              className={`px-3 py-1 rounded ${paused ? "bg-emerald-600" : "bg-red-600"} hover:opacity-90 flex items-center gap-1`}
-            >
-              {paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
-              {paused ? "Resume" : "Pause"}
-            </button>
+            <div className="text-sm mb-3 flex items-center gap-2">
+              <span className="font-medium">Status:</span>
+              <span className={`${paused ? "text-red-600" : "text-green-600"} font-semibold`}>
+                {paused ? "Pausiert" : "Läuft"}
+              </span>
+              <button
+                onClick={togglePause}
+                className={`px-3 py-1 rounded ${paused ? "bg-emerald-600" : "bg-red-600"} hover:opacity-90 flex items-center gap-1`}
+              >
+                {paused ? <PlayCircle className="w-5 h-5" /> : <PauseCircle className="w-5 h-5" />}
+                {paused ? "Fortsetzen" : "Pausieren"}
+              </button>
+            </div>
           </CardContent>
         </Card>
 
