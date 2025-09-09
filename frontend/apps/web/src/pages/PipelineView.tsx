@@ -54,9 +54,10 @@ export default function PipelineView() {
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
-  const prdArtifact = artifacts.find((a) =>
+  const prdArtifacts = artifacts.filter((a) =>
     a.repo_path?.toLowerCase().includes('product_requirements'),
   );
+  const prdArtifact = prdArtifacts.length > 0 ? prdArtifacts[prdArtifacts.length - 1] : undefined;
   const archArtifact = artifacts.find((a) =>
     a.repo_path?.toLowerCase().includes('architecture_blueprint'),
   );
