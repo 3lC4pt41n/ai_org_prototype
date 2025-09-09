@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api, approveArtifact as approveArtifactApi } from '../lib/api';
+import { api, postJson } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import FileViewer from './FileViewer';
 import usePipelineStore from '../store/pipelineStore';
@@ -51,6 +51,7 @@ export default function ArtifactSection({
   const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
   const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
   const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
+  const selectArtifact = usePipelineStore((s) => s.selectArtifact);
 
   async function loadArtifact(signal?: AbortSignal) {
     setLoading(true);
@@ -158,15 +159,22 @@ export default function ArtifactSection({
     setSubmitting(true);
     const tId = toast.loading('Freigabe wird verarbeitet …');
     try {
-      await approveArtifactApi(artifact.id);
+      const resp = await postJson<{ status: string; artifact_redirect_id?: string; artifact_redirect_url?: string }>(
+        `/artifacts/${artifact.id}/approve`
+      );
       setDraft('');
       setSubmitState('ok');
       toast.success('Freigegeben – Architektur wird erstellt & Plan erzeugt.', { id: tId });
-      await loadArtifact();
+      // Refresh lists
       await fetchArtifacts();
+      await fetchBacklog();
       if (selectedPurposeId) {
-        await fetchBacklog();
         await fetchGraphAndStatus(selectedPurposeId);
+      }
+      // Auto-jump to the newly created blueprint if provided by backend
+      if (resp?.artifact_redirect_id) {
+        selectArtifact(resp.artifact_redirect_id);
+        toast.success('Architekturvorschlag erstellt – geöffnet.');
       }
     } catch {
       setSubmitState('err');
