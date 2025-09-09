@@ -295,6 +295,82 @@ def get_artifact_feedback(
     ]
 
 
+def consistency_check(artifact: Artifact, session: Session) -> dict | None:
+    impacted_ids: list[str] = []
+    impact_level = "low"
+    change_type = "informational"
+    followup_suggestion: str | None = None
+    task_desc = (artifact.task.description if artifact.task else "").lower()
+    repo_path = artifact.repo_path.lower()
+    if "product requirements" in task_desc or "product_requirements" in repo_path:
+        impact_level = "high"
+        change_type = "followup_needed"
+        arch_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
+            .where(Artifact.repo_path.ilike("%architecture_blueprint.md"))
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if arch_artifact:
+            impacted_ids.append(arch_artifact.id)
+        test_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
+            .where(Artifact.repo_path.ilike("%test%"))
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if test_artifact:
+            impacted_ids.append(test_artifact.id)
+        ui_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
+            .where(Artifact.repo_path.ilike("%ui%"))
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if ui_artifact:
+            impacted_ids.append(ui_artifact.id)
+        if arch_artifact:
+            followup_suggestion = "Architektur aktualisieren"
+        else:
+            followup_suggestion = "Architektur erstellen"
+    elif "blueprint" in task_desc or "architecture_blueprint" in repo_path:
+        impact_level = "medium"
+        change_type = "followup_needed"
+        test_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
+            .where(Artifact.repo_path.ilike("%test%"))
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if test_artifact:
+            impacted_ids.append(test_artifact.id)
+        followup_suggestion = "Testfälle überprüfen"
+    elif "ui" in task_desc or "ui" in repo_path:
+        impact_level = "medium"
+        change_type = "informational"
+        test_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
+            .where(Artifact.repo_path.ilike("%test%"))
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if test_artifact:
+            impacted_ids.append(test_artifact.id)
+        followup_suggestion = "UI-Tests aktualisieren"
+    elif "test" in task_desc or "test" in repo_path:
+        impact_level = "low"
+        change_type = "informational"
+        followup_suggestion = "Code anpassen"
+    else:
+        return None
+    return {
+        "betroffene_artefakte": impacted_ids,
+        "impact_level": impact_level,
+        "change_type": change_type,
+        "followup_suggestion": followup_suggestion,
+    }
+
+
 @router.post("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
 def post_artifact_feedback(
     artifact_id: str,
@@ -398,23 +474,22 @@ def post_artifact_feedback(
     )
     session.add(ai_fb)
     session.commit()
-    # Add a system chat message with consistency hints (AImar agent)
-    hint_content = None
-    if artifact.repo_path.lower().endswith("product_requirements.md"):
-        hint_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
-    elif "architecture_blueprint" in artifact.repo_path.lower():
-        hint_content = "Hinweis: Stelle sicher, dass PRD, Tests und UI-Dokumentation an die Architekturänderungen angepasst werden."
-    if hint_content:
-        agent_msg = ChatMessage(
-            tenant_id=tenant_id,
-            purpose_id=purpose.id,
-            artifact_id=artifact_id,
-            role=ChatRole.AGENT,
-            content=hint_content,
-            metadata={"betroffene_artefakte": []},
-        )
-        session.add(agent_msg)
-        session.commit()
+    # Trigger consistency check for potentially impacted artifacts
+    try:
+        impacted = consistency_check(artifact, session)
+        if impacted:
+            agent_msg = ChatMessage(
+                tenant_id=tenant_id,
+                purpose_id=purpose.id if purpose else None,
+                artifact_id=None,
+                task_id=artifact.task_id,
+                role=ChatRole.AGENT,
+                content=json.dumps(impacted, ensure_ascii=False),
+            )
+            session.add(agent_msg)
+            session.commit()
+    except Exception as e:
+        logger.error("Consistency check failed: %s", e)
 
     return {"status": "saved", "version": version}
 
@@ -491,6 +566,22 @@ def approve_artifact(
             pool.delete(f"pause:{tenant_id}:{purpose_id}")
         except Exception as e:  # pragma: no cover - logging only
             logger.error("Redis delete failed: %s", e)
+        if artifact.released:
+            try:
+                impacted = consistency_check(artifact, session)
+                if impacted:
+                    agent_msg = ChatMessage(
+                        tenant_id=tenant_id,
+                        purpose_id=purpose_id,
+                        artifact_id=None,
+                        task_id=artifact.task_id,
+                        role=ChatRole.AGENT,
+                        content=json.dumps(impacted, ensure_ascii=False),
+                    )
+                    session.add(agent_msg)
+                    session.commit()
+            except Exception as e:
+                logger.error("Consistency check failed: %s", e)
 
     return {"status": "approved"}
 
