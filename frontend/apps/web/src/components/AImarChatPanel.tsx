@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson } from '../lib/api';
-import { Info } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -152,13 +151,34 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
             className={`my-1 max-w-[80%] p-2 rounded text-sm ${
               m.role === 'user'
                 ? 'bg-blue-100 text-blue-900 ml-auto'
-                : m.role === 'assistant'
-                ? 'bg-gray-100 text-gray-800 mr-auto'
-                : 'bg-gray-200 text-gray-800 mr-auto'
+                : m.role === 'agent'
+                ? 'bg-gray-100 text-gray-800 mr-auto ml-4 border-l-4 border-blue-400'
+                : 'bg-gray-100 text-gray-800 mr-auto'
             }`}
           >
-            {m.role === 'agent' && <Info className="w-4 h-4 inline mr-1 text-gray-600" />}
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+            {m.role === 'agent' ? (
+              (() => {
+                try {
+                  const data = JSON.parse(m.content);
+                  if (data.betroffene_artefakte) {
+                    return (
+                      <>
+                        <div className="mb-1">
+                          <span role="img" aria-label="Hinweis" className="mr-1">ℹ️</span>
+                          <b>Betroffene Artefakte:</b> {data.betroffene_artefakte.length > 0 ? data.betroffene_artefakte.join(', ') : 'Keine'}
+                        </div>
+                        <div className="mb-1"><b>Auswirkungsgrad:</b> {data.impact_level}</div>
+                        <div className="mb-1"><b>Änderungstyp:</b> {data.change_type}</div>
+                        {data.followup_suggestion && <div><b>Folgeaktion:</b> {data.followup_suggestion}</div>}
+                      </>
+                    );
+                  }
+                } catch {}
+                return <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>;
+              })()
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+            )}
           </div>
         ))}
         <div ref={historyEndRef} />
