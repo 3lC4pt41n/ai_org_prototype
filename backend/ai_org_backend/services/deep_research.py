@@ -2,8 +2,9 @@
 
 This module implements a small loop where an OpenAI model can call
 tools to search the web and fetch web pages. It returns a markdown
-summary and sources list. Fetching uses DuckDuckGo for search and
-Readability for extraction; URLs are checked via `url_safety`.
+summary and sources list. Web search uses the Google Custom Search API,
+and Readability is used for extraction; URLs are checked via
+`url_safety`.
 """
 from __future__ import annotations
 
@@ -14,8 +15,8 @@ from typing import Any, Dict, List
 
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 from readability import Document
+from googleapiclient.discovery import build
 
 from .llm_client import MODEL_PRO, MODEL_THINKING, chat_with_tools
 from .url_safety import is_url_safe
@@ -25,6 +26,8 @@ MAX_BYTES = int(os.getenv("DEEPRESEARCH_MAX_FETCH_BYTES", "3000000"))
 TIMEOUT_S = int(os.getenv("DEEPRESEARCH_TIMEOUT_S", "20"))
 USER_AGENT = os.getenv("DEEPRESEARCH_USER_AGENT", "ai-org-research-bot/1.0")
 SEARCH_TOPK = int(os.getenv("DEEPRESEARCH_SEARCH_TOPK", "6"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", "")
 
 TOOLS = [
     {
@@ -57,17 +60,20 @@ TOOLS = [
 ]
 
 
-def _search_ddg(query: str, top_k: int = SEARCH_TOPK) -> List[Dict[str, str]]:
+def _search_google(query: str, top_k: int = SEARCH_TOPK) -> List[Dict[str, str]]:
+    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+        return []
+    service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
+    res = service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=top_k).execute()
     results: List[Dict[str, str]] = []
-    with DDGS() as ddgs:
-        for r in ddgs.text(query, max_results=top_k):
-            results.append(
-                {
-                    "title": r.get("title") or "",
-                    "url": r.get("href") or "",
-                    "snippet": r.get("body") or "",
-                }
-            )
+    for item in res.get("items", []):
+        results.append(
+            {
+                "title": item.get("title", ""),
+                "url": item.get("link", ""),
+                "snippet": item.get("snippet", ""),
+            }
+        )
     return results
 
 
@@ -126,7 +132,7 @@ def run_deep_research(
                 if fn == "web_search":
                     query = args.get("query", "")
                     top_k = int(args.get("top_k") or SEARCH_TOPK)
-                    results = _search_ddg(query, top_k=top_k)
+                    results = _search_google(query, top_k=top_k)
                     messages.append(
                         {
                             "role": "tool",
