@@ -21,7 +21,10 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
+  const [useWs, setUseWs] = useState(false);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
+  const loadingRef = useRef(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!purposeId) return;
@@ -34,12 +37,52 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
       .catch(() => {});
     return () => {
       alive = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, [purposeId]);
 
   useEffect(() => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!purposeId) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const wsUrl = `${protocol}//${host}/ws/chat/${purposeId}${token ? `?token=${token}` : ''}`;
+    const socket = new WebSocket(wsUrl);
+    wsRef.current = socket;
+    socket.onopen = () => {
+      setUseWs(true);
+    };
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.error) {
+        toast.error(data.error);
+        setLoading(false);
+        loadingRef.current = false;
+      } else {
+        setMessages((prev) => [...prev, data]);
+        setLoading(false);
+        loadingRef.current = false;
+      }
+    };
+    socket.onclose = () => {
+      if (loadingRef.current) {
+        toast.error('Verbindung zum Chat unterbrochen.');
+        setLoading(false);
+      }
+      setUseWs(false);
+      wsRef.current = null;
+      loadingRef.current = false;
+    };
+    return () => {
+      socket.close();
+    };
+  }, [purposeId]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
@@ -53,21 +96,54 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
     setMessages((prev) => [...prev, userMsg]);
     setDraft('');
     setLoading(true);
-    try {
-      const reply = await postJson<Message>('/chat', { purpose_id: purposeId, message: text });
-      setMessages((prev) => [...prev, reply]);
-    } catch (err) {
-      toast.error('Nachricht konnte nicht gesendet werden.');
-    } finally {
-      setLoading(false);
+    loadingRef.current = true;
+    if (useWs && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ message: text }));
+      } catch (err) {
+        try {
+          const reply = await postJson<Message>('/chat', {
+            purpose_id: purposeId,
+            message: text,
+          });
+          setMessages((prev) => [...prev, reply]);
+        } catch (err2) {
+          toast.error('Nachricht konnte nicht gesendet werden.');
+        } finally {
+          setLoading(false);
+          loadingRef.current = false;
+          setUseWs(false);
+        }
+      }
+    } else {
+      try {
+        const reply = await postJson<Message>('/chat', {
+          purpose_id: purposeId,
+          message: text,
+        });
+        setMessages((prev) => [...prev, reply]);
+      } catch (err) {
+        toast.error('Nachricht konnte nicht gesendet werden.');
+      } finally {
+        setLoading(false);
+        loadingRef.current = false;
+      }
     }
   };
 
-  const suggestions = paused ? ['Klingt unklar', 'Fehlt Akzeptanzkriterium'] : [];
+  const suggestions = paused
+    ? ['Klingt unklar', 'Fehlt Akzeptanzkriterium', 'Kein Businessziel']
+    : [];
 
   return (
     <div className="flex flex-col h-full border-t pt-2">
       <h3 className="text-sm font-medium mb-2">AImar Chat</h3>
+      <div className="text-xs text-gray-600 mb-2 flex items-center gap-2">
+        <span role="img" aria-label="Robot">
+          🤖
+        </span>
+        <span>KI-Produkt Owner Assistent (professionell, kritisch, fordernd)</span>
+      </div>
       <div className="flex-1 overflow-y-auto mb-2">
         {messages.map((m) => (
           <div
@@ -122,4 +198,3 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
     </div>
   );
 }
-
