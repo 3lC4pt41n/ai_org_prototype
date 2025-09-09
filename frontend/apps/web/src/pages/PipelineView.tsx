@@ -6,6 +6,7 @@ import PurposeSelector from '../components/PurposeSelector';
 import ArtifactSection from '../components/ArtifactSection';
 import GraphSection from '../components/GraphSection';
 import { API_BASE } from '../lib/api';
+import AImarChatPanel from '../components/AImarChatPanel';
 
 interface ArtifactItem {
   id: string;
@@ -139,6 +140,9 @@ export default function PipelineView() {
             />
           )}
           <GraphSection statusIcon={graphStatusIcon} nodes={graphNodes} edges={graphEdges} />
+          {selectedPurposeId && (
+            <AImarChatPanel purposeId={selectedPurposeId} paused={paused} />
+          )}
         </div>
 
         <aside className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
