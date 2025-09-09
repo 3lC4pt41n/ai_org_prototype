@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import GraphDatabase
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from sqlmodel import SQLModel
 
 import ai_org_backend.hooks.review_hook  # noqa: F401
 import ai_org_backend.hooks.tests_hook  # noqa: F401
@@ -25,6 +26,7 @@ from ai_org_backend.api.reviews import router as reviews_router
 from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
+from ai_org_backend.db import engine
 from ai_org_backend.models import Tenant
 
 # ──────────────── ENV / constants ─────────────────────────────
@@ -129,6 +131,13 @@ app.include_router(root_router)
 app.include_router(purposes_router)
 app.include_router(chat_router)
 app.include_router(chat_ws_router)
+
+
+# Ensure chat-related tables exist
+@app.on_event("startup")
+async def init_db():
+    SQLModel.metadata.create_all(engine)
+
 
 # ─────────────── Scheduler automatisch starten ─────────────────────────
 import asyncio  # noqa: E402
