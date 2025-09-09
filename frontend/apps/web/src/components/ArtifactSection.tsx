@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, postJson } from '../lib/api';
@@ -39,7 +39,6 @@ export default function ArtifactSection({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const filename = artifact?.url ? artifact.url.split('/').pop() || null : null;
 
   const [history, setHistory] = useState<FeedbackEntry[]>([]);
   const [draft, setDraft] = useState<string>('');
@@ -53,14 +52,39 @@ export default function ArtifactSection({
   const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const selectArtifact = usePipelineStore((s) => s.selectArtifact);
   const setActiveTab = usePipelineStore((s) => s.setActiveTab);
+  const allArtifacts = usePipelineStore((s) => s.artifacts);
+  // Determine version history for this artifact (all artifacts of same task)
+  interface ArtifactFull extends Artifact {
+    task_id: string;
+    repo_path: string;
+    created_at?: string;
+    media_type: string;
+  }
+  const artifactVersions: ArtifactFull[] = (allArtifacts as ArtifactFull[]).filter(
+    (a) => a.task_id === (artifact as any).task_id,
+  );
+  artifactVersions.sort(
+    (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+  );
 
-  async function loadArtifact(signal?: AbortSignal) {
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string>(artifact.id);
+  const currentArtifact =
+    artifactVersions.find((a) => a.id === selectedArtifactId) || (artifact as ArtifactFull);
+  const filename = currentArtifact?.url ? currentArtifact.url.split('/').pop() || null : null;
+
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  async function fetchVersionContent(artifactId: string) {
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(artifact.url ?? `/api/artifact/${artifact.id}`, {
+      const artObj = artifactVersions.find((a) => a.id === artifactId);
+      const url = artObj?.url ? artObj.url : `/api/artifact/${artifactId}`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-        signal,
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error(`artifact ${res.status}`);
       const ct = res.headers.get('content-type');
@@ -81,29 +105,53 @@ export default function ArtifactSection({
         }
       } else {
         const b = await res.blob();
-        const url = URL.createObjectURL(b);
+        const urlObj = URL.createObjectURL(b);
         if (blobUrl) URL.revokeObjectURL(blobUrl);
-        setBlobUrl(url);
+        setBlobUrl(urlObj);
         setContent('');
       }
-    } catch {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       setContent('');
       setError('Artefakt konnte nicht geladen werden.');
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === controller) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    const controller = new AbortController();
-    loadArtifact(controller.signal);
+    fetchVersionContent(selectedArtifactId);
     return () => {
-      controller.abort();
+      fetchAbortRef.current?.abort();
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [artifact.id, artifact.url]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedArtifactId]);
+
+  // Update selected version if artifact prop changes (e.g., new version created)
+  useEffect(() => {
+    setSelectedArtifactId(artifact.id);
+  }, [artifact.id]);
+
+  function handleVersionChange(e: ChangeEvent<HTMLSelectElement>) {
+    setSelectedArtifactId(e.target.value);
+  }
+
+  function handlePrevNext(dir: 'prev' | 'next') {
+    const idx = artifactVersions.findIndex((a) => a.id === selectedArtifactId);
+    const newIdx = dir === 'prev' ? idx - 1 : idx + 1;
+    if (newIdx >= 0 && newIdx < artifactVersions.length) {
+      setSelectedArtifactId(artifactVersions[newIdx].id);
+    }
+  }
+
+  const isLatestVersion =
+    artifactVersions.length > 0 &&
+    selectedArtifactId === artifactVersions[artifactVersions.length - 1].id;
 
   // Feedback-Historie laden (neueste zuletzt)
   useEffect(() => {
@@ -146,7 +194,7 @@ export default function ArtifactSection({
       const r = await api.get(`/artifacts/${artifact.id}/feedback`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
-      await loadArtifact();
+      await fetchVersionContent(selectedArtifactId);
     } catch {
       setSubmitState('err');
       toast.error('Speichern fehlgeschlagen.', { id: tId });
@@ -182,7 +230,7 @@ export default function ArtifactSection({
         toast.success('Architekturvorschlag erstellt – automatisch geöffnet.');
         // optional: direkt laden, um Viewer sofort mit Inhalt zu füllen
         try {
-          await loadArtifact();
+          await fetchVersionContent(selectedArtifactId);
         } catch {
           /* ignore load error */
         }
@@ -230,6 +278,50 @@ export default function ArtifactSection({
         <span>{statusIcon}</span>
         {title}
       </h2>
+      {/* Version selector */}
+      {artifactVersions.length > 1 && (
+        <div className="mb-2 flex items-center gap-2">
+          <label className="text-sm font-medium">Version:</label>
+          <button
+            className="text-sm border border-gray-300 rounded px-2 py-1 disabled:opacity-50"
+            onClick={() => handlePrevNext('prev')}
+            disabled={artifactVersions[0].id === selectedArtifactId}
+          >
+            Vorherige
+          </button>
+          <select
+            className="text-sm border border-gray-300 rounded px-2 py-1"
+            value={selectedArtifactId}
+            onChange={handleVersionChange}
+          >
+            {artifactVersions.map((art, idx) => {
+              const versionNum = idx + 1;
+              const dateStr = art.created_at
+                ? new Date(art.created_at).toLocaleString('de-DE', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })
+                : null;
+              let label = `Version ${versionNum}`;
+              if (idx === 0) label += ' (älteste)';
+              if (idx === artifactVersions.length - 1) label += ' (aktuell)';
+              if (dateStr) label += ` – erstellt am ${dateStr}`;
+              return (
+                <option value={art.id} key={art.id}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+          <button
+            className="text-sm border border-gray-300 rounded px-2 py-1 disabled:opacity-50"
+            onClick={() => handlePrevNext('next')}
+            disabled={artifactVersions[artifactVersions.length - 1].id === selectedArtifactId}
+          >
+            Nächste
+          </button>
+        </div>
+      )}
 
       <div className="mb-3 p-3 border rounded bg-white">
         {loading ? (
@@ -248,7 +340,7 @@ export default function ArtifactSection({
       </div>
 
       {/* Feedback-Historie */}
-      {history.length > 0 && (
+      {history.length > 0 && isLatestVersion && (
         <div className="mb-3 p-3 border rounded bg-white space-y-3 max-h-60 overflow-y-auto">
           {history.map((fb) => (
             <div key={fb.id} className="border-b pb-2 last:border-b-0">
@@ -266,7 +358,7 @@ export default function ArtifactSection({
       )}
 
       {/* Eingabe (nur bei Pause) */}
-      {showFeedback && (
+      {showFeedback && isLatestVersion && (
         <div className="p-3 border rounded bg-white">
           <label className="block text-sm font-medium mb-1">Dein Korrekturvorschlag</label>
           <textarea
@@ -284,7 +376,7 @@ export default function ArtifactSection({
             >
               Korrektur anfordern
             </button>
-            {!artifact.released ? (
+            {!currentArtifact.released ? (
               <button
                 className="px-3 py-1 bg-green-600 text-white rounded text-sm"
                 onClick={approve}
