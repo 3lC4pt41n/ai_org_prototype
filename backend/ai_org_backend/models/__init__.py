@@ -1,11 +1,12 @@
 from .artifact import Artifact
 from .artifact import Artifact as Artefact
+from .artifact_feedback import ArtifactFeedback
+from .chat import ChatMessage
+from .feedback import Feedback, FeedbackType
 from .purpose import Purpose
 from .task import Task, TaskStatus
 from .task_dependency import TaskDependency
 from .tenant import Tenant
-from .feedback import Feedback, FeedbackType
-from .artifact_feedback import ArtifactFeedback
 
 __all__ = [
     "Tenant",
@@ -18,4 +19,5 @@ __all__ = [
     "Feedback",
     "FeedbackType",
     "ArtifactFeedback",
+    "ChatMessage",
 ]
