@@ -537,20 +537,29 @@ def approve_artifact(
         Repo(tenant_id).update(
             blueprint_task.id, status="done", owner="Architect", notes="Blueprint completed"
         )
-        tasks_plan = run_planner(blueprint_md)
-        for t in tasks_plan:
-            task_obj = Task(
-                tenant_id=tenant_id,
-                purpose_id=purpose_id,
-                description=t.get("description", ""),
-                business_value=float(t.get("business_value", 1.0)),
-                tokens_plan=int(t.get("tokens_plan", 0)),
-                purpose_relevance=float(t.get("purpose_relevance", 0.0)),
-                status="todo",
-            )
-            session.add(task_obj)
-        session.commit()
-        # Mark as released only after successful blueprint + tasks
+        # Generate implementation tasks only if none exist yet (skip if an implementation plan already exists)
+        existing_task = session.exec(
+            select(Task)
+            .where(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id, Task.status != "done")
+            .where(Task.description != "Product Requirements Document")
+            .where(Task.description != "Architecture Blueprint")
+            .where(Task.description != "Architecture & Domain Review")
+        ).first()
+        if not existing_task:
+            tasks_plan = run_planner(blueprint_md)
+            for t in tasks_plan:
+                task_obj = Task(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    description=t.get("description", ""),
+                    business_value=float(t.get("business_value", 1.0)),
+                    tokens_plan=int(t.get("tokens_plan", 0)),
+                    purpose_relevance=float(t.get("purpose_relevance", 0.0)),
+                    status="todo",
+                )
+                session.add(task_obj)
+            session.commit()
+        # Mark as released only after successful blueprint (+ any tasks)
         artifact.released = True
         session.add(artifact)
         session.commit()
