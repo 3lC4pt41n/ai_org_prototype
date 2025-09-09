@@ -65,12 +65,14 @@ interface PipelineState {
   isLoading: boolean;
   paused: boolean;
   error: unknown | null;
+  activeTab: string;
   setSelectedPurpose: (id: string) => void;
   fetchPurposes: () => Promise<void>;
   fetchBacklog: () => Promise<void>;
   fetchGraphAndStatus: (purposeId: string) => Promise<void>;
   fetchArtifacts: () => Promise<void>;
   selectArtifact: (id: string) => void;
+  setActiveTab: (tab: string) => void;
   fetchArtifactContent: (artifactId: string) => Promise<void>;
   fetchFeedbacks: (artifactId: string) => Promise<void>;
   postFeedback: (artifactId: string, content: string) => Promise<void>;
@@ -95,6 +97,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   isLoading: false,
   paused: false,
   error: null,
+  activeTab: 'graph',
 
   setSelectedPurpose: (id: string) => {
     set({
@@ -103,6 +106,10 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       artifactContent: '',
       feedbacks: [],
     });
+  },
+
+  setActiveTab: (tab: string) => {
+    set({ activeTab: tab });
   },
 
   fetchPurposes: async () => {
