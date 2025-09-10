@@ -14,6 +14,7 @@ from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Artifact
 from ai_org_backend.utils.llm import chat
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from ai_org_backend.models.chat import ChatRole
 
 # Load prompt template for repository composition
 PROMPT_TMPL = load_template("repo_composer.j2")
@@ -53,7 +54,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         response = None
         error_msg = None
         try:
-            response = chat(model="o3", messages=[{"role": "user", "content": prompt}], temperature=0)
+            response = chat(model="o3", messages=[{"role": ChatRole.USER.value, "content": prompt}], temperature=0)
             content = response.choices[0].message.content
             logging.info(f"[repo_composer] LLM generated scaffold for Task {task_id}")
         except Exception as exc:

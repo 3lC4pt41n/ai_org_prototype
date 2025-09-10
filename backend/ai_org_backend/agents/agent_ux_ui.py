@@ -11,6 +11,7 @@ from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose
 from ai_org_backend.utils.llm import chat
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from ai_org_backend.models.chat import ChatRole
 
 # Load prompt template for UX/UI agent
 PROMPT_TMPL = load_template("ux_ui.j2")
@@ -70,7 +71,7 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
         model = "o3"
         for attempt in range(2):
             try:
-                response = chat(model=model, messages=[{"role": "user", "content": prompt}], temperature=0)
+                response = chat(model=model, messages=[{"role": ChatRole.USER.value, "content": prompt}], temperature=0)
                 content = response.choices[0].message.content
                 logging.info(f"[UXAgent] LLM returned design content for task {task_id} (attempt {attempt+1})")
                 error_msg = None

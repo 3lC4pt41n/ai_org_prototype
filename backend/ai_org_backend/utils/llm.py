@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover
 
 backoff = _backoff
 import openai
+from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services import budget
 
 
@@ -67,7 +68,7 @@ def chat_completion(
     **kw,
 ) -> str:
     resp = chat(
-        model=model, messages=[{"role": "user", "content": prompt}], tenant_id=tenant_id, **kw
+        model=model, messages=[{"role": ChatRole.USER.value, "content": prompt}], tenant_id=tenant_id, **kw
     )
     return (
         resp["choices"][0]["message"]["content"]

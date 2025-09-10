@@ -14,6 +14,7 @@ from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Artifact, Purpose, Task
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
+from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
@@ -79,7 +80,7 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
     prompt = PROMPT_TMPL.render(**context)
     try:
         resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             temperature=0,
             tenant_id=tenant_id,
