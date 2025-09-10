@@ -2,13 +2,7 @@ import logging
 from datetime import datetime
 
 import jwt
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -112,7 +106,7 @@ def post_chat(
         purpose_id=purpose_id,
         artifact_id=artifact_id,
         task_id=task_id,
-        role=ChatRole.USER,
+        role=ChatRole.USER.value,
         content=text,
     )
     session.add(user_msg)
@@ -178,12 +172,15 @@ def post_chat(
             except Exception as e:  # pragma: no cover - PRD update failure
                 logger.error("PRD update failed: %s", e)
             assistant_content = "Ich arbeite das ein."
-            agent_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
+            agent_content = (
+                "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf "
+                "Konsistenz mit den aktualisierten Anforderungen."
+            )
             agent_msg = ChatMessage(
                 tenant_id=tenant_id,
                 purpose_id=purpose_id,
                 artifact_id=artifact_id,
-                role=ChatRole.AGENT,
+                role=ChatRole.AGENT.value,
                 content=agent_content,
                 metadata={"betroffene_artefakte": []},
             )
@@ -237,7 +234,7 @@ def post_chat(
         purpose_id=purpose_id,
         artifact_id=artifact_id,
         task_id=task_id,
-        role=ChatRole.ASSISTANT,
+        role=ChatRole.ASSISTANT.value,
         content=assistant_content or "",
     )
     session.add(assistant_msg)
@@ -386,7 +383,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     purpose_id=purpose_id,
                     artifact_id=artifact_id,
                     task_id=None,
-                    role=ChatRole.USER,
+                    role=ChatRole.USER.value,
                     content=user_text,
                 )
                 session.add(user_msg)
@@ -481,7 +478,9 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             messages.append(
                                 {
                                     "role": "system",
-                                    "content": f"Zusammenfassung bisheriger Unterhaltung: {summary_text}",
+                                    "content": (
+                                        f"Zusammenfassung bisheriger Unterhaltung: {summary_text}"
+                                    ),
                                 }
                             )
                     for m in conv_history:
@@ -511,7 +510,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     purpose_id=purpose_id,
                     artifact_id=artifact_id,
                     task_id=None,
-                    role=ChatRole.ASSISTANT,
+                    role=ChatRole.ASSISTANT.value,
                     content=assistant_content or "",
                 )
                 session.add(assistant_msg)

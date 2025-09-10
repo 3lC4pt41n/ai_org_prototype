@@ -3,9 +3,9 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlmodel import Field, SQLModel
 import sqlalchemy as sa
 from pydantic import ConfigDict
+from sqlmodel import Field, SQLModel
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -15,6 +15,9 @@ class ChatRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
     AGENT = "agent"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class ChatMessage(SQLModel, table=True):
