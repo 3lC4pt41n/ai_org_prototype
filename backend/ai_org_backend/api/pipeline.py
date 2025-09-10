@@ -483,7 +483,7 @@ def post_artifact_feedback(
                 purpose_id=purpose.id if purpose else None,
                 artifact_id=None,
                 task_id=artifact.task_id,
-                role=ChatRole.AGENT,
+                role=ChatRole.AGENT.value,
                 content=json.dumps(impacted, ensure_ascii=False),
             )
             session.add(agent_msg)
@@ -546,7 +546,9 @@ def approve_artifact(
         # Generate implementation tasks only if none exist yet (skip if an implementation plan already exists)
         existing_task = session.exec(
             select(Task)
-            .where(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id, Task.status != "done")
+            .where(
+                Task.tenant_id == tenant_id, Task.purpose_id == purpose_id, Task.status != "done"
+            )
             .where(Task.description != "Product Requirements Document")
             .where(Task.description != "Architecture Blueprint")
             .where(Task.description != "Architecture & Domain Review")
@@ -590,7 +592,7 @@ def approve_artifact(
                         purpose_id=purpose_id,
                         artifact_id=None,
                         task_id=artifact.task_id,
-                        role=ChatRole.AGENT,
+                        role=ChatRole.AGENT.value,
                         content=json.dumps(impacted, ensure_ascii=False),
                     )
                     session.add(agent_msg)
@@ -600,9 +602,7 @@ def approve_artifact(
 
     # Include redirect info for FE if we have a blueprint artifact
     redirect_id = (
-        blueprint_artifact.id
-        if "blueprint_artifact" in locals() and blueprint_artifact
-        else None
+        blueprint_artifact.id if "blueprint_artifact" in locals() and blueprint_artifact else None
     )
     redirect_url = f"/api/artifact/{redirect_id}" if redirect_id else None
     return {

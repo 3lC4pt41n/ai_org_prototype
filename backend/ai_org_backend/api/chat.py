@@ -112,7 +112,7 @@ def post_chat(
         purpose_id=purpose_id,
         artifact_id=artifact_id,
         task_id=task_id,
-        role=ChatRole.USER,
+        role=ChatRole.USER.value,
         content=text,
     )
     session.add(user_msg)
@@ -183,7 +183,7 @@ def post_chat(
                 tenant_id=tenant_id,
                 purpose_id=purpose_id,
                 artifact_id=artifact_id,
-                role=ChatRole.AGENT,
+                role=ChatRole.AGENT.value,
                 content=agent_content,
                 metadata={"betroffene_artefakte": []},
             )
@@ -237,7 +237,7 @@ def post_chat(
         purpose_id=purpose_id,
         artifact_id=artifact_id,
         task_id=task_id,
-        role=ChatRole.ASSISTANT,
+        role=ChatRole.ASSISTANT.value,
         content=assistant_content or "",
     )
     session.add(assistant_msg)
@@ -386,7 +386,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     purpose_id=purpose_id,
                     artifact_id=artifact_id,
                     task_id=None,
-                    role=ChatRole.USER,
+                    role=ChatRole.USER.value,
                     content=user_text,
                 )
                 session.add(user_msg)
@@ -511,7 +511,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     purpose_id=purpose_id,
                     artifact_id=artifact_id,
                     task_id=None,
-                    role=ChatRole.ASSISTANT,
+                    role=ChatRole.ASSISTANT.value,
                     content=assistant_content or "",
                 )
                 session.add(assistant_msg)
