@@ -176,48 +176,59 @@ async def orchestrator() -> None:
             await asyncio.sleep(2)
             continue
 
-        # 2️⃣ Check for new Purposes to plan (Planner now invoked by Orchestrator)
-        with Session(engine) as session:
-            purposes = session.exec(
-                select(Purpose).where(Purpose.tenant_id == TENANT, Purpose.is_active)
-            ).all()
+        # 2️⃣ Check for new Purposes to plan (freigegebene Artefakte triggern nächste Schritte)
+        #    (Manual mode wartet bis Artefakt freigegeben, Auto mode fährt direkt fort)
+        try:
+            with Session(engine) as session:
+                purposes = session.exec(
+                    select(Purpose).where(Purpose.tenant_id == TENANT, Purpose.is_active)
+                ).all()
+                purpose_to_process = None
+                for p in purposes:
+                    # Skip if this purpose is individually paused
+                    if pool.get(f"pause:{TENANT}:{p.id}"):
+                        continue
+                    prd_task = session.exec(
+                        select(Task).where(
+                            Task.purpose_id == p.id,
+                            Task.description.ilike("Product Requirements Document"),
+                            Task.status == TaskStatus.DONE,
+                        )
+                    ).first()
+                    blueprint_task = session.exec(
+                        select(Task).where(
+                            Task.purpose_id == p.id, Task.description == "Architecture Blueprint"
+                        )
+                    ).first()
+                    next_task = session.exec(
+                        select(Task)
+                        .where(Task.purpose_id == p.id, Task.status != TaskStatus.DONE)
+                        .where(
+                            Task.description != "Product Requirements Document",
+                            Task.description != "Architecture Blueprint",
+                            Task.description != "Architecture & Domain Review",
+                        )
+                    ).first()
+                    # Wenn PRD fertig und noch kein Architektur-Blueprint existiert:
+                    if prd_task and not blueprint_task and not next_task:
+                        if p.mode == "manual":
+                            # Im Manual-Modus weiter nur nach Nutzer-Freigabe des PRD-Artefakts
+                            prd_art = session.exec(
+                                select(Artifact).where(Artifact.task_id == prd_task.id)
+                            ).first()
+                            if not prd_art or not prd_art.released:
+                                continue  # PRD zwar fertig, aber noch nicht freigegeben → warten
+                        # Purpose ohne Architektur gefunden, Architekturplanung starten
+                        purpose_to_process = p
+                        break
+        except Exception as e:
+            logging.error("Orchestrator: failed to query purposes for planning: %s", e)
             purpose_to_process = None
-            for p in purposes:
-                # Skip if this purpose is individually paused
-                if pool.get(f"pause:{TENANT}:{p.id}"):
-                    continue
-                prd_task = session.exec(
-                    select(Task).where(
-                        Task.purpose_id == p.id,
-                        Task.description.ilike("Product Requirements Document"),
-                        Task.status == TaskStatus.DONE,
-                    )
-                ).first()
-                blueprint_task = session.exec(
-                    select(Task).where(
-                        Task.purpose_id == p.id, Task.description == "Architecture Blueprint"
-                    )
-                ).first()
-                next_task = session.exec(
-                    select(Task)
-                    .where(Task.purpose_id == p.id, Task.status != TaskStatus.DONE)
-                    .where(
-                        Task.description != "Product Requirements Document",
-                        Task.description != "Architecture Blueprint",
-                        Task.description != "Architecture & Domain Review",
-                    )
-                ).first()
-                if prd_task and not blueprint_task and not next_task:
-                    if p.mode == "manual":
-                        # In manual mode, wait for user approval (PRD artefact released)
-                        prd_art = session.exec(
-                            select(Artifact).where(Artifact.task_id == prd_task.id)
-                        ).first()
-                        if not prd_art or not prd_art.released:
-                            continue
-                    purpose_to_process = p
-                    break
         if purpose_to_process:
+            logging.info(
+                "[Orchestrator] Detected approved PRD for purpose %s. Starting Architect...",
+                purpose_to_process.id,
+            )
             try:
                 await asyncio.to_thread(_generate_plan_for_purpose, purpose_to_process.id)
             except Exception as e:
