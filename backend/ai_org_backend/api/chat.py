@@ -2,13 +2,7 @@ import logging
 from datetime import datetime
 
 import jwt
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -178,7 +172,10 @@ def post_chat(
             except Exception as e:  # pragma: no cover - PRD update failure
                 logger.error("PRD update failed: %s", e)
             assistant_content = "Ich arbeite das ein."
-            agent_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
+            agent_content = (
+                "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf "
+                "Konsistenz mit den aktualisierten Anforderungen."
+            )
             agent_msg = ChatMessage(
                 tenant_id=tenant_id,
                 purpose_id=purpose_id,
@@ -481,7 +478,9 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             messages.append(
                                 {
                                     "role": "system",
-                                    "content": f"Zusammenfassung bisheriger Unterhaltung: {summary_text}",
+                                    "content": (
+                                        f"Zusammenfassung bisheriger Unterhaltung: {summary_text}"
+                                    ),
                                 }
                             )
                     for m in conv_history:

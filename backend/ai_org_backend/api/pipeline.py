@@ -543,7 +543,8 @@ def approve_artifact(
             .where(Artifact.task_id == blueprint_task.id)
             .order_by(Artifact.created_at.desc())
         ).first()
-        # Generate implementation tasks only if none exist yet (skip if an implementation plan already exists)
+        # Generate implementation tasks only if none exist yet
+        # (skip if an implementation plan already exists)
         existing_task = session.exec(
             select(Task)
             .where(
