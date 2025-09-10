@@ -1,4 +1,4 @@
-'''mermaid
+```mermaid
 sequenceDiagram
     participant U as User (Frontend)
     participant API as FastAPI Backend
@@ -56,4 +56,4 @@ sequenceDiagram
     U->>API: GET /api/project.zip (when all done):contentReference[oaicite:138]{index=138}
     API->>PG: Gather all artifacts for tenant
     API-->>U: ZIP file download of project artifacts
-'''
+```
