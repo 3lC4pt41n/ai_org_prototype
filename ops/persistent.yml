@@ -54,10 +54,9 @@ services:
     env_file:
       - ../.env
     command: >
-      sh -c "celery -A ai_org_backend.tasks.celery_app worker \
-         -Q ${TENANT}:architect \
-         -l INFO -P solo"
-
+      exec celery -A ai_org_backend.tasks.celery_app worker
+           -Q ${TENANT}:architect
+           -l INFO -P solo
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_APP=ai_org_backend.tasks.celery_app
