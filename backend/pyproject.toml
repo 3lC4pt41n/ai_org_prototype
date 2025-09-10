@@ -31,7 +31,8 @@ dependencies = [
   "readability-lxml>=0.8.1",
   "lxml_html_clean>=0.2.0,<0.3",
   "passlib[bcrypt]==1.7.4",
-  "bcrypt<4.0.0"
+  "bcrypt<4.0.0",
+  "websockets"
 ]
 
 [project.optional-dependencies]
