@@ -51,17 +51,15 @@ sequenceDiagram
 ```
 ```mermaid
 flowchart TB
-    %% Entities
     U[User (Frontend)]
     API[FastAPI Backend]
     ORCH[Orchestrator (Scheduler)]
     W[Celery Worker (Agent)]
     LLM[LLM API (OpenAI)]
-    PG[(Postgres: Tasks DB)]
-    G[(Neo4j: Graph DB)]
-    R[(Redis: Broker & Budget Cache)]
+    PG[Postgres - Tasks DB]
+    G[Neo4j - Graph DB]
+    R[Redis - Broker & Budget Cache]
 
-    %% Flow
     U -->|New project| API
     API -->|Insert| PG
     API -->|Set budget| R
