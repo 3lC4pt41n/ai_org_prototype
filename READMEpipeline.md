@@ -51,6 +51,7 @@ sequenceDiagram
 ```
 ```mermaid
 flowchart TB
+
     U[User (Frontend)]
     API[FastAPI Backend]
     ORCH[Orchestrator (Scheduler)]
@@ -91,4 +92,5 @@ flowchart TB
     U -->|Download project| API
     API -->|Gather artifacts| PG
     API -->|ZIP result| U
+
 ```
