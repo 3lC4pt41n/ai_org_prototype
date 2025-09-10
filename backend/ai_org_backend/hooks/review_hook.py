@@ -17,7 +17,7 @@ from typing import Optional
 
 from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, TaskDependency
+from ai_org_backend.models import Purpose, Task, TaskDependency
 from ai_org_backend.services import storage as _storage
 
 # Keep original pointer so we can call it
@@ -131,6 +131,11 @@ def _maybe_trigger_review(task_id: str, filename: str) -> None:
             return
         tenant_id = task.tenant_id
         purpose_id = task.purpose_id
+        # Skip review gating if purpose is in auto mode (no manual approval needed)
+        purpose = s.get(Purpose, purpose_id)
+        if purpose and purpose.mode == "auto":
+            logging.info("[ReviewHook] Purpose %s in auto mode, skipping review gate", purpose_id)
+            return
 
         # Create or reuse review task
         review_task = _ensure_review_task(tenant_id, purpose_id)
