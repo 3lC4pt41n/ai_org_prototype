@@ -49,3 +49,48 @@ sequenceDiagram
     API-->>U: Return ZIP download
 
 ```
+```mermaid
+flowchart TB
+    %% Entities
+    U[User (Frontend)]
+    API[FastAPI Backend]
+    ORCH[Orchestrator (Scheduler)]
+    W[Celery Worker (Agent)]
+    LLM[LLM API (OpenAI)]
+    PG[(Postgres: Tasks DB)]
+    G[(Neo4j: Graph DB)]
+    R[(Redis: Broker & Budget Cache)]
+
+    %% Flow
+    U -->|New project| API
+    API -->|Insert| PG
+    API -->|Set budget| R
+    API -->|Generate PRD| LLM
+    API -->|Save PRD Artifact| PG
+
+    U -->|Approve PRD| API
+    API -->|Generate Architecture| LLM
+    API -->|Save Blueprint| PG
+    API -->|Generate Plan (tasks)| LLM
+    API -->|Save Tasks & Deps| PG
+    API -->|Ingest Graph| G
+    API -->|Activate Purpose| R
+
+    ORCH -->|Query ready tasks| G
+    ORCH -->|Fetch task details| PG
+    ORCH -->|Check budget| R
+    ORCH -->|Dispatch task| R
+    R -->|Deliver task| W
+
+    W -->|Execute| LLM
+    W -->|Save Artifact| PG
+    W -->|Update status| PG
+    ORCH -->|Update graph| G
+
+    U -->|Check status| API
+    API -->|Query tasks| PG
+    API -->|Return graph/status| U
+    U -->|Download project| API
+    API -->|Gather artifacts| PG
+    API -->|ZIP result| U
+```
