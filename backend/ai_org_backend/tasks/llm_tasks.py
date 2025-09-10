@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ai_org_backend.orchestrator.inspector import insights_generated_total
 from ai_org_backend.utils.llm import chat, chat_completion
+from ai_org_backend.models.chat import ChatRole
 from celery import shared_task
 from jinja2 import Template
 
@@ -34,7 +35,7 @@ def insight_agent(tenant: str, task_id: str) -> None:
     def _ask_llm(p: str):
         return chat(
             model="o3",
-            messages=[{"role": "user", "content": p}],
+            messages=[{"role": ChatRole.USER.value, "content": p}],
             max_tokens=500,
             temperature=0,
             tenant_id=tenant,
