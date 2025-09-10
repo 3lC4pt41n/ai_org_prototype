@@ -94,3 +94,46 @@ flowchart TB
     API --> U
 
 ```
+
+```mermaid
+flowchart TB
+    U[User] -->|Start / Approve / Feedback| API
+    API --> ORCH
+
+    subgraph ORCH[Orchestrator]
+        O1[Check Mode (auto/manual)]
+        O2[Create PRD Task]
+        O3[Architect Agent]
+        O4[Planner Agent]
+        O5[Schedule Tasks]
+    end
+
+    subgraph Agents[Celery Workers]
+        PO[ProductOwner]
+        AR[Architect]
+        PL[Planner]
+        DEV[Developer]
+        QA[QA]
+        UX[UX/UI]
+    end
+
+    ORCH -->|delegate| PO
+    ORCH -->|delegate| AR
+    ORCH -->|delegate| PL
+    ORCH -->|dispatch tasks| DEV
+    ORCH -->|dispatch tasks| QA
+    ORCH -->|dispatch tasks| UX
+
+    ORCH --> PG[(Postgres Tasks)]
+    ORCH --> G[(Neo4j Graph)]
+    ORCH --> R[(Redis Budget/Queue)]
+
+    DEV -->|write artifacts| PG
+    QA -->|update results| PG
+    UX -->|design files| PG
+
+    ORCH -->|update| API
+    API --> U
+
+
+```
