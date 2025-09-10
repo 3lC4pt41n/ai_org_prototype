@@ -220,3 +220,5 @@ vine==5.1.0
     #   kombu
 wcwidth==0.2.13
     # via prompt-toolkit
+websockets==15.0.1
+    # via ai_org_backend (backend/pyproject.toml)

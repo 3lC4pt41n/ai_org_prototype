@@ -4,18 +4,20 @@ import asyncio
 import logging
 import time
 
+from sqlmodel import Session, func, select
+
 from ai_org_backend.db import engine
 from ai_org_backend.main import (
     BUDGET_GA,
     DEFAULT_BUDGET,
     TOKEN_PRICE_PER_1000,
     Repo,
+    budget_left,
     celery,
     debit,
-    budget_left,
     pool,
 )
-from ai_org_backend.models import Task, TaskStatus, TaskDependency
+from ai_org_backend.models import Task, TaskDependency, TaskStatus
 from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
     CRIT_Q,
@@ -32,7 +34,6 @@ from ai_org_backend.orchestrator.inspector import (
     todo_count,
 )
 from ai_org_backend.orchestrator.router import classify_role
-from sqlmodel import Session, func, select
 
 # ╭────────────────── Retry settings ──────────────────╮
 MAX_RETRIES = 2  # total automatic attempts
@@ -45,7 +46,7 @@ def _retry_failed_tasks() -> None:
     with Session(engine) as db:
         q = select(Task).where(Task.status == "failed", Task.retries < MAX_RETRIES)
         for t in db.exec(q):
-            age = now - t.updated_at.timestamp()
+            age = now - t.created_at.timestamp()
             if age < RETRY_DELAY_S:
                 continue
 
