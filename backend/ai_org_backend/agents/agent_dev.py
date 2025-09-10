@@ -14,6 +14,7 @@ from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, Purpose, TaskDependency, Tenant
 from ai_org_backend.services.llm_client import chat_with_tools, MODEL_DEFAULT, MODEL_THINKING
+from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.deep_research import run_deep_research
 from ai_org_backend.orchestrator.inspector import (
     PROM_TASK_FAILED,
@@ -98,7 +99,7 @@ def agent_dev(tid: str, task_id: str) -> None:
         for attempt in range(MAX_AGENT_RETRIES + 1):
             try:
                 response = chat_with_tools(
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": ChatRole.USER.value, "content": prompt}],
                     model=model,
                     temperature=0,
                     tenant_id=tid,

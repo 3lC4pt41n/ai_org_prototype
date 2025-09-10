@@ -16,6 +16,7 @@ from ai_org_backend.models import Purpose, Task
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.llm_client import chat_with_tools, MODEL_PRO
 from ai_org_backend.tasks.celery_app import celery
+from ai_org_backend.models.chat import ChatRole
 
 # Small metrics parity (keeps style with other agents)
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -52,7 +53,7 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
         prompt = PROMPT_TMPL.render(**ctx)
         start = time.time()
         try:
-            resp = _call_llm([{"role": "user", "content": prompt}], tenant_id=purpose.tenant_id)
+            resp = _call_llm([{"role": ChatRole.USER.value, "content": prompt}], tenant_id=purpose.tenant_id)
             REVIEW_RUNS.inc()
             if not resp:
                 return "⚠️ Budget exhausted or LLM unavailable; unable to generate review."

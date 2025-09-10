@@ -4,9 +4,15 @@ import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson } from '../lib/api';
 
+enum ChatRole {
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  AGENT = 'agent',
+}
+
 interface Message {
   id: string;
-  role: string;
+  role: ChatRole;
   content: string;
   author?: string;
   created_at?: string;
@@ -88,7 +94,7 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
     if (!text.trim() || loading) return;
     const userMsg: Message = {
       id: Math.random().toString(36).slice(2, 10),
-      role: 'user',
+      role: ChatRole.USER,
       content: text,
       author: 'You',
       created_at: new Date().toISOString(),
@@ -149,14 +155,14 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
           <div
             key={m.id}
             className={`my-1 max-w-[80%] p-2 rounded text-sm ${
-              m.role === 'user'
+              m.role === ChatRole.USER
                 ? 'bg-blue-100 text-blue-900 ml-auto'
-                : m.role === 'agent'
+                : m.role === ChatRole.AGENT
                 ? 'bg-gray-100 text-gray-800 mr-auto ml-4 border-l-4 border-blue-400'
                 : 'bg-gray-100 text-gray-800 mr-auto'
             }`}
           >
-            {m.role === 'agent' ? (
+            {m.role === ChatRole.AGENT ? (
               (() => {
                 try {
                   const data = JSON.parse(m.content);

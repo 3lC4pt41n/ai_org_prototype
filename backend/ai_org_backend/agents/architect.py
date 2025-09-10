@@ -14,6 +14,7 @@ from ai_org_backend.services.llm_client import chat_with_tools, MODEL_PRO
 from ai_org_backend.services.deep_research import run_deep_research
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.models.chat import ChatRole
 
 
 ARCHITECT_RUNS = prom_counter("ai_architect_runs_total", "Architect executions")
@@ -54,7 +55,7 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
     start = time.time()
     try:
         resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             tenant_id=tenant_id,
             usage_label="architect",
@@ -93,7 +94,7 @@ def run_architect_feedback(purpose: Purpose, feedback: str, current_blueprint: s
     start = time.time()
     try:
         resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             tenant_id=tenant_id,
             usage_label="architect_feedback",

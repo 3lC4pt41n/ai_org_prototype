@@ -20,6 +20,7 @@ from googleapiclient.discovery import build
 
 from .llm_client import MODEL_PRO, MODEL_THINKING, chat_with_tools
 from .url_safety import is_url_safe
+from ai_org_backend.models.chat import ChatRole
 
 MAX_STEPS = int(os.getenv("DEEPRESEARCH_MAX_STEPS", "8"))
 MAX_BYTES = int(os.getenv("DEEPRESEARCH_MAX_FETCH_BYTES", "3000000"))
@@ -109,7 +110,7 @@ def run_deep_research(
                 "Always include a final 'Sources' list with the top URLs you used."
             ),
         },
-        {"role": "user", "content": question},
+        {"role": ChatRole.USER.value, "content": question},
     ]
     used_sources: Dict[str, Dict[str, str]] = {}
 
@@ -125,7 +126,7 @@ def run_deep_research(
         msg = choice["message"]
         tool_calls = msg.get("tool_calls") or []
         if tool_calls:
-            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+            messages.append({"role": ChatRole.ASSISTANT.value, "content": msg.get("content") or "", "tool_calls": tool_calls})
             for call in tool_calls:
                 fn = call["function"]["name"]
                 args = json.loads(call["function"].get("arguments") or "{}")
