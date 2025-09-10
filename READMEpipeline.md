@@ -52,45 +52,45 @@ sequenceDiagram
 ```mermaid
 flowchart TB
 
-    U[User (Frontend)]
-    API[FastAPI Backend]
-    ORCH[Orchestrator (Scheduler)]
-    W[Celery Worker (Agent)]
-    LLM[LLM API (OpenAI)]
-    PG[Postgres - Tasks DB]
-    G[Neo4j - Graph DB]
-    R[Redis - Broker & Budget Cache]
+    U[User]
+    API[Backend API]
+    ORCH[Orchestrator]
+    W[Worker Agent]
+    LLM[LLM Service]
+    PG[Postgres DB]
+    G[Neo4j DB]
+    R[Redis Broker]
 
-    U -->|New project| API
-    API -->|Insert| PG
-    API -->|Set budget| R
-    API -->|Generate PRD| LLM
-    API -->|Save PRD Artifact| PG
+    U --> API
+    API --> PG
+    API --> R
+    API --> LLM
+    API --> PG
 
-    U -->|Approve PRD| API
-    API -->|Generate Architecture| LLM
-    API -->|Save Blueprint| PG
-    API -->|Generate Plan (tasks)| LLM
-    API -->|Save Tasks & Deps| PG
-    API -->|Ingest Graph| G
-    API -->|Activate Purpose| R
+    U --> API
+    API --> LLM
+    API --> PG
+    API --> LLM
+    API --> PG
+    API --> G
+    API --> R
 
-    ORCH -->|Query ready tasks| G
-    ORCH -->|Fetch task details| PG
-    ORCH -->|Check budget| R
-    ORCH -->|Dispatch task| R
-    R -->|Deliver task| W
+    ORCH --> G
+    ORCH --> PG
+    ORCH --> R
+    ORCH --> R
+    R --> W
 
-    W -->|Execute| LLM
-    W -->|Save Artifact| PG
-    W -->|Update status| PG
-    ORCH -->|Update graph| G
+    W --> LLM
+    W --> PG
+    W --> PG
+    ORCH --> G
 
-    U -->|Check status| API
-    API -->|Query tasks| PG
-    API -->|Return graph/status| U
-    U -->|Download project| API
-    API -->|Gather artifacts| PG
-    API -->|ZIP result| U
+    U --> API
+    API --> PG
+    API --> U
+    U --> API
+    API --> PG
+    API --> U
 
 ```
