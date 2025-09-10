@@ -74,6 +74,8 @@ services:
       - NEO4J_USER=${NEO4J_USER}
       - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
     ports:
       - "8000:8000"
     depends_on:
@@ -108,7 +110,8 @@ services:
       - NEO4J_USER=${NEO4J_USER}
       - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
-      - TENANT=demo
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,6 +188,8 @@ services:
       - NEO4J_USER=${NEO4J_USER}
       - NEO4J_PASS=${NEO4J_PASS}
       - QDRANT_URL=http://qdrant:6333
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
       - API_BASE_URL=http://ai-app:8000
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true

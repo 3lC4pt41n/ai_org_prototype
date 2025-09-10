@@ -128,6 +128,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
       - API_BASE_URL=http://ai-app:8000
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
@@ -167,6 +169,8 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - ALGORITHM=${ALGORITHM}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
     ports:
         - "8000:8000"
     healthcheck:
@@ -207,7 +211,8 @@ services:
       - QDRANT_URL=http://qdrant:6333
       # explizit injizieren – garantiert, auch ohne env_file
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=demo
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME="Tim Mergenthaler"
     depends_on:
       postgres:
         condition: service_healthy
