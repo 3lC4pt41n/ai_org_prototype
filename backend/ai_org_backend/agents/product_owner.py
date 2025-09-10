@@ -8,6 +8,7 @@ from ai_org_backend.models import Purpose
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.db import SessionLocal
+from ai_org_backend.models.chat import ChatRole
 
 from .utils import load_template
 
@@ -40,7 +41,7 @@ def run_requirements(purpose: Purpose) -> str:
     start_time = time.time()
     try:
         resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             tenant_id=tenant_id,
             usage_label="requirements",
@@ -72,7 +73,7 @@ def run_requirements_feedback(purpose: Purpose, feedback: str, current_prd: str)
     start_time = time.time()
     try:
         resp = chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             tenant_id=tenant_id,
             usage_label="requirements_feedback",

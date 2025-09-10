@@ -11,6 +11,7 @@ from .utils import load_template
 
 from ai_org_backend.utils.llm import chat
 from ai_org_backend.metrics import prom_counter, prom_hist
+from ai_org_backend.models.chat import ChatRole
 
 
 PLANNER_RUNS = prom_counter("ai_planner_runs_total", "Planner executions")
@@ -57,7 +58,7 @@ def run_planner(blueprint: str) -> list[dict]:
     for attempt in range(MAX_AGENT_RETRIES + 1):
         start = time.time()
         try:
-            resp = chat(model=model, messages=[{"role": "user", "content": prompt}])
+            resp = chat(model=model, messages=[{"role": ChatRole.USER.value, "content": prompt}])
             PLANNER_RUNS.inc()
         finally:
             PLANNER_LATENCY.observe(time.time() - start)

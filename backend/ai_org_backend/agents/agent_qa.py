@@ -13,6 +13,7 @@ from ai_org_backend.services.testing import run_tests
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
 from sqlmodel import select
+from ai_org_backend.models.chat import ChatRole
 
 from .utils import load_template
 
@@ -175,7 +176,7 @@ def agent_qa(tid: str, task_id: str) -> None:
             try:
                 response = chat(
                     model=model,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": ChatRole.USER.value, "content": prompt}],
                     temperature=0,
                 )
                 content = response.choices[0].message.content
