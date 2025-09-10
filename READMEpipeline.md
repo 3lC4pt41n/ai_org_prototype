@@ -137,3 +137,43 @@ flowchart TB
 
 
 ```
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as FastAPI API
+    participant ORCH as Orchestrator
+    participant AG as Agents (PRD/Architect/Planner/Workers)
+
+    Note over U,ORCH: 🔹 Purpose Creation (gleich in beiden Modi)
+    U->>API: POST /api/purposes (mode=manual|auto)
+    API->>ORCH: Create Purpose entry
+    ORCH->>AG: ProductOwner Agent → PRD
+    AG-->>ORCH: PRD artifact
+    ORCH-->>API: PRD status available
+
+    alt Manual Mode
+        Note over ORCH: Wait after Architecture
+        ORCH->>AG: Architect Agent → Architecture Blueprint
+        AG-->>ORCH: Blueprint artifact
+        ORCH-->>API: Blueprint ready, but paused
+        U->>API: POST /api/artifacts/{id}/approve
+        API->>ORCH: Approval received
+        ORCH->>AG: Planner Agent (with Purpose + PRD + Arch)
+        AG-->>ORCH: Task list
+        ORCH->>AG: Dispatch Worker tasks
+        AG-->>ORCH: Artifacts, status updates
+    else Auto Mode
+        Note over ORCH: No pause – continue automatically
+        ORCH->>AG: Architect Agent → Architecture Blueprint
+        AG-->>ORCH: Blueprint artifact
+        ORCH->>AG: Planner Agent (with Purpose + PRD + Arch)
+        AG-->>ORCH: Task list
+        ORCH->>AG: Dispatch Worker tasks
+        AG-->>ORCH: Artifacts, status updates
+    end
+
+    Note over ORCH,U: Tasks complete → API allows graph & ZIP download
+    U->>API: GET /api/graph /project.zip
+    API-->>U: Project status + artifacts
+    
+```
