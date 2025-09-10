@@ -14,7 +14,6 @@ from ai_org_backend.models import Artifact, ArtifactFeedback, Purpose, Task, Tas
 from ai_org_backend.models.chat import ChatMessage, ChatRole
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
-from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services import budget as budget_svc
 from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_artefact, vector_store
 
@@ -163,7 +162,9 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             select(Purpose).where(Purpose.name == name, Purpose.tenant_id == tenant_id)
         ).first()
         if not purpose:
-            purpose = Purpose(name=name, tenant_id=tenant_id)
+            purpose = Purpose(
+                name=name, tenant_id=tenant_id, mode=payload.get("mode", "manual")
+            )  # Set mode (default "manual")
             session.add(purpose)
             session.commit()
             session.refresh(purpose)
@@ -510,106 +511,15 @@ def approve_artifact(
     purpose_id = task.purpose_id
     if artifact.released:
         raise HTTPException(status_code=409, detail="Artifact already released")
-
+    # Mark artifact as released to signal the Orchestrator to continue planning
+    artifact.released = True
+    session.add(artifact)
+    session.commit()
     try:
-        from ai_org_backend.agents.architect import run_architect
-        from ai_org_backend.agents.planner import run_planner
-
-        purpose_ref = Purpose(id=purpose_id)
-        blueprint_md = run_architect(purpose_ref)
-        blueprint_task = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose_id,
-            description="Architecture Blueprint",
-            status="done",
-        )
-        session.add(blueprint_task)
-        session.commit()
-        session.refresh(blueprint_task)
-
-        save_artefact(
-            blueprint_task.id,
-            blueprint_md.encode("utf-8"),
-            filename="blueprints/architecture_blueprint.md",
-            media_type="text/markdown",
-            allow_overwrite=True,
-        )
-        Repo(tenant_id).update(
-            blueprint_task.id, status="done", owner="Architect", notes="Blueprint completed"
-        )
-        # Resolve the just-created blueprint artifact for FE redirect
-        blueprint_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task_id == blueprint_task.id)
-            .order_by(Artifact.created_at.desc())
-        ).first()
-        # Generate implementation tasks only if none exist yet (skip if an implementation plan already exists)
-        existing_task = session.exec(
-            select(Task)
-            .where(
-                Task.tenant_id == tenant_id, Task.purpose_id == purpose_id, Task.status != "done"
-            )
-            .where(Task.description != "Product Requirements Document")
-            .where(Task.description != "Architecture Blueprint")
-            .where(Task.description != "Architecture & Domain Review")
-        ).first()
-        if not existing_task:
-            tasks_plan = run_planner(blueprint_md)
-            for t in tasks_plan:
-                task_obj = Task(
-                    tenant_id=tenant_id,
-                    purpose_id=purpose_id,
-                    description=t.get("description", ""),
-                    business_value=float(t.get("business_value", 1.0)),
-                    tokens_plan=int(t.get("tokens_plan", 0)),
-                    purpose_relevance=float(t.get("purpose_relevance", 0.0)),
-                    status="todo",
-                )
-                session.add(task_obj)
-            session.commit()
-        # Mark as released only after successful blueprint (+ any tasks)
-        artifact.released = True
-        session.add(artifact)
-        session.commit()
-        logger.info("Artifact %s released for tenant %s", artifact_id, tenant_id)
-        try:
-            ingest(tenant_id)
-        except Exception as e:  # pragma: no cover - logging only
-            logger.warning("Neo4j ingest failed: %s", e)
-    except Exception as e:  # pragma: no cover - logging only
-        logger.error("Blueprint generation failed: %s", e)
-    finally:
-        try:
-            pool.delete(f"pause:{tenant_id}:{purpose_id}")
-        except Exception as e:  # pragma: no cover - logging only
-            logger.error("Redis delete failed: %s", e)
-        if artifact.released:
-            try:
-                impacted = consistency_check(artifact, session)
-                if impacted:
-                    agent_msg = ChatMessage(
-                        tenant_id=tenant_id,
-                        purpose_id=purpose_id,
-                        artifact_id=None,
-                        task_id=artifact.task_id,
-                        role=ChatRole.AGENT.value,
-                        content=json.dumps(impacted, ensure_ascii=False),
-                    )
-                    session.add(agent_msg)
-                    session.commit()
-            except Exception as e:
-                logger.error("Consistency check failed: %s", e)
-
-    # Include redirect info for FE if we have a blueprint artifact
-    redirect_id = (
-        blueprint_artifact.id if "blueprint_artifact" in locals() and blueprint_artifact else None
-    )
-    redirect_url = f"/api/artifact/{redirect_id}" if redirect_id else None
-    return {
-        "status": "approved",
-        "artifact_redirect_id": redirect_id,
-        "artifact_redirect_url": redirect_url,
-    }
+        pool.delete(f"pause:{tenant_id}:{purpose_id}")
+    except Exception:
+        logger.error("Redis delete failed: could not resume purpose %s", purpose_id)
+    return {"status": "approved"}
 
 
 @router.get("/artifact/{artifact_id}", tags=["artifacts"])

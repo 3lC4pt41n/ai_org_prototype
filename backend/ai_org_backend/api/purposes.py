@@ -111,3 +111,24 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
     except Exception:
         pass
     return {"status": "started"}
+
+
+@router.patch("/{purpose_id}")
+def update_purpose(
+    purpose_id: str, payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    """Update a Purpose (toggle mode auto/manual)."""
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        purpose = session.get(Purpose, purpose_id)
+        if not purpose or purpose.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+        new_mode = payload.get("mode")
+        if new_mode:
+            if new_mode not in ("auto", "manual"):
+                raise HTTPException(status_code=400, detail="Invalid mode value")
+            purpose.mode = new_mode
+        session.add(purpose)
+        session.commit()
+        session.refresh(purpose)
+    return {"purpose_id": purpose.id, "mode": purpose.mode}
