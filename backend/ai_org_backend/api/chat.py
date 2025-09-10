@@ -217,8 +217,8 @@ def post_chat(
                 )
         for m in conv_history:
             role = m.role.value if hasattr(m, "role") else str(m.role)
-            if role not in ("user", "assistant"):
-                role = "assistant"
+            if role not in (ChatRole.USER.value, ChatRole.ASSISTANT.value):
+                role = ChatRole.ASSISTANT.value
             messages.append({"role": role, "content": m.content})
 
         try:
@@ -268,15 +268,15 @@ def post_chat(
                     role = m.role.value if hasattr(m, "role") else str(m.role)
                     author = (
                         "Nutzer"
-                        if role == "user"
-                        else ("AImar" if role == "assistant" else "Agent")
+                        if role == ChatRole.USER.value
+                        else ("AImar" if role == ChatRole.ASSISTANT.value else "Agent")
                     )
                     conv_text += f"{author}: {m.content}\n"
                 prompt = f"Fasse die folgende Unterhaltung zusammen:\n{conv_text}"
                 try:
                     resp_summary = llm.chat(
                         model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=[{"role": ChatRole.USER.value, "content": prompt}],
                         tenant_id=tenant_id,
                     )
                     summary_text = (
@@ -303,15 +303,15 @@ def post_chat(
                     role = m.role.value if hasattr(m, "role") else str(m.role)
                     author = (
                         "Nutzer"
-                        if role == "user"
-                        else ("AImar" if role == "assistant" else "Agent")
+                        if role == ChatRole.USER.value
+                        else ("AImar" if role == ChatRole.ASSISTANT.value else "Agent")
                     )
                     conv_text += f"{author}: {m.content}\n"
                 prompt = f"Fasse die folgende Unterhaltung zusammen:\n{conv_text}"
                 try:
                     resp_summary = llm.chat(
                         model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=[{"role": ChatRole.USER.value, "content": prompt}],
                         tenant_id=tenant_id,
                     )
                     summary_text = (
@@ -486,8 +486,8 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             )
                     for m in conv_history:
                         role = m.role.value if hasattr(m, "role") else str(m.role)
-                        if role not in ("user", "assistant"):
-                            role = "assistant"
+                        if role not in (ChatRole.USER.value, ChatRole.ASSISTANT.value):
+                            role = ChatRole.ASSISTANT.value
                         messages.append({"role": role, "content": m.content})
                     try:
                         resp = await run_in_threadpool(
@@ -552,8 +552,8 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                 role = m.role.value if hasattr(m, "role") else str(m.role)
                                 author = (
                                     "Nutzer"
-                                    if role == "user"
-                                    else ("AImar" if role == "assistant" else "Agent")
+                                    if role == ChatRole.USER.value
+                                    else ("AImar" if role == ChatRole.ASSISTANT.value else "Agent")
                                 )
                                 conv_text += f"{author}: {m.content}\n"
                             prompt = f"Fasse die folgende Unterhaltung zusammen:\n{conv_text}"
@@ -561,7 +561,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                 resp_summary = await run_in_threadpool(
                                     llm.chat,
                                     model="gpt-3.5-turbo",
-                                    messages=[{"role": "user", "content": prompt}],
+                                    messages=[{"role": ChatRole.USER.value, "content": prompt}],
                                     tenant_id=tenant_id,
                                 )
                                 summary_text = (
@@ -590,8 +590,8 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                 role = m.role.value if hasattr(m, "role") else str(m.role)
                                 author = (
                                     "Nutzer"
-                                    if role == "user"
-                                    else ("AImar" if role == "assistant" else "Agent")
+                                    if role == ChatRole.USER.value
+                                    else ("AImar" if role == ChatRole.ASSISTANT.value else "Agent")
                                 )
                                 conv_text += f"{author}: {m.content}\n"
                             prompt = f"Fasse die folgende Unterhaltung zusammen:\n{conv_text}"
@@ -599,7 +599,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                 resp_summary = await run_in_threadpool(
                                     llm.chat,
                                     model="gpt-3.5-turbo",
-                                    messages=[{"role": "user", "content": prompt}],
+                                    messages=[{"role": ChatRole.USER.value, "content": prompt}],
                                     tenant_id=tenant_id,
                                 )
                                 summary_text = (
