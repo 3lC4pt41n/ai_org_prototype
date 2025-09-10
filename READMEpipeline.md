@@ -8,52 +8,44 @@ sequenceDiagram
     participant R as Redis (Broker & Cache)
     participant W as Celery Worker (Agent)
     participant LLM as LLM API (OpenAI)
-    Note over U,API: **1. Project Initialization**
+
+    Note over U,API: 1. Project Initialization
     U->>API: POST /api/purposes (new project goal)
-    API->>PG: Insert Purpose (project record)
-    API->>R: Set initial budget hash for project
-    API->>LLM: (ProductOwner) Generate PRD:contentReference[oaicite:121]{index=121}
-    API-->>U: Return PRD content (requirements)
-    API->>PG: Save PRD Task (done) + Artifact
-    API->>G: (Optional) Ingest PRD node to Neo4j
-    Note over U,API: *User reviews PRD artifact*
-    U->>API: POST /api/artifacts/PRD/approve (approve requirements)
-    API->>LLM: (Architect) Generate architecture blueprint:contentReference[oaicite:122]{index=122}
-    API->>PG: Save Blueprint Task (done) + Artifact:contentReference[oaicite:123]{index=123}
-    API->>LLM: (Planner) Generate task plan (JSON list):contentReference[oaicite:124]{index=124}
-    API->>PG: Save Tasks (status "todo") + Dependencies:contentReference[oaicite:125]{index=125}
-    API->>G: Ingest tasks & deps into Neo4j graph:contentReference[oaicite:126]{index=126}
-    API->>R: Remove "pause" flag (project now active):contentReference[oaicite:127]{index=127}
-    API-->>U: Respond "approved" (pipeline ready)
-    Note over ORCH,W: **2. Orchestration Loop (Automated)**
-    ORCH: <i>Background scheduler polling</i>
-    ORCH->>G: Query for ready tasks (no unmet deps):contentReference[oaicite:128]{index=128}
-    G-->>ORCH: Returns next todo task(s)
-    ORCH->>PG: Fetch task details (tokens_plan, etc.)
-    ORCH->>R: Check budget for task cost:contentReference[oaicite:129]{index=129}
-    ORCH->>ORCH: If budget too low, mark task skipped:contentReference[oaicite:130]{index=130}
-    ORCH->>ORCH: Classify task role (Dev/QA/UX, etc.):contentReference[oaicite:131]{index=131}
-    ORCH->>PG: Update task status = "doing" (in DB):contentReference[oaicite:132]{index=132}
-    ORCH->>R: Debit budget for estimated cost:contentReference[oaicite:133]{index=133}
-    ORCH->>R: Enqueue task to Celery (tenant:role queue):contentReference[oaicite:134]{index=134}
-    ORCH-->>ORCH: Loop repeats for other ready tasks
-    Note over W,LLM: **3. Agent Task Execution (Celery)** 
-    W->>R: Dequeue task from queue (e.g. demo:dev)
-    W->>LLM: Execute agent logic (prompt LLM, tools)
-    W->>PG: Save output Artifact (if any) 
-    W->>PG: Update Task status = "done"/"failed", owner, notes
-    W-->>ORCH: (Implicit) Notify done via DB/graph update
-    ORCH->>G: Ingest updated task status into Neo4j (relationship done)
-    ORCH->>ORCH: Inspector: count blocked tasks, critical path:contentReference[oaicite:135]{index=135}
-    ORCH->>R: Update Prometheus metrics (via exporter)
-    ORCH-->>ORCH: Next scheduler cycle (until all tasks done)
-    Note over U,API: **4. User Monitoring & Completion**
-    U->>API: GET /api/graph (poll task graph/status):contentReference[oaicite:136]{index=136}
-    API->>PG: Query tasks + dependencies (for tenant/project):contentReference[oaicite:137]{index=137}
-    API-->>U: Return JSON graph (nodes & edges)
-    U->>API: GET /api/metrics (Prometheus via UI dashboard)
-    API-->>U: Return metrics (budget, counts, etc.)
-    U->>API: GET /api/project.zip (when all done):contentReference[oaicite:138]{index=138}
-    API->>PG: Gather all artifacts for tenant
-    API-->>U: ZIP file download of project artifacts
+    API->>PG: Insert Purpose
+    API->>R: Set initial budget
+    API->>LLM: Generate PRD (ProductOwner)
+    API->>PG: Save PRD Task + Artifact
+    API-->>U: Return PRD content
+
+    Note over U,API: 2. Approve Requirements → Architecture & Plan
+    U->>API: POST /api/artifacts/PRD/approve
+    API->>LLM: Generate Architecture Blueprint (Architect)
+    API->>PG: Save Blueprint Task + Artifact
+    API->>LLM: Generate Task Plan (Planner)
+    API->>PG: Save Tasks (todo) + Dependencies
+    API->>G: Ingest tasks into Neo4j
+    API->>R: Remove pause flag (activate project)
+    API-->>U: Respond "approved"
+
+    Note over ORCH,W: 3. Orchestration Loop
+    ORCH->>G: Query ready tasks (no unmet deps)
+    ORCH->>PG: Fetch task details
+    ORCH->>R: Check budget
+    ORCH->>PG: Update task status "doing"
+    ORCH->>R: Enqueue task to Celery (tenant:role)
+
+    Note over W,LLM: 4. Agent Task Execution
+    W->>LLM: Execute task (Dev/QA/etc.)
+    W->>PG: Save artifact (if any)
+    W->>PG: Update Task status = done/failed
+    ORCH->>G: Update graph with new status
+
+    Note over U,API: 5. Monitoring & Completion
+    U->>API: GET /api/graph (task graph/status)
+    API->>PG: Query tasks
+    API-->>U: Return graph JSON
+    U->>API: GET /api/project.zip
+    API->>PG: Gather artifacts
+    API-->>U: Return ZIP download
+
 ```
