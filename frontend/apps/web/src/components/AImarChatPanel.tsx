@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
-import { getJson, postJson } from '../lib/api';
+import { getJson, postJson, API_BASE } from '../lib/api';
+import usePipelineStore from '../store/pipelineStore';
 
 enum ChatRole {
   USER = 'user',
@@ -16,6 +17,7 @@ interface Message {
   content: string;
   author?: string;
   created_at?: string;
+  artifact_ids?: string[];
 }
 
 interface ChatPanelProps {
@@ -24,6 +26,7 @@ interface ChatPanelProps {
 }
 
 export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelProps) {
+  const artifacts = usePipelineStore((s) => s.artifacts);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,11 +34,56 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
   const historyEndRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const [scope, setScope] = useState<'global' | 'artifact' | 'auto'>('global');
+  const [selectedArtifacts, setSelectedArtifacts] = useState<string[]>([]);
+  const [suggestionsMap, setSuggestionsMap] = useState<Record<string, string[]>>({});
+  const [filterValue, setFilterValue] = useState<string>('all');
+
+  const formatArtifactLabel = (artifact: any) => {
+    if (!artifact) return '';
+    const fileName = artifact.repo_path?.split('/').pop() || '';
+    if (fileName.toLowerCase().includes('product_requirements')) return 'PRD';
+    if (fileName.toLowerCase().includes('architecture')) return 'Architektur';
+    const name = fileName.replace(/_/g, ' ');
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  };
+
+  const handleAddTag = async (messageId: string, artifactId: string) => {
+    const msg = messages.find((m) => m.id === messageId);
+    const currentIds: string[] = (msg && (msg as any).artifact_ids) || [];
+    const newIds = currentIds.includes(artifactId) ? currentIds : [...currentIds, artifactId];
+    const token = localStorage.getItem('token');
+    try {
+      await fetch(`${API_BASE}/chat/messages/${messageId}/tags`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ artifact_ids: newIds }),
+      });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, artifact_ids: newIds } : m)),
+      );
+      setSuggestionsMap((prev) => {
+        const updated = { ...prev };
+        const remaining = updated[messageId]?.filter((id: string) => id !== artifactId);
+        if (!remaining || remaining.length === 0) {
+          delete updated[messageId];
+        } else {
+          updated[messageId] = remaining;
+        }
+        return updated;
+      });
+    } catch {
+      toast.error('Tag konnte nicht hinzugefügt werden.');
+    }
+  };
 
   useEffect(() => {
     if (!purposeId) return;
     let alive = true;
-    getJson<Message[]>(`/chat/history?purpose_id=${purposeId}`)
+    getJson<Message[]>(`/chat/messages?purpose_id=${purposeId}`)
       .then((data) => {
         if (!alive) return;
         setMessages(Array.isArray(data) ? data : []);
@@ -52,6 +100,15 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
   useEffect(() => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (filterValue === 'all' || filterValue === 'global') {
+      setScope('global');
+    } else if (filterValue) {
+      setScope('artifact');
+      setSelectedArtifacts([filterValue]);
+    }
+  }, [filterValue]);
 
   useEffect(() => {
     if (!purposeId) return;
@@ -71,7 +128,21 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
         setLoading(false);
         loadingRef.current = false;
       } else {
-        setMessages((prev) => [...prev, data]);
+        if (data.suggested_artifact_ids) {
+          const userMsgId = data.user_message_id;
+          setMessages((prev) =>
+            prev.map((m, i) => (i === prev.length - 1 ? { ...m, id: userMsgId } : m)),
+          );
+          setSuggestionsMap((prev) => ({ ...prev, [userMsgId]: data.suggested_artifact_ids }));
+        }
+        const assistantMsg: Message = {
+          id: data.id,
+          role: data.role,
+          content: data.content,
+          author: 'AImar',
+          created_at: data.created_at,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
         setLoading(false);
         loadingRef.current = false;
       }
@@ -105,14 +176,39 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
     loadingRef.current = true;
     if (useWs && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
-        wsRef.current.send(JSON.stringify({ message: text }));
+        const msgPayload: any = { message: text };
+        if (scope === 'artifact') {
+          msgPayload.artifact_ids = selectedArtifacts;
+          msgPayload.scope = selectedArtifacts.length > 1 ? 'mixed' : 'artifact';
+        } else if (scope === 'auto') {
+          msgPayload.scope = 'auto';
+        }
+        wsRef.current.send(JSON.stringify(msgPayload));
       } catch (err) {
         try {
-          const reply = await postJson<Message>('/chat', {
-            purpose_id: purposeId,
-            message: text,
-          });
-          setMessages((prev) => [...prev, reply]);
+          const payload: any = { purpose_id: purposeId, message: text };
+          if (scope === 'artifact') {
+            payload.artifact_ids = selectedArtifacts;
+            payload.scope = selectedArtifacts.length > 1 ? 'mixed' : 'artifact';
+          } else if (scope === 'auto') {
+            payload.scope = 'auto';
+          }
+          const replyData = await postJson<any>('/chat/messages', payload);
+          if (replyData.suggested_artifact_ids) {
+            const userMsgId = replyData.user_message_id;
+            setMessages((prev) =>
+              prev.map((m, i) => (i === prev.length - 1 ? { ...m, id: userMsgId } : m)),
+            );
+            setSuggestionsMap((prev) => ({ ...prev, [userMsgId]: replyData.suggested_artifact_ids }));
+          }
+          const assistantMsg: Message = {
+            id: replyData.id,
+            role: replyData.role,
+            content: replyData.content,
+            author: 'AImar',
+            created_at: replyData.created_at,
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
         } catch (err2) {
           toast.error('Nachricht konnte nicht gesendet werden.');
         } finally {
@@ -123,11 +219,29 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
       }
     } else {
       try {
-        const reply = await postJson<Message>('/chat', {
-          purpose_id: purposeId,
-          message: text,
-        });
-        setMessages((prev) => [...prev, reply]);
+        const payload: any = { purpose_id: purposeId, message: text };
+        if (scope === 'artifact') {
+          payload.artifact_ids = selectedArtifacts;
+          payload.scope = selectedArtifacts.length > 1 ? 'mixed' : 'artifact';
+        } else if (scope === 'auto') {
+          payload.scope = 'auto';
+        }
+        const replyData = await postJson<any>('/chat/messages', payload);
+        if (replyData.suggested_artifact_ids) {
+          const userMsgId = replyData.user_message_id;
+          setMessages((prev) =>
+            prev.map((m, i) => (i === prev.length - 1 ? { ...m, id: userMsgId } : m)),
+          );
+          setSuggestionsMap((prev) => ({ ...prev, [userMsgId]: replyData.suggested_artifact_ids }));
+        }
+        const assistantMsg: Message = {
+          id: replyData.id,
+          role: replyData.role,
+          content: replyData.content,
+          author: 'AImar',
+          created_at: replyData.created_at,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
       } catch (err) {
         toast.error('Nachricht konnte nicht gesendet werden.');
       } finally {
@@ -150,43 +264,118 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
         </span>
         <span>KI-Produkt Owner Assistent (professionell, kritisch, fordernd)</span>
       </div>
+      <div className="mb-2">
+        <select
+          value={filterValue}
+          onChange={(e) => setFilterValue(e.target.value)}
+          className="text-xs border border-slate-300 rounded px-1 py-0.5"
+        >
+          <option value="all">Alle Nachrichten</option>
+          <option value="global">Nur globale</option>
+          {artifacts
+            .filter((a: any) => a.media_type?.startsWith('text/'))
+            .map((a: any) => (
+              <option key={a.id} value={a.id}>
+                Nur {formatArtifactLabel(a)}
+              </option>
+            ))}
+        </select>
+      </div>
       <div className="flex-1 overflow-y-auto mb-2">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`my-1 max-w-[80%] p-2 rounded text-sm ${
-              m.role === ChatRole.USER
-                ? 'bg-blue-100 text-blue-900 ml-auto'
-                : m.role === ChatRole.AGENT
-                ? 'bg-gray-100 text-gray-800 mr-auto ml-4 border-l-4 border-blue-400'
-                : 'bg-gray-100 text-gray-800 mr-auto'
-            }`}
-          >
-            {m.role === ChatRole.AGENT ? (
-              (() => {
-                try {
-                  const data = JSON.parse(m.content);
-                  if (data.betroffene_artefakte) {
+        {messages
+          .filter((m) => {
+            if (filterValue === 'global') {
+              return !(m as any).artifact_ids || (m as any).artifact_ids.length === 0;
+            }
+            if (filterValue && filterValue !== 'all' && filterValue !== 'global') {
+              return (m as any).artifact_ids && (m as any).artifact_ids.includes(filterValue);
+            }
+            return true;
+          })
+          .map((m) => (
+            <div
+              key={m.id}
+              className={`my-1 max-w-[80%] p-2 rounded text-sm ${
+                m.role === ChatRole.USER
+                  ? 'bg-blue-100 text-blue-900 ml-auto'
+                  : m.role === ChatRole.AGENT
+                  ? 'bg-gray-100 text-gray-800 mr-auto ml-4 border-l-4 border-blue-400'
+                  : 'bg-gray-100 text-gray-800 mr-auto'
+              }`}
+            >
+              {m.role === ChatRole.AGENT ? (
+                (() => {
+                  try {
+                    const data = JSON.parse(m.content);
+                    if (data.betroffene_artefakte) {
+                      return (
+                        <>
+                          <div className="mb-1">
+                            <span role="img" aria-label="Hinweis" className="mr-1">
+                              ℹ️
+                            </span>
+                            <b>Betroffene Artefakte:</b>{' '}
+                            {data.betroffene_artefakte.length > 0
+                              ? data.betroffene_artefakte.join(', ')
+                              : 'Keine'}
+                          </div>
+                          <div className="mb-1">
+                            <b>Auswirkungsgrad:</b> {data.impact_level}
+                          </div>
+                          <div className="mb-1">
+                            <b>Änderungstyp:</b> {data.change_type}
+                          </div>
+                          {data.followup_suggestion && (
+                            <div>
+                              <b>Folgeaktion:</b> {data.followup_suggestion}
+                            </div>
+                          )}
+                        </>
+                      );
+                    }
+                  } catch {}
+                  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>;
+                })()
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              )}
+              {(m as any).artifact_ids && (m as any).artifact_ids.length > 0 && (
+                <div className="mt-1">
+                  {(m as any).artifact_ids.map((aid: string) => {
+                    const art = artifacts.find((x: any) => x.id === aid);
+                    const label = formatArtifactLabel(art);
                     return (
-                      <>
-                        <div className="mb-1">
-                          <span role="img" aria-label="Hinweis" className="mr-1">ℹ️</span>
-                          <b>Betroffene Artefakte:</b> {data.betroffene_artefakte.length > 0 ? data.betroffene_artefakte.join(', ') : 'Keine'}
-                        </div>
-                        <div className="mb-1"><b>Auswirkungsgrad:</b> {data.impact_level}</div>
-                        <div className="mb-1"><b>Änderungstyp:</b> {data.change_type}</div>
-                        {data.followup_suggestion && <div><b>Folgeaktion:</b> {data.followup_suggestion}</div>}
-                      </>
+                      <span
+                        key={aid}
+                        className="inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded mr-1"
+                        title={art?.repo_path}
+                      >
+                        {label}
+                      </span>
                     );
-                  }
-                } catch {}
-                return <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>;
-              })()
-            ) : (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-            )}
-          </div>
-        ))}
+                  })}
+                </div>
+              )}
+              {suggestionsMap[m.id] && suggestionsMap[m.id].length > 0 && (
+                <div className="mt-1 space-x-2">
+                  {suggestionsMap[m.id].map((aid: string) => {
+                    const art = artifacts.find((x: any) => x.id === aid);
+                    const label = formatArtifactLabel(art);
+                    return (
+                      <button
+                        key={aid}
+                        type="button"
+                        className="text-xs px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+                        onClick={() => handleAddTag(m.id, aid)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
         <div ref={historyEndRef} />
       </div>
       {suggestions.length > 0 && (
@@ -203,7 +392,39 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
           ))}
         </div>
       )}
+      {scope === 'artifact' && (
+        <div className="mb-2 text-xs text-gray-700">
+          {artifacts
+            .filter((a: any) => a.media_type?.startsWith('text/'))
+            .map((a: any) => (
+              <label key={a.id} className="mr-3">
+                <input
+                  type="checkbox"
+                  checked={selectedArtifacts.includes(a.id)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedArtifacts((prev) => [...prev, a.id]);
+                    } else {
+                      setSelectedArtifacts((prev) => prev.filter((id) => id !== a.id));
+                    }
+                  }}
+                  className="mr-1"
+                />
+                {formatArtifactLabel(a)}
+              </label>
+            ))}
+        </div>
+      )}
       <div className="flex items-center gap-2">
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as 'global' | 'artifact' | 'auto')}
+          className="text-xs border border-slate-300 rounded px-2 py-1"
+        >
+          <option value="global">🌐 Global</option>
+          <option value="artifact">🏷️ Artefakt</option>
+          <option value="auto">🤖 Auto</option>
+        </select>
         <input
           type="text"
           className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm"

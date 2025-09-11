@@ -1,7 +1,7 @@
 from .artifact import Artifact
 from .artifact import Artifact as Artefact
 from .artifact_feedback import ArtifactFeedback
-from .chat import ChatMessage, ChatThreadContext
+from .chat import ChatMessage, ChatMessageArtifact, ChatThreadContext
 from .feedback import Feedback, FeedbackType
 from .purpose import Purpose
 from .task import Task, TaskStatus
@@ -21,4 +21,5 @@ __all__ = [
     "ArtifactFeedback",
     "ChatMessage",
     "ChatThreadContext",
+    "ChatMessageArtifact",
 ]
