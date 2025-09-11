@@ -177,3 +177,29 @@ sequenceDiagram
     API-->>U: Project status + artifacts
     
 ```
+```mermaid
+flowchart TB
+  U[User] --> GC[Global Chat UI]
+  U --> AC[Artifact Chat UI]
+
+  subgraph Backend
+    API[/Chat API/]
+    MSG[(chat_message)]
+    LNK[(chat_message_artifact)]
+    AIMAR{{AImar (LLM)}}
+    ORCH[[Orchestrator]]
+  end
+
+  GC -- POST message (content, intent, artifact_ids?) --> API
+  AC -- POST message (content, artifact_id) --> API
+
+  API -- store --> MSG
+  API -- link tags --> LNK
+  API -- classify & answer --> AIMAR
+  AIMAR -- reply (inherits tags) --> API
+
+  GC <-- GET messages (scope/filter) --> API
+  AC <-- GET messages (artifact filter) --> API
+
+  API -- approvals/feedback --> ORCH
+```
