@@ -93,7 +93,7 @@ def test_chat_history_empty(monkeypatch):
 
     client.app.dependency_overrides[get_current_tenant] = override_get_current_tenant(tenant)
     client.app.dependency_overrides[oauth2_scheme] = lambda: "token"
-    res = client.get(f"/api/chat/history?purpose_id={purpose.id}")
+    res = client.get(f"/api/chat/messages?purpose_id={purpose.id}")
     assert res.status_code == 200
     assert res.json() == []
 
@@ -106,12 +106,12 @@ def test_chat_simple_reply(monkeypatch):
     client.app.dependency_overrides[get_current_tenant] = override_get_current_tenant(tenant)
     client.app.dependency_overrides[oauth2_scheme] = lambda: "token"
     payload = {"purpose_id": purpose.id, "message": "Hello AImar!"}
-    r = client.post("/api/chat", json=payload)
+    r = client.post("/api/chat/messages", json=payload)
     assert r.status_code == 200
     data = r.json()
     assert data["role"] == "assistant"
     assert "Stubbed answer" in data["content"]
-    hist_res = client.get(f"/api/chat/history?purpose_id={purpose.id}")
+    hist_res = client.get(f"/api/chat/messages?purpose_id={purpose.id}")
     hist = hist_res.json()
     roles = [m["role"] for m in hist]
     assert roles == ["user", "assistant"]
@@ -129,7 +129,10 @@ def test_chat_feedback_flow(monkeypatch):
 
     monkeypatch.setattr(chat_module, "pool", SimpleNamespace(get=lambda key: b"1"))
     feedback_msg = "Fehlt Akzeptanzkriterium"
-    r = client.post("/api/chat", json={"purpose_id": purpose.id, "message": feedback_msg})
+    r = client.post(
+        "/api/chat/messages",
+        json={"purpose_id": purpose.id, "message": feedback_msg},
+    )
     assert r.status_code == 200
     data = r.json()
     assert data["role"] == "assistant"

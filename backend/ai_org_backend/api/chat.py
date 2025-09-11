@@ -2,14 +2,8 @@ import logging
 from datetime import datetime
 
 import jwt
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-)
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from sqlmodel import Session, delete, select
 from starlette.concurrency import run_in_threadpool
 
 from ai_org_backend.agents import product_owner
@@ -18,9 +12,16 @@ from ai_org_backend.api.auth import ALGORITHM, SECRET_KEY
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
 from ai_org_backend.models import Artifact, ChatThreadContext, Purpose, Task, Tenant
-from ai_org_backend.models.chat import ChatMessage, ChatRole
+from ai_org_backend.models.chat import (
+    ChatIntent,
+    ChatMessage,
+    ChatMessageArtifact,
+    ChatRole,
+    ChatScope,
+)
 from ai_org_backend.redis_client import pool
 from ai_org_backend.services.storage import resolve_for_read, save_artefact
+from ai_org_backend.services.vector_store import VectorStore
 from ai_org_backend.utils import llm
 
 logger = logging.getLogger(__name__)
@@ -30,33 +31,54 @@ PROMPT_TEMPLATE = load_template("aimar.j2")
 ws_router = APIRouter(prefix="/ws")
 
 
-@router.get("/history")
-def get_chat_history(
+@router.get("/messages")
+def get_chat_messages(
     purpose_id: str,
-    artifact_id: str | None = None,
+    artifact_id: list[str] | None = Query(None),
+    scope: ChatScope | None = None,
     session: Session = Depends(get_session),
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
-    """Retrieve chat message history for a given purpose (and optional artifact context)."""
+    """Retrieve chat messages for a given purpose with optional filtering."""
 
     tenant_id = current_tenant.id
     purpose = session.get(Purpose, purpose_id)
     if not purpose or purpose.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Purpose not found")
 
-    query = select(ChatMessage).where(
+    messages_query = select(ChatMessage).where(
         ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
     )
     if artifact_id:
-        query = query.where(ChatMessage.artifact_id == artifact_id)
-    else:
-        query = query.where(ChatMessage.artifact_id.is_(None))
+        messages_query = (
+            messages_query.join(ChatMessageArtifact)
+            .where(ChatMessageArtifact.artifact_id.in_(artifact_id))
+            .distinct()
+        )
+    elif scope:
+        if scope == ChatScope.GLOBAL:
+            subq = select(ChatMessageArtifact.chat_message_id)
+            messages_query = messages_query.where(ChatMessage.id.not_in(subq))
+        elif scope == ChatScope.ARTIFACT:
+            messages_query = messages_query.join(ChatMessageArtifact).distinct()
+        elif scope == ChatScope.MIXED:
+            messages_query = messages_query.where(ChatMessage.scope == ChatScope.MIXED)
 
-    messages = session.exec(query.order_by(ChatMessage.created_at)).all()
+    messages = session.exec(messages_query.order_by(ChatMessage.created_at)).all()
     history: list[dict] = []
+    msg_ids = [m.id for m in messages]
+    link_map: dict[str, list[str]] = {}
+    if msg_ids:
+        links = session.exec(
+            select(ChatMessageArtifact.chat_message_id, ChatMessageArtifact.artifact_id).where(
+                ChatMessageArtifact.chat_message_id.in_(msg_ids)
+            )
+        ).all()
+        for msg_id, art_id in links:
+            link_map.setdefault(msg_id, []).append(art_id)
+
     for m in messages:
         role = m.role.value if hasattr(m, "role") else str(m.role)
-        author: str | None
         if role == ChatRole.USER.value:
             author = current_tenant.name
         elif role == ChatRole.ASSISTANT.value:
@@ -70,12 +92,13 @@ def get_chat_history(
                 "content": m.content,
                 "author": author,
                 "created_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None,
+                "artifact_ids": link_map.get(m.id, []),
             }
         )
     return history
 
 
-@router.post("")
+@router.post("/messages")
 def post_chat(
     payload: dict,
     session: Session = Depends(get_session),
@@ -96,29 +119,54 @@ def post_chat(
     if not purpose or purpose.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Purpose not found or forbidden")
 
-    artifact_id = payload.get("artifact_id")
+    artifact_ids = payload.get("artifact_ids") or []
+    if not isinstance(artifact_ids, list):
+        artifact_ids = [artifact_ids] if artifact_ids else []
+    scope_input = payload.get("scope")
+    intent_input = payload.get("intent") or "question"
+    artifact_id = artifact_ids[0] if artifact_ids else None
+
     task_id = None
-    if artifact_id:
-        artifact = session.get(Artifact, artifact_id)
-        if not artifact:
-            raise HTTPException(status_code=404, detail="Artifact not found")
-        task = session.get(Task, artifact.task_id)
-        if not task or task.tenant_id != tenant_id or task.purpose_id != purpose_id:
-            raise HTTPException(status_code=403, detail="Artifact not in specified purpose")
-        task_id = task.id
+    if artifact_ids:
+        for aid in artifact_ids:
+            artifact = session.get(Artifact, aid)
+            if not artifact:
+                raise HTTPException(status_code=404, detail="Artifact not found")
+            task = session.get(Task, artifact.task_id)
+            if not task or task.tenant_id != tenant_id or task.purpose_id != purpose_id:
+                raise HTTPException(status_code=403, detail="Artifact not in specified purpose")
+        if len(artifact_ids) == 1:
+            task_id = task.id  # use last fetched task
+
+    if artifact_ids:
+        final_scope = ChatScope.MIXED if len(artifact_ids) > 1 else ChatScope.ARTIFACT
+    elif scope_input and scope_input in ChatScope._value2member_map_:
+        final_scope = ChatScope(scope_input)
+    else:
+        final_scope = ChatScope.GLOBAL
+
+    intent_enum = (
+        ChatIntent(intent_input)
+        if intent_input in ChatIntent._value2member_map_
+        else ChatIntent.QUESTION
+    )
 
     user_msg = ChatMessage(
         tenant_id=tenant_id,
         purpose_id=purpose_id,
-        artifact_id=artifact_id,
+        artifact_id=artifact_ids[0] if artifact_ids else None,
         task_id=task_id,
         role=ChatRole.USER.value,
         content=text,
+        scope=final_scope,
+        intent=intent_enum,
     )
     session.add(user_msg)
+    for aid in artifact_ids:
+        session.add(ChatMessageArtifact(chat_message_id=user_msg.id, artifact_id=aid))
     try:
         session.commit()
-    except Exception as e:  # pragma: no cover - DB failure
+    except Exception as e:
         session.rollback()
         logger.error("Failed to save user chat message: %s", e)
         raise HTTPException(status_code=500, detail="Could not save message")
@@ -197,13 +245,16 @@ def post_chat(
         conv_query = select(ChatMessage).where(
             ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
         )
-        conv_query = (
-            conv_query.where(ChatMessage.artifact_id == artifact_id)
-            if artifact_id
-            else conv_query.where(ChatMessage.artifact_id.is_(None))
-        )
+        if artifact_ids:
+            conv_query = (
+                conv_query.join(ChatMessageArtifact)
+                .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+                .distinct()
+            )
+        else:
+            conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
         conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
-        if artifact_id is None:
+        if not artifact_ids:
             chat_context = session.get(ChatThreadContext, purpose_id)
             if chat_context:
                 summary_text = chat_context.summary
@@ -239,8 +290,12 @@ def post_chat(
         task_id=task_id,
         role=ChatRole.ASSISTANT.value,
         content=assistant_content or "",
+        scope=final_scope,
+        intent=ChatIntent.NOTE,
     )
     session.add(assistant_msg)
+    for aid in artifact_ids:
+        session.add(ChatMessageArtifact(chat_message_id=assistant_msg.id, artifact_id=aid))
     try:
         session.commit()
     except Exception as e:  # pragma: no cover - DB failure
@@ -248,7 +303,7 @@ def post_chat(
         logger.error("Failed to save assistant chat message: %s", e)
         raise HTTPException(status_code=500, detail="Could not save response")
 
-    if artifact_id is None:
+    if not artifact_ids:
         conv_all = session.exec(
             select(ChatMessage)
             .where(
@@ -331,12 +386,97 @@ def post_chat(
                         session.rollback()
                         logger.error("Failed to update chat summary: %s", e)
 
-    return {
+    response = {
         "id": assistant_msg.id,
         "role": assistant_msg.role.value,
         "content": assistant_msg.content,
         "created_at": assistant_msg.created_at.isoformat(),
     }
+
+    suggested_artifact_ids: list[str] = []
+    if scope_input == "auto":
+        try:
+            vector_store = VectorStore()
+            results = vector_store.query_vectors(tenant_id, text, top_k=5)
+        except Exception as e:
+            logger.error("Vector search failed: %s", e)
+            results = []
+        assigned_ids: list[str] = []
+        if results:
+            high_thresh = 0.85
+            med_thresh = 0.6
+            for point in results:
+                art_id = getattr(point, "id", None) or (
+                    point.payload.get("artifact_id") if hasattr(point, "payload") else None
+                )
+                if not art_id:
+                    continue
+                art = session.get(Artifact, art_id)
+                if not art or session.get(Task, art.task_id).purpose_id != purpose_id:
+                    continue
+                score = getattr(point, "score", None) or 0
+                if score >= high_thresh:
+                    assigned_ids.append(art_id)
+                elif score >= med_thresh:
+                    suggested_artifact_ids.append(art_id)
+            suggested_artifact_ids = [
+                aid for aid in suggested_artifact_ids if aid not in assigned_ids
+            ]
+            if assigned_ids:
+                for aid in assigned_ids:
+                    session.add(ChatMessageArtifact(chat_message_id=user_msg.id, artifact_id=aid))
+                user_msg.scope = ChatScope.MIXED if len(assigned_ids) > 1 else ChatScope.ARTIFACT
+                if user_msg.artifact_id is None:
+                    user_msg.artifact_id = assigned_ids[0]
+                try:
+                    session.commit()
+                except Exception as e:
+                    session.rollback()
+                    logger.error("Failed to auto-assign artifacts to message: %s", e)
+    if suggested_artifact_ids:
+        response["suggested_artifact_ids"] = suggested_artifact_ids
+        response["user_message_id"] = user_msg.id
+
+    return response
+
+
+@router.patch("/messages/{message_id}/tags")
+def update_message_tags(
+    message_id: str,
+    payload: dict,
+    session: Session = Depends(get_session),
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """Update artifact tags for a chat message."""
+
+    msg = session.get(ChatMessage, message_id)
+    if not msg or msg.tenant_id != current_tenant.id:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    artifact_ids = payload.get("artifact_ids") or []
+    if not isinstance(artifact_ids, list):
+        artifact_ids = [artifact_ids] if artifact_ids else []
+
+    session.exec(
+        delete(ChatMessageArtifact).where(ChatMessageArtifact.chat_message_id == message_id)
+    )
+    for aid in artifact_ids:
+        session.add(ChatMessageArtifact(chat_message_id=message_id, artifact_id=aid))
+
+    msg.artifact_id = artifact_ids[0] if artifact_ids else None
+    msg.scope = (
+        ChatScope.MIXED
+        if len(artifact_ids) > 1
+        else ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL
+    )
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error("Failed to update message tags: %s", e)
+        raise HTTPException(status_code=500, detail="Could not update tags")
+
+    return {"status": "ok"}
 
 
 @ws_router.websocket("/chat/{purpose_id}")
@@ -373,13 +513,20 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
             try:
                 msg = __import__("json").loads(data)
                 user_text = (msg.get("message") or "").strip()
-                artifact_id = msg.get("artifact_id")
+                artifact_ids = msg.get("artifact_ids") or []
+                if not isinstance(artifact_ids, list):
+                    artifact_ids = [artifact_ids] if artifact_ids else []
+                _scope_input = msg.get("scope")
+                intent_input = msg.get("intent") or "question"
             except Exception:
                 user_text = data.strip()
-                artifact_id = None
+                artifact_ids = []
+                _scope_input = None
+                intent_input = "question"
             if not user_text:
                 continue
 
+            artifact_id = artifact_ids[0] if artifact_ids else None
             with Session(engine) as session:
                 user_msg = ChatMessage(
                     tenant_id=tenant_id,
@@ -388,8 +535,16 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     task_id=None,
                     role=ChatRole.USER.value,
                     content=user_text,
+                    scope=ChatScope.GLOBAL,
+                    intent=(
+                        ChatIntent(intent_input)
+                        if intent_input in ChatIntent._value2member_map_
+                        else ChatIntent.QUESTION
+                    ),
                 )
                 session.add(user_msg)
+                for aid in artifact_ids:
+                    session.add(ChatMessageArtifact(chat_message_id=user_msg.id, artifact_id=aid))
                 try:
                     session.commit()
                 except Exception as e:
@@ -466,13 +621,16 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         ChatMessage.tenant_id == tenant_id,
                         ChatMessage.purpose_id == purpose_id,
                     )
-                    conv_query = (
-                        conv_query.where(ChatMessage.artifact_id == artifact_id)
-                        if artifact_id
-                        else conv_query.where(ChatMessage.artifact_id.is_(None))
-                    )
+                    if artifact_ids:
+                        conv_query = (
+                            conv_query.join(ChatMessageArtifact)
+                            .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+                            .distinct()
+                        )
+                    else:
+                        conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
                     conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
-                    if artifact_id is None:
+                    if not artifact_ids:
                         chat_context = session.get(ChatThreadContext, purpose_id)
                         if chat_context:
                             summary_text = chat_context.summary
@@ -506,6 +664,11 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         await websocket.send_json({"error": "AI response generation failed"})
                         continue
 
+                final_scope = (
+                    ChatScope.MIXED
+                    if len(artifact_ids) > 1
+                    else ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL
+                )
                 assistant_msg = ChatMessage(
                     tenant_id=tenant_id,
                     purpose_id=purpose_id,
@@ -513,8 +676,14 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     task_id=None,
                     role=ChatRole.ASSISTANT.value,
                     content=assistant_content or "",
+                    scope=final_scope,
+                    intent=ChatIntent.NOTE,
                 )
                 session.add(assistant_msg)
+                for aid in artifact_ids:
+                    session.add(
+                        ChatMessageArtifact(chat_message_id=assistant_msg.id, artifact_id=aid)
+                    )
                 try:
                     session.commit()
                 except Exception as e:
@@ -532,7 +701,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     }
                 )
 
-                if artifact_id is None:
+                if not artifact_ids:
                     conv_all = session.exec(
                         select(ChatMessage)
                         .where(
