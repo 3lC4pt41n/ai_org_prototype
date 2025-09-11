@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, List
 
 from sqlmodel import Field, Relationship, SQLModel
 
+from .chat import ChatMessage, ChatMessageArtifact
+
 if TYPE_CHECKING:
     from .artifact_feedback import ArtifactFeedback
     from .task import Task
@@ -20,6 +22,9 @@ class Artifact(SQLModel, table=True):
 
     task: "Task" = Relationship(back_populates="artifacts")
     feedback: List["ArtifactFeedback"] = Relationship(back_populates="artifact")
+    messages: List["ChatMessage"] = Relationship(
+        back_populates="artifacts", link_model=ChatMessageArtifact
+    )
 
     repo_path: str = Field(nullable=False)
     media_type: str = Field(nullable=False)
