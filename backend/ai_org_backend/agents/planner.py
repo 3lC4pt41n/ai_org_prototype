@@ -7,21 +7,20 @@ import time
 
 from jsonschema import validate
 
-from .utils import load_template
-
-from ai_org_backend.utils.llm import chat
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.utils.llm import chat
 
+from .utils import load_template
 
 PLANNER_RUNS = prom_counter("ai_planner_runs_total", "Planner executions")
 PLANNER_LATENCY = prom_hist("ai_planner_latency_seconds", "Planner latency")
 PROMPT_TMPL = load_template("planner.j2")
 
-# Maximal erlaubte Wiederholungen bei ungültigem LLM-Output (insgesamt 3 Versuche)
+# Maximum allowed retries for invalid LLM output (total 3 attempts)
 MAX_AGENT_RETRIES = 2
 
-# Erwartetes Schema für eine Aufgabenliste
+# Expected schema for a task list
 TASKS_SCHEMA = {
     "type": "array",
     "items": {
@@ -45,7 +44,7 @@ TASKS_SCHEMA = {
     },
 }
 
-# Regex zum Extrahieren von JSON aus Markdown-Codeblöcken
+# Regex to extract JSON from Markdown code blocks
 MD_JSON_RX = re.compile(r"```json([\s\S]+?)```", re.IGNORECASE)
 
 
@@ -105,7 +104,7 @@ def run_planner(blueprint: str) -> list[dict]:
             tasks = tasks_data
             break
 
-        # kein gültiges Ergebnis -> nächsten Versuch vorbereiten
+        # No valid result -> prepare next attempt
         if attempt < MAX_AGENT_RETRIES:
             note_msg = (
                 "previous output was not valid JSON"
@@ -116,12 +115,12 @@ def run_planner(blueprint: str) -> list[dict]:
             prompt = PROMPT_TMPL.render(**ctx)
             model = "o3-pro"
             logging.warning(
-                f"[Planner] invalid LLM output (attempt {attempt + 1}/{MAX_AGENT_RETRIES + 1}): {note_msg}"
+                "[Planner] invalid LLM output (attempt %s/%s): %s",
+                attempt + 1,
+                MAX_AGENT_RETRIES + 1,
+                note_msg,
             )
         else:
-            logging.error(
-                f"[Planner] no valid task list after {attempt + 1} attempts"
-            )
+            logging.error(f"[Planner] no valid task list after {attempt + 1} attempts")
 
     return tasks
-

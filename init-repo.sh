@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-# 1. Neues Git-Repo anlegen (oder bestehendes verwenden)
+# 1. Create new Git repo (or use existing one)
 git init -b main
 
-# 2. Node-Projekt initialisieren
+# 2. Initialize Node project
 npm init -y
 
-# 3. Dev-Abhängigkeiten installieren
+# 3. Install dev dependencies
 npm i -D \
   typescript ts-node \
   eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin \
@@ -22,7 +22,7 @@ npm i -D \
   vercel \
   expo eas-cli
 
-# 4. Husky & Commitizen initialisieren
+# 4. Initialize Husky & Commitizen
 npx husky install
 npm pkg set scripts.prepare="husky install"
 npx commitizen init cz-conventional-changelog --save-dev --save-exact
