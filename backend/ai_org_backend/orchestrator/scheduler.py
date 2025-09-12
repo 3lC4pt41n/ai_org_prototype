@@ -111,7 +111,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         )
         Repo(TENANT).update(blueprint_task.id, owner="Architect", notes="Blueprint completed")
 
-    # Nur planen, wenn noch keine Implementierungs-Todos existieren (Duplikate vermeiden)
+    # Only plan if no implementation TODOs exist yet (avoid duplicates)
     with Session(engine) as db_session:
         existing_impl = db_session.exec(
             select(Task)
