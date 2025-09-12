@@ -6,10 +6,11 @@ from .feedback import Feedback, FeedbackType
 from .purpose import Purpose
 from .task import Task, TaskStatus
 from .task_dependency import TaskDependency
-from .tenant import Tenant
+from .tenant import Tenant, Theme
 
 __all__ = [
     "Tenant",
+    "Theme",
     "Purpose",
     "Task",
     "TaskStatus",
