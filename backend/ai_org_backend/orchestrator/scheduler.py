@@ -207,65 +207,50 @@ async def orchestrator() -> None:
                     if pool.get(f"pause:{TENANT}:{p.id}"):
                         logging.info("[Orchestrator]  → paused → skip")
                         continue
-                    # PRD done?
-                    prd_task = session.exec(
-                        select(Task).where(
-                            Task.purpose_id == p.id,
-                            Task.description.ilike("Product Requirements Document"),
-                            Task.status == TaskStatus.DONE,
-                        )
-                    ).first()
-                    # Blueprint vorhanden?
-                    blueprint_task = session.exec(
-                        select(Task).where(
-                            Task.purpose_id == p.id,
-                            Task.description == "Architecture Blueprint",
-                        )
-                    ).first()
+                    tasks = session.exec(select(Task).where(Task.purpose_id == p.id)).all()
+                    prd_task = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.description
+                            and t.description.lower() == "product requirements document"
+                            and t.status == TaskStatus.DONE
+                        ),
+                        None,
+                    )
+                    blueprint_task = next(
+                        (t for t in tasks if t.description == "Architecture Blueprint"),
+                        None,
+                    )
                     prd_art = None
                     if prd_task:
                         prd_art = session.exec(
                             select(Artifact).where(Artifact.task_id == prd_task.id)
                         ).first()
-                    # Gibt es schon implementierungsrelevante Todos?
-                    impl_todo = session.exec(
-                        select(Task)
-                        .where(Task.purpose_id == p.id, Task.status != TaskStatus.DONE)
-                        .where(
-                            Task.description.notin_(
-                                [
-                                    "Product Requirements Document",
-                                    "Architecture Blueprint",
-                                    "Architecture & Domain Review",
-                                ]
-                            )
-                        )
-                    ).first()
                     logging.info(
                         f"[Orchestrator]  → prd_done={bool(prd_task)} "
                         f"released={getattr(prd_art,'released',None)} "
-                        f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
+                        f"blueprint={bool(blueprint_task)}"
                     )
-                    # Regel: Architect starten sobald PRD done+released & kein Blueprint
                     if prd_task and (prd_art and prd_art.released) and not blueprint_task:
-                        purpose_to_process = (p, bool(impl_todo))
+                        purpose_to_process = p
                         break
         except Exception as e:
             logging.error("[Orchestrator] Failed to poll purposes: %s", e)
         if purpose_to_process:
-            p, has_impl_todo = purpose_to_process
             logging.info(
-                "[Orchestrator] Detected approved PRD for purpose %s → start Architect "
-                "(impl_todo=%s)",
-                p.id,
-                has_impl_todo,
+                "[Orchestrator] Detected approved PRD for purpose %s → start Architect",
+                purpose_to_process.id,
             )
             try:
                 # _generate_plan_for_purpose prüft selbst, ob Planner laufen soll
                 # (Duplikate vermeiden)
-                await asyncio.to_thread(_generate_plan_for_purpose, p.id)
+                await asyncio.to_thread(_generate_plan_for_purpose, purpose_to_process.id)
             except Exception as e:
-                alert(f"Orchestrator: planning failed for purpose {p.id}: {e}", "error")
+                alert(
+                    f"Orchestrator: planning failed for purpose {purpose_to_process.id}: {e}",
+                    "error",
+                )
             continue
 
         # Iterate over ready tasks
