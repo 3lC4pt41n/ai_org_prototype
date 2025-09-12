@@ -171,40 +171,58 @@ def post_chat(
         logger.error("Failed to save user chat message: %s", e)
         raise HTTPException(status_code=500, detail="Could not save message")
 
-    try:
-        paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
-    except Exception as e:  # pragma: no cover - Redis failure
-        logger.error("Redis get failed: %s", e)
-        paused = False
+    if user_msg.intent == ChatIntent.APPROVAL:
+        for aid in artifact_ids:
+            artifact = session.get(Artifact, aid)
+            if artifact:
+                task = session.get(Task, artifact.task_id)
+                if task and task.status != "done":
+                    task.status = "done"
+                    if task.notes:
+                        task.notes = task.notes.replace("awaiting_approval", "approved")
+                    else:
+                        task.notes = "approved via chat"
+                    session.add(task)
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to approve tasks: %s", e)
+        try:
+            pool.delete(f"pause:{tenant_id}:{purpose_id}")
+        except Exception as e:
+            logger.error("Failed to clear pause flag: %s", e)
+        assistant_content = "Freigabe bestätigt. Ich fahre mit der Umsetzung fort."
+    else:
+        try:
+            paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
+        except Exception as e:  # pragma: no cover - Redis failure
+            logger.error("Redis get failed: %s", e)
+            paused = False
 
-    assistant_content: str | None = None
-    if paused:
-        trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
-        if text.lower() in trivial_responses:
-            assistant_content = "Verstanden, wird übernommen."
-        else:
-            current_prd = ""
-            try:
-                prd_artifact = session.exec(
-                    select(Artifact)
-                    .where(Artifact.task.has(purpose_id=purpose_id))
-                    .where(Artifact.repo_path.ilike("%product_requirements.md"))
-                    .order_by(Artifact.created_at.desc())
-                ).first()
-            except Exception:
-                prd_artifact = None
-            if prd_artifact:
+        assistant_content: str | None = None
+        if paused:
+            trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
+            if text.lower() in trivial_responses:
+                assistant_content = "Verstanden, wird übernommen."
+            else:
                 try:
-                    file_path = resolve_for_read(prd_artifact.repo_path)
-                    current_prd = file_path.read_text(encoding="utf-8")
-                except Exception:  # pragma: no cover - file read failure
-                    current_prd = ""
-            try:
-                updated_prd_md = product_owner.run_requirements_feedback(
-                    purpose, feedback=text, current_prd=current_prd
-                )
-                target_task_id = prd_artifact.task_id if prd_artifact else None
-                if not target_task_id:
+                    prd_artifact = session.exec(
+                        select(Artifact)
+                        .where(Artifact.task.has(purpose_id=purpose_id))
+                        .where(Artifact.repo_path.ilike("%product_requirements.md"))
+                        .order_by(Artifact.created_at.desc())
+                    ).first()
+                except Exception:
+                    prd_artifact = None
+                current_prd = ""
+                if prd_artifact and prd_artifact.blob:
+                    current_prd = prd_artifact.blob.decode("utf-8", errors="ignore")
+                updated_prd_md = current_prd + "\n" + text
+                target_task_id = None
+                if prd_artifact:
+                    target_task_id = prd_artifact.task_id
+                else:
                     prd_task = session.exec(
                         select(Task)
                         .where(Task.purpose_id == purpose_id)
@@ -223,65 +241,69 @@ def post_chat(
                         media_type=prd_artifact.media_type if prd_artifact else "text/markdown",
                         allow_overwrite=True,
                     )
-            except Exception as e:  # pragma: no cover - PRD update failure
-                logger.error("PRD update failed: %s", e)
-            assistant_content = "Ich arbeite das ein."
-            agent_content = "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf Konsistenz mit den aktualisierten Anforderungen."
-            agent_msg = ChatMessage(
-                tenant_id=tenant_id,
-                purpose_id=purpose_id,
-                artifact_id=artifact_id,
-                role=ChatRole.AGENT.value,
-                content=agent_content,
-                metadata={"betroffene_artefakte": []},
-            )
-            session.add(agent_msg)
-
-    if assistant_content is None:
-        messages: list[dict] = []
-        sys_content = PROMPT_TEMPLATE.render(project=purpose.name, paused=paused)
-        messages.append({"role": "system", "content": sys_content})
-
-        conv_query = select(ChatMessage).where(
-            ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
-        )
-        if artifact_ids:
-            conv_query = (
-                conv_query.join(ChatMessageArtifact)
-                .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
-                .distinct()
-            )
-        else:
-            conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
-        conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
-        if not artifact_ids:
-            chat_context = session.get(ChatThreadContext, purpose_id)
-            if chat_context:
-                summary_text = chat_context.summary
-                if len(conv_history) > 10:
-                    conv_history = conv_history[-10:]
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": f"Zusammenfassung bisheriger Unterhaltung: {summary_text}",
-                    }
+                assistant_content = "Ich arbeite das ein."
+                agent_content = (
+                    "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation "
+                    "auf Konsistenz mit den aktualisierten Anforderungen."
                 )
-        for m in conv_history:
-            role = m.role.value if hasattr(m, "role") else str(m.role)
-            if role not in (ChatRole.USER.value, ChatRole.ASSISTANT.value):
-                role = ChatRole.ASSISTANT.value
-            messages.append({"role": role, "content": m.content})
+                agent_msg = ChatMessage(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    artifact_id=artifact_ids[0] if artifact_ids else None,
+                    role=ChatRole.AGENT.value,
+                    content=agent_content,
+                    metadata={"note": "feedback integrated"},
+                    scope=ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL,
+                    intent=ChatIntent.NOTE,
+                )
+                session.add(agent_msg)
+                for aid in artifact_ids:
+                    session.add(ChatMessageArtifact(chat_message_id=agent_msg.id, artifact_id=aid))
+        if assistant_content is None:
+            messages: list[dict] = []
+            sys_content = PROMPT_TEMPLATE.render(project=purpose.name, paused=paused)
+            messages.append({"role": "system", "content": sys_content})
 
-        try:
-            resp = llm.chat(model="gpt-3.5-turbo", messages=messages, tenant_id=tenant_id)
-            assistant_content = (
-                resp["choices"][0]["message"]["content"]
-                if isinstance(resp, dict)
-                else resp.choices[0].message.content
+            conv_query = select(ChatMessage).where(
+                ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
             )
-        except Exception as e:  # pragma: no cover - LLM failure
-            logger.error("LLM chat completion failed: %s", e)
-            raise HTTPException(status_code=500, detail="AI response generation failed")
+            if artifact_ids:
+                conv_query = (
+                    conv_query.join(ChatMessageArtifact)
+                    .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+                    .distinct()
+                )
+            else:
+                conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
+            conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
+            if not artifact_ids:
+                chat_context = session.get(ChatThreadContext, purpose_id)
+                if chat_context:
+                    summary_text = chat_context.summary
+                    if len(conv_history) > 10:
+                        conv_history = conv_history[-10:]
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": f"Zusammenfassung bisheriger Unterhaltung: {summary_text}",
+                        }
+                    )
+            for m in conv_history:
+                role = m.role.value if hasattr(m, "role") else str(m.role)
+                if role not in (ChatRole.USER.value, ChatRole.ASSISTANT.value):
+                    role = ChatRole.ASSISTANT.value
+                messages.append({"role": role, "content": m.content})
+
+            try:
+                resp = llm.chat(model="gpt-3.5-turbo", messages=messages, tenant_id=tenant_id)
+                assistant_content = (
+                    resp["choices"][0]["message"]["content"]
+                    if isinstance(resp, dict)
+                    else resp.choices[0].message.content
+                )
+            except Exception as e:  # pragma: no cover - LLM failure
+                logger.error("LLM chat completion failed: %s", e)
+                raise HTTPException(status_code=500, detail="AI response generation failed")
 
     assistant_msg = ChatMessage(
         tenant_id=tenant_id,
@@ -290,7 +312,7 @@ def post_chat(
         task_id=task_id,
         role=ChatRole.ASSISTANT.value,
         content=assistant_content or "",
-        scope=final_scope,
+        scope=ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL,
         intent=ChatIntent.NOTE,
     )
     session.add(assistant_msg)
@@ -553,6 +575,50 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     await websocket.send_json({"error": "Could not save message"})
                     continue
 
+                if user_msg.intent == ChatIntent.APPROVAL:
+                    for aid in artifact_ids:
+                        artifact = session.get(Artifact, aid)
+                        if artifact:
+                            task = session.get(Task, artifact.task_id)
+                            if task and task.status != "done":
+                                task.status = "done"
+                                if task.notes:
+                                    task.notes = task.notes.replace("awaiting_approval", "approved")
+                                else:
+                                    task.notes = "approved via chat"
+                                session.add(task)
+                    try:
+                        session.commit()
+                    except Exception as e:
+                        session.rollback()
+                        logger.error("Failed to approve tasks: %s", e)
+                    try:
+                        pool.delete(f"pause:{tenant_id}:{purpose_id}")
+                    except Exception as e:
+                        logger.error("Failed to clear pause flag: %s", e)
+                    assistant_msg = ChatMessage(
+                        tenant_id=tenant_id,
+                        purpose_id=purpose_id,
+                        artifact_id=artifact_ids[0] if artifact_ids else None,
+                        role=ChatRole.ASSISTANT.value,
+                        content="Freigabe bestätigt. Ich fahre mit der Umsetzung fort.",
+                        scope=ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL,
+                        intent=ChatIntent.NOTE,
+                    )
+                    session.add(assistant_msg)
+                    for aid in artifact_ids:
+                        session.add(
+                            ChatMessageArtifact(chat_message_id=assistant_msg.id, artifact_id=aid)
+                        )
+                    try:
+                        session.commit()
+                    except Exception as e:
+                        session.rollback()
+                        logger.error("Failed to save approval response message: %s", e)
+                    await websocket.send_json(
+                        {"role": "assistant", "content": assistant_msg.content}
+                    )
+                    continue
                 try:
                     paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
                 except Exception as e:
@@ -639,7 +705,9 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             messages.append(
                                 {
                                     "role": "system",
-                                    "content": f"Zusammenfassung bisheriger Unterhaltung: {summary_text}",
+                                    "content": (
+                                        f"Zusammenfassung bisheriger Unterhaltung: {summary_text}"
+                                    ),
                                 }
                             )
                     for m in conv_history:
@@ -664,11 +732,6 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         await websocket.send_json({"error": "AI response generation failed"})
                         continue
 
-                final_scope = (
-                    ChatScope.MIXED
-                    if len(artifact_ids) > 1
-                    else ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL
-                )
                 assistant_msg = ChatMessage(
                     tenant_id=tenant_id,
                     purpose_id=purpose_id,
@@ -676,7 +739,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     task_id=None,
                     role=ChatRole.ASSISTANT.value,
                     content=assistant_content or "",
-                    scope=final_scope,
+                    scope=ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL,
                     intent=ChatIntent.NOTE,
                 )
                 session.add(assistant_msg)
