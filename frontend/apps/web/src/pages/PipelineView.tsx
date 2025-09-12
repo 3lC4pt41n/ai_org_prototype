@@ -105,7 +105,7 @@ export default function PipelineView() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="p-4 bg-gray-100 flex justify-between items-center gap-2">
+      <div className="p-4 bg-gray-100 dark:bg-slate-800 flex justify-between items-center gap-2">
         <PurposeSelector />
         {paused ? (
           <span className="text-sm">
@@ -121,7 +121,7 @@ export default function PipelineView() {
       </div>
 
       {error && (
-        <div className="px-4 py-2 bg-red-50 text-red-600 border-b">
+        <div className="px-4 py-2 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-500 border-b">
           {typeof error === 'string'
             ? error
             : error instanceof Error
@@ -156,16 +156,16 @@ export default function PipelineView() {
           )}
         </div>
 
-        <aside className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
+        <aside className="w-80 border-l border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 overflow-y-auto">
           <h2 className="flex items-center gap-2 text-lg mb-2">
             <History className="w-4 h-4" /> Backlog
           </h2>
           <ul className="space-y-1 text-sm">
             {backlog.map((t: any) => (
-              <li
-                key={t.id}
-                className="border-b border-slate-200 py-1 flex items-center justify-between"
-              >
+               <li
+                 key={t.id}
+                 className="border-b border-slate-200 dark:border-slate-700 py-1 flex items-center justify-between"
+               >
                 <div>
                   <span className="text-amber-400 font-mono mr-2">{t.id}</span>
                   {t.description}
@@ -187,7 +187,7 @@ export default function PipelineView() {
           </h2>
           <ul className="space-y-1 text-sm">
             {artifacts.map((a) => (
-              <li key={a.id} className="border-b border-slate-200 py-1">
+               <li key={a.id} className="border-b border-slate-200 dark:border-slate-700 py-1">
                 <span className="text-amber-400 font-mono mr-2">{a.task_id}</span>
                 <a
                   href="#"
@@ -199,7 +199,7 @@ export default function PipelineView() {
                 >
                   {a.repo_path?.replace(/^[^/]+\//, '')}
                 </a>{' '}
-                <span className="text-slate-600 text-xs">
+                 <span className="text-slate-600 dark:text-slate-400 text-xs">
                   ({a.media_type}, {new Date(a.created_at!).toLocaleString()})
                 </span>
                 {a.released && <span className="ml-1 text-green-600 text-xs">released</span>}

@@ -74,3 +74,21 @@ button:disabled{ opacity:.6; cursor:not-allowed; }
 
 button.btn-secondary{ background:#6b7280; color:#fff; }
 button.btn-secondary:hover{ background:#4b5563; }
+
+/* Dark Theme (class strategy) */
+.dark {
+  --bg: #0f172a;
+  --bg-subtle: #1e293b;
+  --text: #E5E7EB;
+  --text-muted: #94A3B8;
+  --border: #374151;
+  --disabled: #6B7280;
+  --focus: #0ABAF0;
+}
+.dark input,
+.dark select,
+.dark textarea {
+  background: #1e293b;
+  color: var(--text);
+  border-color: var(--border);
+}
