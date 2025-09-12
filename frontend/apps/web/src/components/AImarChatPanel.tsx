@@ -268,7 +268,7 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
         <select
           value={filterValue}
           onChange={(e) => setFilterValue(e.target.value)}
-          className="text-xs border border-slate-300 rounded px-1 py-0.5"
+          className="w-full max-w-[220px] text-xs border border-slate-300 rounded px-1 py-0.5"
         >
           <option value="all">Alle Nachrichten</option>
           <option value="global">Nur globale</option>
@@ -419,7 +419,7 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value as 'global' | 'artifact' | 'auto')}
-          className="text-xs border border-slate-300 rounded px-2 py-1"
+          className="flex-shrink-0 w-full max-w-[160px] text-xs border border-slate-300 rounded px-2 py-1"
         >
           <option value="global">🌐 Global</option>
           <option value="artifact">🏷️ Artefakt</option>
@@ -427,7 +427,7 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
         </select>
         <input
           type="text"
-          className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm"
+          className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm min-h-[44px]"
           placeholder="Schreibe eine Nachricht..."
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
