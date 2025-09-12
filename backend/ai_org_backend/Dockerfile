@@ -19,6 +19,9 @@ COPY backend/ai_org_backend/alembic.ini /app
 COPY backend/ai_org_backend/alembic /app/alembic
 COPY prompts /app/prompts
 
+# Ensure pnpm available for frontend builds
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Alembic: Migrationsordner verbleibt unter /app (entspricht script_location=alembic)
 
 FROM base AS prod

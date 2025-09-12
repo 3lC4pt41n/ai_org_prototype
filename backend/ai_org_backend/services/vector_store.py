@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+import openai
+
 from ai_org_backend.config import QDRANT_API_KEY, QDRANT_URL
 
 from . import budget
@@ -23,16 +25,11 @@ except Exception:  # pragma: no cover
     QdrantClient = None  # type: ignore
     Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None  # type: ignore
 
-import importlib
-
 
 def _embedding_with_tokens(text: str) -> tuple[list[float], int]:
-    """Return embedding vector and token count using OpenAI client, compatible with
-    both legacy and new SDKs."""
-    try:
-        openai = importlib.import_module("openai")
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("openai package not available") from exc
+    """Return embedding vector and token count using the OpenAI client.
+
+    The helper is compatible with both legacy and new SDKs."""
     if hasattr(openai, "OpenAI"):
         client = openai.OpenAI()
         resp = client.embeddings.create(model="text-embedding-3-small", input=text)
@@ -95,11 +92,7 @@ class VectorStore:
         retry the operation.
         """
 
-        try:
-            openai = importlib.import_module("openai")
-        except Exception:  # pragma: no cover
-            openai = None
-        if not self.client or not text or openai is None:
+        if not self.client or not text:
             return True
         try:
             version = 1
@@ -152,7 +145,7 @@ class VectorStore:
     def query_vectors(self, tenant_id: str, query_text: str, top_k: int = 5) -> List[Any]:
         """Return up to *top_k* similar vectors for *query_text*."""
 
-        if not self.client or openai is None:
+        if not self.client:
             return []
         try:
             vector, total_tokens = _embedding_with_tokens(query_text)
