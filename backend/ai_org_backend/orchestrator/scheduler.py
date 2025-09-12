@@ -35,9 +35,8 @@ from ai_org_backend.orchestrator.inspector import (
 )
 from ai_org_backend.orchestrator.router import classify_role
 
-# ╭────────────────── Retry settings ──────────────────╮
-MAX_RETRIES = 2  # total automatic attempts
-RETRY_DELAY_S = 30  # wait 30s after fail before retry
+MAX_RETRIES = 2
+RETRY_DELAY_S = 30
 
 
 def _retry_failed_tasks() -> None:
@@ -61,7 +60,6 @@ def _retry_failed_tasks() -> None:
 
 
 def _ready_for_execution(task: Task, session: Session) -> bool:
-    """Return True if a task has no unresolved prerequisites."""
     unresolved = session.exec(
         select(TaskDependency)
         .where(TaskDependency.to_id == task.id)
@@ -72,26 +70,23 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
 
 
 def _generate_plan_for_purpose(purpose_id: str) -> None:
-    """Generate initial architecture and task plan for a new Purpose."""
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.agents.planner import run_planner
-    from ai_org_backend.main import Repo
     from ai_org_backend.scripts.seed_graph import ingest
     from ai_org_backend.services.storage import save_artefact
 
-    # Load the Purpose and run Architect agent to get blueprint
     with Session(engine) as db_session:
         purpose = db_session.get(Purpose, purpose_id)
         if not purpose:
             alert(f"Purpose {purpose_id} not found for planning", "orchestrator")
             return
+
     try:
         blueprint_md = run_architect(purpose)
     except Exception as e:
         alert(f"Orchestrator: Architect failed for purpose {purpose_id}: {e}", "error")
         return
 
-    # Save the architecture blueprint as a completed task with artefact
     with Session(engine) as db_session:
         blueprint_task = Task(
             tenant_id=TENANT,
@@ -111,7 +106,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         )
         Repo(TENANT).update(blueprint_task.id, owner="Architect", notes="Blueprint completed")
 
-    # Only plan if no implementation TODOs exist yet (avoid duplicates)
+    # Nur planen, wenn keine Implementierungs-Todos existieren
     with Session(engine) as db_session:
         existing_impl = db_session.exec(
             select(Task)
@@ -128,7 +123,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         ).first()
     if existing_impl:
         logging.info("[Orchestrator] Planner skipped (impl tasks already present)")
-        tasks_plan = []
+        tasks_plan: list[dict] = []
     else:
         try:
             tasks_plan = run_planner(blueprint_md)
@@ -139,7 +134,6 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             alert("Planner returned no task list", "warn")
             return
 
-    # Insert planned tasks into the database (status='todo')
     with Session(engine) as db_session:
         if tasks_plan:
             for t in tasks_plan:
@@ -155,7 +149,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 db_session.add(task_obj)
         db_session.commit()
 
-    # Mark PRD artefact as released (approved) once planning is done
+    # Markiere PRD-Artefakt als released (nur zur Sicherheit)
     with Session(engine) as db_session:
         prd_task = db_session.exec(
             select(Task).where(
@@ -184,18 +178,16 @@ async def orchestrator() -> None:
     near_budget_alert_sent = False
     alerted_fail_modules: set[str] = set()
     alerted_retry_modules: set[str] = set()
-    # ⏳ Initial seeding of backlogs (generate PRD and architecture blueprint)
+
     await asyncio.to_thread(seed_if_empty)
 
     while True:
-        # No global budget check here; budgets are managed per-purpose
-        # 1️⃣ retry failed tasks
         _retry_failed_tasks()
         if pool.get(f"pause:{TENANT}"):
             await asyncio.sleep(2)
             continue
 
-        # 2️⃣ Check for new Purposes to plan (PRD released → Architect/Planner)
+        # 2️⃣ Check purposes
         purpose_to_process: tuple[Purpose, bool] | None = None
         try:
             with Session(engine) as session:
@@ -207,6 +199,7 @@ async def orchestrator() -> None:
                     if pool.get(f"pause:{TENANT}:{p.id}"):
                         logging.info("[Orchestrator]  → paused → skip")
                         continue
+
                     tasks = session.exec(select(Task).where(Task.purpose_id == p.id)).all()
                     prd_task = next(
                         (
@@ -246,43 +239,34 @@ async def orchestrator() -> None:
                         f"released={getattr(prd_art,'released',None)} "
                         f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
                     )
-                    # Start Architect once PRD is done and released and no blueprint exists
                     if prd_task and (prd_art and prd_art.released) and not blueprint_task:
                         purpose_to_process = (p, bool(impl_todo))
                         break
         except Exception as e:
             logging.error("[Orchestrator] Failed to poll purposes: %s", e)
+
         if purpose_to_process:
             p, has_impl_todo = purpose_to_process
             logging.info(
-                "[Orchestrator] Detected approved PRD for purpose %s → start Architect "
-                "(impl_todo=%s)",
+                "[Orchestrator] Detected approved PRD for purpose %s → start Architect (impl_todo=%s)",
                 p.id,
                 has_impl_todo,
             )
             try:
-                # _generate_plan_for_purpose checks itself whether Planner should run
                 await asyncio.to_thread(_generate_plan_for_purpose, p.id)
             except Exception as e:
-                alert(
-                    f"Orchestrator: planning failed for purpose {p.id}: {e}",
-                    "error",
-                )
+                alert(f"Orchestrator: planning failed for purpose {p.id}: {e}", "error")
             continue
 
-        # Iterate over ready tasks
+        # Execute ready tasks
         for rec in cypher(LEAF_Q):
-            # Fetch full task details for tokens_plan
             with Session(engine) as session:
                 task_obj = session.get(Task, rec["id"])
             if not task_obj:
                 continue
-            # Skip if this purpose is paused
             if task_obj.purpose_id and pool.get(f"pause:{TENANT}:{task_obj.purpose_id}"):
                 continue
-            # Calculate cost estimate for this task
             cost_est = (task_obj.tokens_plan or 0) * (TOKEN_PRICE_PER_1000 / 1000.0)
-            # Check purpose-specific budget
             budget_val = budget_left(TENANT, task_obj.purpose_id)
             if budget_val < cost_est:
                 Repo(TENANT).update(task_obj.id, status="budget_exceeded", notes="budget skip")
@@ -290,19 +274,16 @@ async def orchestrator() -> None:
                 continue
             role = classify_role(rec["d"])
             Repo(TENANT).update(task_obj.id, status="doing")
-            # Deduct budget for the purpose
             debit(TENANT, cost_est, task_obj.purpose_id)
             celery.send_task(f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}")
+
         if time.time() - last > 10:
             blocked = cypher(BLOCKED_Q)[0]["blocked"]
             crit = cypher(CRIT_Q)
             PROM_TASK_BLOCKED.labels(TENANT).set(blocked)
             if crit:
                 PROM_CRIT_PATH_LEN.labels(TENANT).set(crit[0]["l"])
-            # Update Prometheus metrics for budget
             BUDGET_GA.labels(TENANT).set(budget_left(TENANT))
-            # Count tasks skipped due to budget
-            budget_blocked = 0
             with Session(engine) as session:
                 budget_blocked = session.exec(
                     select(func.count(Task.id)).where(
@@ -316,113 +297,44 @@ async def orchestrator() -> None:
                 f"budget_blocked:{budget_blocked:<2} budget:{budget_left(TENANT):.2f}$"
             )
             last = time.time()
-            # Anomaly detection: alert on high failure or retry rates
-            with Session(engine) as session:
-                for owner in ["Dev", "UX/UI", "QA"]:
-                    total = session.exec(
-                        select(func.count(Task.id)).where(
-                            Task.tenant_id == TENANT,
-                            Task.owner == owner,
-                            Task.status.in_(["done", "failed"]),
-                        )
-                    ).one()
-                    fails = session.exec(
-                        select(func.count(Task.id)).where(
-                            Task.tenant_id == TENANT,
-                            Task.owner == owner,
-                            Task.status == "failed",
-                        )
-                    ).one()
-                    retries = session.exec(
-                        select(func.count(Task.id)).where(
-                            Task.tenant_id == TENANT,
-                            Task.owner == owner,
-                            Task.status == "done",
-                            Task.retries > 0,
-                        )
-                    ).one()
-                    if (
-                        total >= 5
-                        and fails / total > 0.3
-                        and fails >= 3
-                        and owner not in alerted_fail_modules
-                    ):
-                        alert(
-                            f"High failure rate in {owner} tasks: {fails} of {total} failed",
-                            "warn",
-                        )
-                        alerted_fail_modules.add(owner)
-                    if retries >= 3 and owner not in alerted_retry_modules:
-                        alert(
-                            f"Frequent retries in {owner} tasks: "
-                            f"{retries} tasks needed multiple attempts",
-                            "warn",
-                        )
-                        alerted_retry_modules.add(owner)
-            if (
-                budget_left(TENANT) < DEFAULT_BUDGET * 0.1
-                and budget_left(TENANT) > 0
-                and not near_budget_alert_sent
-            ):
-                alert(
-                    f"Budget low: only ${budget_left(TENANT):.2f} remaining",
-                    "warn",
-                )
-                near_budget_alert_sent = True
-        done_count = 0
-        with Session(engine) as session:
-            done_count = session.exec(
-                select(func.count(Task.id)).where(
-                    Task.tenant_id == TENANT, Task.status == TaskStatus.DONE
-                )
-            ).one()
-        if done_count - LAST_DONE_COUNT >= 10:
-            celery.send_task("agent.project_manager", args=[TENANT], queue=f"{TENANT}:qa")
-            celery.send_task("agent.adjust_plan", args=[TENANT], queue=f"{TENANT}:qa")
-            LAST_DONE_COUNT = done_count
-        if budget_left(TENANT) < 1:
-            alert("Budget exhausted", "budget")
+
         await asyncio.sleep(2)
 
 
 if __name__ == "__main__":
-    import os
-    import sys
-
-    # Alembic initialization: abort if migrations folder is missing
+    import os, sys
     if not (
         os.path.isdir(os.path.join(os.getcwd(), "alembic"))
         or os.path.isdir(os.path.join(os.path.dirname(__file__), os.pardir, "alembic"))
     ):
         print("Alembic folder missing – please run 'alembic init alembic' to create it.")
         sys.exit(1)
-    import asyncio
 
-    # Early check: is the OpenAI key present?
-    key_present = bool(
-        os.getenv("OPENAI_API_KEY")
-        or os.getenv("OPENAI_KEY")
-        or os.getenv("OPENAI_APIKEY")
-        or os.getenv("OPENAI_API_KEY_FILE")
-        or os.getenv("OPENAI_API_KEY_B64")
-    )
     from ai_org_backend.services.llm_client import ensure_client
-
-    if not key_present:
-        print("⚠️  [ORCH] No OPENAI_API_KEY found; skipping LLM features.")
-    else:
+    key_present = any(
+        os.getenv(v)
+        for v in [
+            "OPENAI_API_KEY",
+            "OPENAI_KEY",
+            "OPENAI_APIKEY",
+            "OPENAI_API_KEY_FILE",
+            "OPENAI_API_KEY_B64",
+        ]
+    )
+    if key_present:
         try:
             ensure_client()
         except Exception as e:
-            print(f"⚠️  [ORCH] OpenAI client init failed (continuing without LLM): {e}")
+            print(f"⚠️ [ORCH] OpenAI client init failed (continuing without LLM): {e}")
+    else:
+        print("⚠️ [ORCH] No OPENAI_API_KEY found; skipping LLM features.")
 
-    # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
     from ai_org_backend.orchestrator.graph_orchestrator import driver
-
     try:
         with driver.session() as session:
             session.run("CREATE INDEX IF NOT EXISTS FOR (t:Task) ON (t.status)")
             print("ℹ️ Ensured Neo4j index on Task(status) exists")
     except Exception as e:
         logging.error("Failed to create Neo4j index for Task(status): %s", e)
+
     asyncio.run(orchestrator())

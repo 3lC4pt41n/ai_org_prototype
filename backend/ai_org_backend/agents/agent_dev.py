@@ -1,28 +1,25 @@
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import re
 from pathlib import Path
 
-from .utils import load_template
-
-from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
-from ai_org_backend.services.storage import save_artefact, driver
-from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, Purpose, TaskDependency, Tenant
-from ai_org_backend.services.llm_client import chat_with_tools, MODEL_DEFAULT, MODEL_THINKING
+from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
+from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED, insights_generated_total
+from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.deep_research import run_deep_research
-from ai_org_backend.orchestrator.inspector import (
-    PROM_TASK_FAILED,
-    insights_generated_total,
-)
+from ai_org_backend.services.llm_client import MODEL_DEFAULT, MODEL_THINKING, chat_with_tools
+from ai_org_backend.services.storage import driver, save_artefact
+from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
 
-# Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
+from .utils import load_template
+
+# Unified number of retry attempts for LLM errors
 MAX_AGENT_RETRIES = 2
 
 # Load prompt template for Dev agent
@@ -75,8 +72,17 @@ def agent_dev(tid: str, task_id: str) -> None:
                 )
 
             trigger_keywords = (
-                "integrate", "sdk", "oauth", "stripe", "webhook", "kafka", "docker",
-                "helm", "mongodb", "cassandra", "redis stream"
+                "integrate",
+                "sdk",
+                "oauth",
+                "stripe",
+                "webhook",
+                "kafka",
+                "docker",
+                "helm",
+                "mongodb",
+                "cassandra",
+                "redis stream",
             )
             need_research = any(k in task_obj.description.lower() for k in trigger_keywords)
             research_note = ""
@@ -88,7 +94,9 @@ def agent_dev(tid: str, task_id: str) -> None:
                 research = run_deep_research(tid, q, model=MODEL_THINKING)
                 research_note = research["summary"][:2000]
             if research_note:
-                memory_snippets.insert(0, {"category": "research", "source": "web", "chunk": research_note})
+                memory_snippets.insert(
+                    0, {"category": "research", "source": "web", "chunk": research_note}
+                )
 
             ctx["memory_snippets"] = memory_snippets
         prompt = PROMPT_TMPL.render(**ctx)
@@ -122,28 +130,27 @@ def agent_dev(tid: str, task_id: str) -> None:
             except Exception as exc:
                 error_msg = str(exc)
                 logging.error(
-                    f"[DevAgent] LLM generation failed for task {task_id} (attempt {attempt+1}): {exc}"
+                    "[DevAgent] LLM generation failed for task %s (attempt %s): %s",
+                    task_id,
+                    attempt + 1,
+                    exc,
                 )
                 if attempt < MAX_AGENT_RETRIES:
                     Repo(tid).update(
                         task_id,
                         retries=task_obj.retries + 1,
-                        notes="LLM-Fehler: " + error_msg,
+                        notes="LLM error: " + error_msg,
                     )
-                    err_note = (
-                        error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
-                    )
+                    err_note = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     ctx["error_note"] = err_note
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = MODEL_THINKING
                 else:
-                    Repo(tid).update(
-                        task_id, status="failed", owner="Dev", notes=error_msg
-                    )
+                    Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels(tid, "dev", "failed").inc()
                     return
-        # Artefakt nur bei erfolgreichem LLM-Output speichern
+        # Save artefact only on successful LLM output
         overwrite_flag = "allow_overwrite" in (task_obj.notes or "")
         files: list[tuple[str, str]] = []
         code_texts: list[str] = []
@@ -162,9 +169,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                         if fname:
                             files.append((fname, code_text))
         except Exception:
-            logging.warning(
-                f"[DevAgent] Non-JSON output for task {task_id}; applying heuristics"
-            )
+            logging.warning(f"[DevAgent] Non-JSON output for task {task_id}; applying heuristics")
         if not files:
             code_text = strip_code_fences(content)
             ext = infer_extension(code_text)
@@ -192,9 +197,7 @@ def agent_dev(tid: str, task_id: str) -> None:
             if file_path.parent and str(file_path.parent) != ".":
                 target_dir = Path("workspace") / tid / file_path.parent
                 target_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(
-                f"[DevAgent] Saving generated code to '{fname}' for task {task_id}"
-            )
+            logging.info(f"[DevAgent] Saving generated code to '{fname}' for task {task_id}")
             save_artefact(
                 task_id,
                 code_text.encode("utf-8"),
@@ -205,13 +208,11 @@ def agent_dev(tid: str, task_id: str) -> None:
         tokens_used = 0
         try:
             tokens_used = (
-                response.usage.total_tokens
-                if response and hasattr(response, "usage")
-                else 0
+                response.usage.total_tokens if response and hasattr(response, "usage") else 0
             )
         except Exception:
             pass
-        # Markiere die aktuelle Task als erledigt und prüfe auf Folgeaufgaben
+        # Mark the current task as done and check for follow-up tasks
         Repo(tid).update(
             task_id,
             status="done",
@@ -225,7 +226,7 @@ def agent_dev(tid: str, task_id: str) -> None:
             logging.info(
                 f"[DevAgent] Output was a list for task {task_id}; splitting into sub-tasks"
             )
-            # Wenn die KI eine Aufzählung statt Code geliefert hat: jeden Punkt als neue Task anlegen
+            # If the AI returned a list instead of code: create a new task for each item
             for line in content.splitlines():
                 if line.strip().startswith(("-", "*", "1.", "2.", "3.")):
                     desc = line.lstrip("-*0123456789. ").strip()
@@ -239,7 +240,7 @@ def agent_dev(tid: str, task_id: str) -> None:
         if followups:
             with SessionLocal() as session:
                 parent = session.get(Task, task_id)
-                # Werte für neue Aufgaben bestimmen (Token-Budget aufteilen, Mindestwert 500)
+                # Determine values for new tasks (split token budget, minimum 500)
                 bv_each = max(round(parent.business_value / len(followups), 1), 0.1)
                 tok_each = (
                     parent.tokens_plan // len(followups) if parent.tokens_plan else 0
@@ -256,23 +257,21 @@ def agent_dev(tid: str, task_id: str) -> None:
                     )
                     session.add(new_task)
                 session.flush()  # IDs zuweisen
-                # Jede neue Task als FINISH_START-Abhängigkeit mit Original-Task verknüpfen
+                # Link each new task as a FINISH_START dependency with the original task
                 for t in (
                     session.query(Task)
                     .filter(Task.notes == f"auto-split from task {task_id}")
                     .all()
                 ):
                     session.add(
-                        TaskDependency(
-                            from_id=task_id, to_id=t.id, dependency_type="FINISH_START"
-                        )
+                        TaskDependency(from_id=task_id, to_id=t.id, dependency_type="FINISH_START")
                     )
                 session.commit()
             logging.info(
                 f"[DevAgent] Created {len(followups)} follow-up task(s) from task {task_id}"
             )
             insights_generated_total.inc(len(followups))
-            # Neo4j-Graph mit neuen Tasks und Abhängigkeiten aktualisieren (inkrementeller Sync)
+            # Update Neo4j graph with new tasks and dependencies (incremental sync)
             try:
                 with SessionLocal() as session2:
                     new_tasks = (
@@ -305,6 +304,4 @@ def agent_dev(tid: str, task_id: str) -> None:
     except Exception as e:
         logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tid, "dev", "done").inc()
-    logging.info(
-        f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})"
-    )
+    logging.info(f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})")
