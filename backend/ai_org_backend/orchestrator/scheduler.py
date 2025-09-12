@@ -184,7 +184,7 @@ async def orchestrator() -> None:
     near_budget_alert_sent = False
     alerted_fail_modules: set[str] = set()
     alerted_retry_modules: set[str] = set()
-    # ⏳ Initiales Seeden der Backlogs (PRD und Architektur-Blueprint generieren)
+    # ⏳ Initial seeding of backlogs (generate PRD and architecture blueprint)
     await asyncio.to_thread(seed_if_empty)
 
     while True:
@@ -196,7 +196,7 @@ async def orchestrator() -> None:
             continue
 
         # 2️⃣ Check for new Purposes to plan (PRD released → Architect/Planner)
-        purpose_to_process = None
+        purpose_to_process: tuple[Purpose, bool] | None = None
         try:
             with Session(engine) as session:
                 purposes = session.exec(
@@ -227,28 +227,45 @@ async def orchestrator() -> None:
                         prd_art = session.exec(
                             select(Artifact).where(Artifact.task_id == prd_task.id)
                         ).first()
+                    impl_todo = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.status != TaskStatus.DONE
+                            and t.description
+                            not in [
+                                "Product Requirements Document",
+                                "Architecture Blueprint",
+                                "Architecture & Domain Review",
+                            ]
+                        ),
+                        None,
+                    )
                     logging.info(
                         f"[Orchestrator]  → prd_done={bool(prd_task)} "
                         f"released={getattr(prd_art,'released',None)} "
-                        f"blueprint={bool(blueprint_task)}"
+                        f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
                     )
+                    # Start Architect once PRD is done and released and no blueprint exists
                     if prd_task and (prd_art and prd_art.released) and not blueprint_task:
-                        purpose_to_process = p
+                        purpose_to_process = (p, bool(impl_todo))
                         break
         except Exception as e:
             logging.error("[Orchestrator] Failed to poll purposes: %s", e)
         if purpose_to_process:
+            p, has_impl_todo = purpose_to_process
             logging.info(
-                "[Orchestrator] Detected approved PRD for purpose %s → start Architect",
-                purpose_to_process.id,
+                "[Orchestrator] Detected approved PRD for purpose %s → start Architect "
+                "(impl_todo=%s)",
+                p.id,
+                has_impl_todo,
             )
             try:
-                # _generate_plan_for_purpose prüft selbst, ob Planner laufen soll
-                # (Duplikate vermeiden)
-                await asyncio.to_thread(_generate_plan_for_purpose, purpose_to_process.id)
+                # _generate_plan_for_purpose checks itself whether Planner should run
+                await asyncio.to_thread(_generate_plan_for_purpose, p.id)
             except Exception as e:
                 alert(
-                    f"Orchestrator: planning failed for purpose {purpose_to_process.id}: {e}",
+                    f"Orchestrator: planning failed for purpose {p.id}: {e}",
                     "error",
                 )
             continue
@@ -372,7 +389,7 @@ if __name__ == "__main__":
     import os
     import sys
 
-    # Alembic-Initialisierung: Falls Migrations-Ordner fehlt, mit Hinweis abbrechen
+    # Alembic initialization: abort if migrations folder is missing
     if not (
         os.path.isdir(os.path.join(os.getcwd(), "alembic"))
         or os.path.isdir(os.path.join(os.path.dirname(__file__), os.pardir, "alembic"))
@@ -381,7 +398,7 @@ if __name__ == "__main__":
         sys.exit(1)
     import asyncio
 
-    # Früh prüfen: ist der OpenAI-Key vorhanden?
+    # Early check: is the OpenAI key present?
     key_present = bool(
         os.getenv("OPENAI_API_KEY")
         or os.getenv("OPENAI_KEY")
@@ -392,12 +409,12 @@ if __name__ == "__main__":
     from ai_org_backend.services.llm_client import ensure_client
 
     if not key_present:
-        print("⚠️  [ORCH] No OPENAI_API_KEY found; LLM-Funktionen werden übersprungen.")
+        print("⚠️  [ORCH] No OPENAI_API_KEY found; skipping LLM features.")
     else:
         try:
             ensure_client()
         except Exception as e:
-            print(f"⚠️  [ORCH] OpenAI-Client-Init fehlgeschlagen (weiter ohne LLM): {e}")
+            print(f"⚠️  [ORCH] OpenAI client init failed (continuing without LLM): {e}")
 
     # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
     from ai_org_backend.orchestrator.graph_orchestrator import driver
