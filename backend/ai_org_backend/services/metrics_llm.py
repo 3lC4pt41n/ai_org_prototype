@@ -1,7 +1,8 @@
 """
-Prometheus-Metriken für LLM-Verbrauch & Kosten.
-Eigene Datei, um Kollisionen mit bestehenden Metrik-Namen zu vermeiden.
+Prometheus metrics for LLM usage and cost.
+Separate file to avoid collisions with existing metric names.
 """
+
 from prometheus_client import Counter, Gauge
 
 LLM_CALLS = Counter(

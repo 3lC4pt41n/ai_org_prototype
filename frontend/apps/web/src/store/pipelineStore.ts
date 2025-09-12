@@ -280,7 +280,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       await api.post(`/purposes/${purposeId}/start`);
       set({ paused: false });
     } catch (err: any) {
-      // Idempotent behandeln: falls Backend aus alten Ständen noch 400 lieferte
+      // Treat idempotently: if backend from older versions returned 400
       const detail = err?.response?.data?.detail;
       if (detail && /PRD already exists/i.test(detail)) {
         set({ paused: false, error: null });
