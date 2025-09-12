@@ -10,12 +10,12 @@ export default defineConfig({
       "@ui": path.resolve(__dirname, "../../packages/ui/src"),
       "@api": path.resolve(__dirname, "../../packages/api-client/src"),
       "@web": path.resolve(__dirname, "src"),
-      
+
     }
   },
   server: {
     proxy: {
-      // FastAPI läuft auf :8000
+      // FastAPI runs on :8000
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true
@@ -23,5 +23,3 @@ export default defineConfig({
     }
   }
 });
-
-

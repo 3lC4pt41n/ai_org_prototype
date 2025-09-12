@@ -91,5 +91,5 @@ export default function App() {
       </Routes>
     </BrowserRouter>
   );
-  // Neue Pipeline-View ist über die Route /pipeline erreichbar
+  // New pipeline view is reachable via the /pipeline route
 }

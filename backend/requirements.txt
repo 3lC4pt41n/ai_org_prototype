@@ -1,13 +1,13 @@
 sqlmodel>=0.0.21
 alembic>=1.13
 passlib[bcrypt]>=1.7.4
-# Pin gegen lästige "(trapped) error reading bcrypt version" Logs
+# Pin to avoid annoying "(trapped) error reading bcrypt version" logs
 bcrypt<4.0.0
 psycopg2-binary>=2.9
 # Web search via Google Custom Search API
 google-api-python-client
 # ...
 
-# redis-py ist ohnehin Dependency – Stelle sicher, dass eine v>=4 installiert ist
-# (falls du eine harte Version brauchst, füge z.B. hinzu:)
+# redis-py is already a dependency – ensure a version >=4 is installed
+# (if you need a hard pin, add e.g.)
 # redis>=4.4
