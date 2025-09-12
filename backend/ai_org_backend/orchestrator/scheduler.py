@@ -111,29 +111,48 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         )
         Repo(TENANT).update(blueprint_task.id, owner="Architect", notes="Blueprint completed")
 
-    # Run Planner agent to generate implementation task list
-    try:
-        tasks_plan = run_planner(blueprint_md)
-    except Exception as e:
-        alert(f"Orchestrator: Planner failed for purpose {purpose_id}: {e}", "error")
-        return
-    if not isinstance(tasks_plan, list):
-        alert("Planner returned no task list", "warn")
-        return
+    # Nur planen, wenn noch keine Implementierungs-Todos existieren (Duplikate vermeiden)
+    with Session(engine) as db_session:
+        existing_impl = db_session.exec(
+            select(Task)
+            .where(Task.purpose_id == purpose_id, Task.status != TaskStatus.DONE)
+            .where(
+                Task.description.notin_(
+                    [
+                        "Product Requirements Document",
+                        "Architecture Blueprint",
+                        "Architecture & Domain Review",
+                    ]
+                )
+            )
+        ).first()
+    if existing_impl:
+        logging.info("[Orchestrator] Planner skipped (impl tasks already present)")
+        tasks_plan = []
+    else:
+        try:
+            tasks_plan = run_planner(blueprint_md)
+        except Exception as e:
+            alert(f"Orchestrator: Planner failed for purpose {purpose_id}: {e}", "error")
+            return
+        if not isinstance(tasks_plan, list):
+            alert("Planner returned no task list", "warn")
+            return
 
     # Insert planned tasks into the database (status='todo')
     with Session(engine) as db_session:
-        for t in tasks_plan:
-            task_obj = Task(
-                tenant_id=TENANT,
-                purpose_id=purpose_id,
-                description=t.get("description", ""),
-                business_value=float(t.get("business_value", 1.0)),
-                tokens_plan=int(t.get("tokens_plan", 0)),
-                purpose_relevance=float(t.get("purpose_relevance", 0.0)),
-                status="todo",
-            )
-            db_session.add(task_obj)
+        if tasks_plan:
+            for t in tasks_plan:
+                task_obj = Task(
+                    tenant_id=TENANT,
+                    purpose_id=purpose_id,
+                    description=t.get("description", ""),
+                    business_value=float(t.get("business_value", 1.0)),
+                    tokens_plan=int(t.get("tokens_plan", 0)),
+                    purpose_relevance=float(t.get("purpose_relevance", 0.0)),
+                    status="todo",
+                )
+                db_session.add(task_obj)
         db_session.commit()
 
     # Mark PRD artefact as released (approved) once planning is done
@@ -176,18 +195,19 @@ async def orchestrator() -> None:
             await asyncio.sleep(2)
             continue
 
-        # 2️⃣ Check for new Purposes to plan (freigegebene Artefakte triggern nächste Schritte)
-        #    (Manual mode wartet bis Artefakt freigegeben, Auto mode fährt direkt fort)
+        # 2️⃣ Check for new Purposes to plan (PRD released → Architect/Planner)
+        purpose_to_process = None
         try:
             with Session(engine) as session:
                 purposes = session.exec(
                     select(Purpose).where(Purpose.tenant_id == TENANT, Purpose.is_active)
                 ).all()
-                purpose_to_process = None
                 for p in purposes:
-                    # Skip if this purpose is individually paused
+                    logging.info(f"[Orchestrator] Check purpose {p.id} ({p.name}) mode={p.mode}")
                     if pool.get(f"pause:{TENANT}:{p.id}"):
+                        logging.info("[Orchestrator]  → paused → skip")
                         continue
+                    # PRD done?
                     prd_task = session.exec(
                         select(Task).where(
                             Task.purpose_id == p.id,
@@ -195,47 +215,57 @@ async def orchestrator() -> None:
                             Task.status == TaskStatus.DONE,
                         )
                     ).first()
+                    # Blueprint vorhanden?
                     blueprint_task = session.exec(
                         select(Task).where(
-                            Task.purpose_id == p.id, Task.description == "Architecture Blueprint"
+                            Task.purpose_id == p.id,
+                            Task.description == "Architecture Blueprint",
                         )
                     ).first()
-                    next_task = session.exec(
+                    prd_art = None
+                    if prd_task:
+                        prd_art = session.exec(
+                            select(Artifact).where(Artifact.task_id == prd_task.id)
+                        ).first()
+                    # Gibt es schon implementierungsrelevante Todos?
+                    impl_todo = session.exec(
                         select(Task)
                         .where(Task.purpose_id == p.id, Task.status != TaskStatus.DONE)
                         .where(
-                            Task.description != "Product Requirements Document",
-                            Task.description != "Architecture Blueprint",
-                            Task.description != "Architecture & Domain Review",
+                            Task.description.notin_(
+                                [
+                                    "Product Requirements Document",
+                                    "Architecture Blueprint",
+                                    "Architecture & Domain Review",
+                                ]
+                            )
                         )
                     ).first()
-                    # Wenn PRD fertig und noch kein Architektur-Blueprint existiert:
-                    if prd_task and not blueprint_task and not next_task:
-                        if p.mode == "manual":
-                            # Im Manual-Modus weiter nur nach Nutzer-Freigabe des PRD-Artefakts
-                            prd_art = session.exec(
-                                select(Artifact).where(Artifact.task_id == prd_task.id)
-                            ).first()
-                            if not prd_art or not prd_art.released:
-                                continue  # PRD zwar fertig, aber noch nicht freigegeben → warten
-                        # Purpose ohne Architektur gefunden, Architekturplanung starten
-                        purpose_to_process = p
+                    logging.info(
+                        f"[Orchestrator]  → prd_done={bool(prd_task)} "
+                        f"released={getattr(prd_art,'released',None)} "
+                        f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
+                    )
+                    # Regel: Architect starten sobald PRD done+released & kein Blueprint
+                    if prd_task and (prd_art and prd_art.released) and not blueprint_task:
+                        purpose_to_process = (p, bool(impl_todo))
                         break
         except Exception as e:
-            logging.error("Orchestrator: failed to query purposes for planning: %s", e)
-            purpose_to_process = None
+            logging.error("[Orchestrator] Failed to poll purposes: %s", e)
         if purpose_to_process:
+            p, has_impl_todo = purpose_to_process
             logging.info(
-                "[Orchestrator] Detected approved PRD for purpose %s. Starting Architect...",
-                purpose_to_process.id,
+                "[Orchestrator] Detected approved PRD for purpose %s → start Architect "
+                "(impl_todo=%s)",
+                p.id,
+                has_impl_todo,
             )
             try:
-                await asyncio.to_thread(_generate_plan_for_purpose, purpose_to_process.id)
+                # _generate_plan_for_purpose prüft selbst, ob Planner laufen soll
+                # (Duplikate vermeiden)
+                await asyncio.to_thread(_generate_plan_for_purpose, p.id)
             except Exception as e:
-                alert(
-                    f"Orchestrator: planning failed for purpose {purpose_to_process.id}: {e}",
-                    "error",
-                )
+                alert(f"Orchestrator: planning failed for purpose {p.id}: {e}", "error")
             continue
 
         # Iterate over ready tasks
