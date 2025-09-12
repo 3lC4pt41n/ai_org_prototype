@@ -1,17 +1,17 @@
-# Einfache Kommandos für Developer-Workflows.
-# Tipp: 'make help' zeigt alle Targets an.
+# Simple commands for developer workflows.
+# Tip: 'make help' shows all targets.
 
 .RECIPEPREFIX := >
 .PHONY: help install-dev fmt lint typecheck test ci
 
 help:
 > @echo "Targets:"
-> @echo "  install-dev  - Installiert Dev-Dependencies & pre-commit hooks"
-> @echo "  fmt          - Formatiert Code (black + isort)"
-> @echo "  lint         - Ruff-Lint mit Auto-Fix"
-> @echo "  typecheck    - mypy Typprüfung"
-> @echo "  test         - Tests inkl. Coverage"
-> @echo "  ci           - Lint + Typcheck + Tests (wie im CI)"
+> @echo "  install-dev  - Install dev dependencies & pre-commit hooks"
+> @echo "  fmt          - Format code (black + isort)"
+> @echo "  lint         - Ruff lint with auto-fix"
+> @echo "  typecheck    - mypy type check"
+> @echo "  test         - Tests including coverage"
+> @echo "  ci           - Lint + type check + tests (like CI)"
 
 install-dev:
 > pip install -r backend/ai_org_backend/requirements.txt

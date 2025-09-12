@@ -192,7 +192,7 @@ def post_chat(
             pool.delete(f"pause:{tenant_id}:{purpose_id}")
         except Exception as e:
             logger.error("Failed to clear pause flag: %s", e)
-        assistant_content = "Freigabe bestätigt. Ich fahre mit der Umsetzung fort."
+        assistant_content = "Approval confirmed. Continuing with implementation."
     else:
         try:
             paused = bool(pool.get(f"pause:{tenant_id}:{purpose_id}"))
@@ -204,7 +204,7 @@ def post_chat(
         if paused:
             trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
             if text.lower() in trivial_responses:
-                assistant_content = "Verstanden, wird übernommen."
+                assistant_content = "Understood, will apply."
             else:
                 try:
                     prd_artifact = session.exec(
@@ -241,10 +241,10 @@ def post_chat(
                         media_type=prd_artifact.media_type if prd_artifact else "text/markdown",
                         allow_overwrite=True,
                     )
-                assistant_content = "Ich arbeite das ein."
+                assistant_content = "I'll incorporate that."
                 agent_content = (
-                    "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation "
-                    "auf Konsistenz mit den aktualisierten Anforderungen."
+                    "Note: Also check architecture, tests, and UI documentation for "
+                    "consistency with the updated requirements."
                 )
                 agent_msg = ChatMessage(
                     tenant_id=tenant_id,
@@ -601,7 +601,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         purpose_id=purpose_id,
                         artifact_id=artifact_ids[0] if artifact_ids else None,
                         role=ChatRole.ASSISTANT.value,
-                        content="Freigabe bestätigt. Ich fahre mit der Umsetzung fort.",
+                        content="Approval confirmed. Continuing with implementation.",
                         scope=ChatScope.ARTIFACT if artifact_ids else ChatScope.GLOBAL,
                         intent=ChatIntent.NOTE,
                     )
@@ -629,7 +629,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                 if paused:
                     trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
                     if user_text.lower() in trivial_responses:
-                        assistant_content = "Verstanden, wird übernommen."
+                        assistant_content = "Understood, will apply."
                     else:
                         current_prd = ""
                         try:

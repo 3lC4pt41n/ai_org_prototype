@@ -165,7 +165,7 @@ async def orchestrator() -> None:
     near_budget_alert_sent = False
     alerted_fail_modules: set[str] = set()
     alerted_retry_modules: set[str] = set()
-    # ⏳ Initiales Seeden der Backlogs (PRD und Architektur-Blueprint generieren)
+    # ⏳ Initial seeding of backlogs (generate PRD and architecture blueprint)
     await asyncio.to_thread(seed_if_empty)
 
     while True:
@@ -176,8 +176,8 @@ async def orchestrator() -> None:
             await asyncio.sleep(2)
             continue
 
-        # 2️⃣ Check for new Purposes to plan (freigegebene Artefakte triggern nächste Schritte)
-        #    (Manual mode wartet bis Artefakt freigegeben, Auto mode fährt direkt fort)
+        # 2️⃣ Check for new purposes to plan (released artefacts trigger next steps)
+        #    (Manual mode waits for artefact approval, auto mode proceeds immediately)
         try:
             with Session(engine) as session:
                 purposes = session.exec(
@@ -209,16 +209,16 @@ async def orchestrator() -> None:
                             Task.description != "Architecture & Domain Review",
                         )
                     ).first()
-                    # Wenn PRD fertig und noch kein Architektur-Blueprint existiert:
+                    # If PRD is ready and no architecture blueprint exists yet:
                     if prd_task and not blueprint_task and not next_task:
                         if p.mode == "manual":
-                            # Im Manual-Modus weiter nur nach Nutzer-Freigabe des PRD-Artefakts
+                            # In manual mode continue only after user approves PRD artefact
                             prd_art = session.exec(
                                 select(Artifact).where(Artifact.task_id == prd_task.id)
                             ).first()
                             if not prd_art or not prd_art.released:
-                                continue  # PRD zwar fertig, aber noch nicht freigegeben → warten
-                        # Purpose ohne Architektur gefunden, Architekturplanung starten
+                                continue  # PRD done but not yet released → wait
+                        # Purpose without architecture found, start architecture planning
                         purpose_to_process = p
                         break
         except Exception as e:
@@ -366,7 +366,7 @@ if __name__ == "__main__":
         sys.exit(1)
     import asyncio
 
-    # Früh prüfen: ist der OpenAI-Key vorhanden?
+    # Early check: is the OpenAI key present?
     key_present = bool(
         os.getenv("OPENAI_API_KEY")
         or os.getenv("OPENAI_KEY")
@@ -377,12 +377,12 @@ if __name__ == "__main__":
     from ai_org_backend.services.llm_client import ensure_client
 
     if not key_present:
-        print("⚠️  [ORCH] No OPENAI_API_KEY found; LLM-Funktionen werden übersprungen.")
+        print("⚠️  [ORCH] No OPENAI_API_KEY found; skipping LLM features.")
     else:
         try:
             ensure_client()
         except Exception as e:
-            print(f"⚠️  [ORCH] OpenAI-Client-Init fehlgeschlagen (weiter ohne LLM): {e}")
+            print(f"⚠️  [ORCH] OpenAI client init failed (continuing without LLM): {e}")
 
     # Ensure Neo4j index on Task.status exists (to avoid UnknownPropertyKeyWarning)
     from ai_org_backend.orchestrator.graph_orchestrator import driver

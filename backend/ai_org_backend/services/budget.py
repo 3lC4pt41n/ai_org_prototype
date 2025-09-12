@@ -1,9 +1,10 @@
 """
-Budgetverwaltung pro Tenant:
-- Speichert Budgetstände in Redis (In-Memory-Fallback, wenn Redis nicht erreichbar ist).
-- Bietet get_total/get_left/set_total/charge() und eine BudgetExceededError-Exception.
-- Berechnet Kosten anhand von Tokenverbrauch und konfigurierten Preisen.
+Per-tenant budget management:
+- Store budget values in Redis (in-memory fallback if Redis is unavailable).
+- Provide get_total/get_left/set_total/charge() and a BudgetExceededError exception.
+- Calculate costs based on token usage and configured prices.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,7 @@ except Exception:  # pragma: no cover
     redis = None  # type: ignore
 
 # -----------------------------
-# Konfiguration / Pricing
+# Configuration / Pricing
 # -----------------------------
 USD_PER_1K_TOKENS = float(os.getenv("USD_PER_1K_TOKENS", "0.0025"))
 PRICING_MAP: Dict[str, float] = {}

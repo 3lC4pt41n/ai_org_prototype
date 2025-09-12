@@ -1,23 +1,26 @@
 """
-Backfill für 'decrbyfloat' in redis-py:
-Redis kennt kein DECRBYFLOAT; korrekt ist INCRBYFLOAT mit negativem Wert.
-Manche Codepfade rufen jedoch 'decrbyfloat' auf. Dieses Modul ergänzt die Methode
-auf Redis/StrictRedis/Pipeline, falls sie fehlt.
+Backfill for 'decrbyfloat' in redis-py:
+Redis has no DECRBYFLOAT; the correct command is INCRBYFLOAT with a negative value.
+Some code paths call 'decrbyfloat'. This module adds the method to
+Redis/StrictRedis/Pipeline if it's missing.
 """
+
 from __future__ import annotations
+
 from typing import Any
+
 
 def ensure_redis_decrbyfloat() -> None:
     try:
-        from redis.client import Redis, StrictRedis, Pipeline  # type: ignore
+        pass  # type: ignore
     except Exception:
-        # redis nicht installiert: nichts zu tun
+        # redis not installed: nothing to do
         return
 
     def _impl(self: Any, name: str, amount: float = 1.0) -> float:
         """
-        Dekrementiert einen Float-Wert durch INCRBYFLOAT mit negativem Betrag.
-        Gibt den neuen Wert als float zurück (wie incrbyfloat).
+        Decrement a float value using INCRBYFLOAT with a negative amount.
+        Return the new value as float (like incrbyfloat).
         """
         try:
             amt = float(amount)
@@ -31,20 +34,23 @@ def ensure_redis_decrbyfloat() -> None:
             try:
                 setattr(cls, "decrbyfloat", _impl)
             except Exception:
-                # Im Zweifel lieber still weiterlaufen als Import zu blockieren
+                # Prefer to continue silently rather than block import
                 pass
 
+
 def _iter_target_classes():
-    """Hilfsfunktion: liefert Redis, StrictRedis, Pipeline falls vorhanden."""
+    """Helper: yield Redis, StrictRedis, Pipeline if available."""
     try:
-        from redis.client import Redis, StrictRedis, Pipeline  # type: ignore
+        from redis.client import Pipeline, Redis, StrictRedis  # type: ignore
+
         yield Redis
         yield StrictRedis
         yield Pipeline
     except Exception:
         return
 
-# Bei Modulimport direkt aktivieren (idempotent)
+
+# Activate immediately on module import (idempotent)
 try:
     ensure_redis_decrbyfloat()
 except Exception:

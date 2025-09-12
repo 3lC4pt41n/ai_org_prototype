@@ -44,10 +44,10 @@ def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
 @router.post("/{purpose_id}/start")
 def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
     """
-    Start (oder fortsetzen) eines Purpose.
-    - Idempotent: Wenn das PRD bereits existiert, wird *kein* 400 mehr geworfen,
-      sondern der Pausen-Flag entfernt und 200 zurückgegeben.
-    - Falls noch kein PRD existiert, wird es erzeugt.
+    Start (or resume) a purpose.
+    - Idempotent: if the PRD already exists, no 400 is raised; the pause flag is
+      removed and 200 returned instead.
+    - If no PRD exists yet, it is created.
     """
 
     tenant_id = current_tenant.id
