@@ -1,9 +1,10 @@
 """Celery application instance for ai_org_backend tasks."""
 
-from ai_org_backend import config
 from celery import Celery
 from celery.signals import before_task_publish, task_failure, task_prerun
 from dotenv import load_dotenv
+
+from ai_org_backend import config
 
 # Load environment variables so configuration values are available when the
 # module is imported by the Celery command line interface.
@@ -13,6 +14,7 @@ load_dotenv()  # load .env so config values (REDIS_URL, etc.) are set
 # Initialize Celery app with a clear name and broker/backend config
 celery = Celery("ai_org_backend", broker=config.REDIS_URL, backend=config.REDIS_URL)
 celery.conf.task_acks_late = True
+celery.conf.task_default_queue = "celery"
 # Route tasks dynamically based on tenant and task type
 celery.conf.task_routes = ("ai_org_backend.tasks.celery_app.dynamic_router",)
 celery.conf.task_create_missing_queues = True
@@ -42,11 +44,7 @@ def enforce_budget(sender=None, body=None, headers=None, **extra):
         from ai_org_backend.db import SessionLocal
         from ai_org_backend.main import TOKEN_PRICE_PER_1000, Repo
         from ai_org_backend.models import Task
-        from ai_org_backend.orchestrator.inspector import (
-            PROM_BUDGET_BLOCKED,
-            alert,
-            budget_left,
-        )
+        from ai_org_backend.orchestrator.inspector import PROM_BUDGET_BLOCKED, alert, budget_left
 
         with SessionLocal() as session:
             task_obj = session.get(Task, t_id)
@@ -108,16 +106,8 @@ def dynamic_router(task_name: str, args, kwargs, options, task=None, **unused):
         return options
     queue_suffix = None
     if task_name.startswith("agent."):
-        if task_name in {"agent.integration", "agent.e2e"}:
-            queue_suffix = "qa"
-        elif task_name in {"agent.performance", "agent.security"}:
-            queue_suffix = "telemetry"
-        elif task_name == "agent.code_review":
-            queue_suffix = "qa.review"
-        elif task_name == "agent.refactor":
-            queue_suffix = "qa.refactor"
-        else:
-            queue_suffix = "qa"
+        # Route agent tasks to queue '<tenant_id>:<role>'
+        queue_suffix = task_name.split(".", 1)[1]
     elif "insight" in task_name:
         queue_suffix = "insight"
     elif "architect" in task_name:
