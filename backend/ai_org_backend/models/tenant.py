@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 from ..settings import settings
@@ -9,6 +11,14 @@ from ..settings import settings
 if TYPE_CHECKING:
     from .purpose import Purpose
     from .task import Task
+
+
+class Theme(str, Enum):
+    LIGHT = "light"
+    DARK = "dark"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class Tenant(SQLModel, table=True):
@@ -29,6 +39,11 @@ class Tenant(SQLModel, table=True):
     )
     enable_code_review: bool = Field(default=True)
     enable_refactor: bool = Field(default=True)
+    # UI theme preference (light or dark mode)
+    theme: Theme = Field(
+        default=Theme.LIGHT,
+        sa_column=sa.Column(sa.Enum(Theme, name="usertheme"), nullable=False),
+    )
 
     # FIXED: Import List from typing explicitly, no __future__ annotations
     tasks: List["Task"] = Relationship(back_populates="tenant")
