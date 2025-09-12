@@ -331,9 +331,9 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
         if ui_artifact:
             impacted_ids.append(ui_artifact.id)
         if arch_artifact:
-            followup_suggestion = "Architektur aktualisieren"
+            followup_suggestion = "Update architecture"
         else:
-            followup_suggestion = "Architektur erstellen"
+            followup_suggestion = "Create architecture"
     elif "blueprint" in task_desc or "architecture_blueprint" in repo_path:
         impact_level = "medium"
         change_type = "followup_needed"
@@ -345,7 +345,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
         ).first()
         if test_artifact:
             impacted_ids.append(test_artifact.id)
-        followup_suggestion = "Testfälle überprüfen"
+        followup_suggestion = "Review test cases"
     elif "ui" in task_desc or "ui" in repo_path:
         impact_level = "medium"
         change_type = "informational"
@@ -357,7 +357,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
         ).first()
         if test_artifact:
             impacted_ids.append(test_artifact.id)
-        followup_suggestion = "UI-Tests aktualisieren"
+        followup_suggestion = "Update UI tests"
     elif "test" in task_desc or "test" in repo_path:
         impact_level = "low"
         change_type = "informational"
@@ -441,7 +441,7 @@ def post_artifact_feedback(
 
     trivial = {"ok", "fine", "okay", "thanks", "passt", "danke"}
     if text.lower() in trivial:
-        ai_reply = "Verstanden, wird übernommen."
+        ai_reply = "Understood, will apply."
     else:
         from ai_org_backend.agents.product_owner import run_requirements_feedback
 

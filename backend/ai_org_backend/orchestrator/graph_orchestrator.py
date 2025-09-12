@@ -3,16 +3,17 @@ import os
 import re
 from typing import Any, Dict, List
 
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from networkx import DiGraph
+from sqlmodel import Session, select
+
 from ai_org_backend.agents.utils import load_template
 from ai_org_backend.api.auth import hash_password  # import the bcrypt hash helper
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.services.storage import register_artefact
-from dotenv import load_dotenv
-from neo4j import GraphDatabase
-from networkx import DiGraph
-from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -111,7 +112,7 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             session.add(tenant)
             session.commit()
 
-        # Prüfe alle aktiven Purposes auf neue, leere Backlogs
+        # Check all active purposes for new, empty backlogs
         print(f"[SEED] Checking for new purpose to seed (tenant '{TENANT}')")
         purposes = session.exec(
             select(Purpose).where(
@@ -119,11 +120,9 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             )
         ).all()
         if not purposes:
-            print(
-                f"[SEED] Kein aktiver Purpose für Tenant '{TENANT}' gefunden – Seeding abgebrochen."
-            )
+            print(f"[SEED] No active purpose found for tenant '{TENANT}' – seeding aborted.")
             return
-        # Finde ersten Purpose ohne zugehörige Tasks
+        # Find first purpose without associated tasks
         purpose = None
         for p in purposes:
             task_exists = session.exec(
@@ -134,7 +133,7 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             purpose = p
             break
         if not purpose:
-            print("[SEED] Keine neuen Zwecke mit leerem Backlog gefunden – Seeding abgebrochen.")
+            print("[SEED] No new purposes with empty backlog found – seeding aborted.")
             return
         print(f"[SEED] Seeding started for purpose '{purpose.name}' (tenant '{TENANT}')")
 

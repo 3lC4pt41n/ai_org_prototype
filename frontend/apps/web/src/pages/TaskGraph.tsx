@@ -44,9 +44,9 @@ function getStatusTooltip(status: string, owner?: string): string {
   }
 }
 
-// Bubblegröße dynamisch skalieren (Business Value oder PlanToken)
+// Dynamically scale bubble size (business value or planned tokens)
 function getNodeSize(task) {
-  // Skaliere mit log() damit große Werte nicht explodieren
+  // Scale with log() so large values don't explode
   // Min=40px, Max=140px
   const base = 40;
   const max = 140;

@@ -4,7 +4,9 @@ Revision ID: 20250910_add_chat_tables
 Revises: 20251004_artifact_release_flag
 Create Date: 2025-09-10 00:00:00.000000
 """
+
 from typing import Sequence, Union
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -13,6 +15,7 @@ revision: str = "20250910_add_chat_tables"
 down_revision: Union[str, Sequence[str], None] = "20251004_artifact_release_flag"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
 
 def upgrade() -> None:
     bind = op.get_bind()
@@ -27,23 +30,42 @@ def upgrade() -> None:
             sa.Column("purpose_id", sa.String(), sa.ForeignKey("purpose.id"), nullable=True),
             sa.Column("artifact_id", sa.String(), sa.ForeignKey("artifact.id"), nullable=True),
             sa.Column("task_id", sa.String(), sa.ForeignKey("task.id"), nullable=True),
-            sa.Column("role", sa.Enum("user", "assistant", "agent", name="chatrole"), nullable=False),
+            sa.Column(
+                "role", sa.Enum("user", "assistant", "agent", name="chatrole"), nullable=False
+            ),
             sa.Column("content", sa.String(length=5000), nullable=False),
             sa.Column("metadata", sa.JSON(), nullable=True),
-            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
         )
-        # Standard-Defaultwerte nachträglich entfernen (nur für Tabellenerstellung gesetzt)
+        # Remove temporary default values (only used during table creation)
         op.alter_column("chatmessage", "created_at", server_default=None)
 
     # 2. Create chatthreadcontext table if it doesn't exist
     if not insp.has_table("chatthreadcontext"):
         op.create_table(
             "chatthreadcontext",
-            sa.Column("purpose_id", sa.String(), sa.ForeignKey("purpose.id"), primary_key=True, nullable=False),
+            sa.Column(
+                "purpose_id",
+                sa.String(),
+                sa.ForeignKey("purpose.id"),
+                primary_key=True,
+                nullable=False,
+            ),
             sa.Column("summary", sa.String(length=5000), nullable=False),
-            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
         )
         op.alter_column("chatthreadcontext", "updated_at", server_default=None)
+
 
 def downgrade() -> None:
     bind = op.get_bind()

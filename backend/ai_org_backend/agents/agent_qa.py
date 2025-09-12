@@ -3,17 +3,18 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from sqlmodel import select
+
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency
+from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.testing import run_tests
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
-from sqlmodel import select
-from ai_org_backend.models.chat import ChatRole
 
 from .utils import load_template
 
@@ -23,7 +24,7 @@ QA_ARTIFACT_COUNTER = prom_counter(
     "ai_qa_artifact_refs_total", "QA tasks referencing dev artifacts"
 )
 
-# Einheitliche Anzahl an Wiederholungsversuchen für LLM-Fehler
+# Unified number of retry attempts for LLM errors
 MAX_AGENT_RETRIES = 2
 
 
@@ -197,7 +198,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     Repo(tid).update(
                         task_id,
                         retries=task_obj.retries + 1,
-                        notes="LLM-Fehler: " + error_msg,
+                        notes="LLM error: " + error_msg,
                     )
                     err_note = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     ctx["error_note"] = err_note
@@ -208,7 +209,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     PROM_TASK_FAILED.labels(tid).inc()
                     TASK_CNT.labels(tid, "qa", "failed").inc()
                     return
-        # QA-Report nur bei Erfolg speichern
+        # Only save QA report on success
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
         tokens_used = 0
         try:

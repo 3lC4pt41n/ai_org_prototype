@@ -1,6 +1,6 @@
 FROM python:3.11-slim as base
 
-# System deps (git für Repo-Init; libxml2/xslt als Fallback für lxml-Wheels)
+# System deps (git for repo init; libxml2/xslt fallback for lxml wheels)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     build-essential \
@@ -12,12 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Anforderungen installieren (direkt aus dem App-Ordner)
+# Install requirements (directly from the app folder)
 COPY ai_org_backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip
 # install project deps (ensure wheels for bcrypt/passlib)
 RUN pip install --no-cache-dir -r /app/requirements.txt
-# Laufzeit-Umgebung / Alembic
+# Runtime environment / Alembic
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     ALEMBIC_CONFIG=/app/alembic.ini \
@@ -25,6 +25,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Application source
 COPY . /app/ai_org_backend
-# Alembic: zentrale, service-übergreifende Location
+# Alembic: central, cross-service location
 COPY ai_org_backend/alembic.ini /app/alembic.ini
 COPY ai_org_backend/alembic /app/alembic

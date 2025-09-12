@@ -4,15 +4,16 @@ import logging
 import os
 from typing import Dict
 
-from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Task, TaskDependency
 from neo4j import GraphDatabase
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
+from ai_org_backend.db import engine
+from ai_org_backend.models import Artifact, Task, TaskDependency
+
 logger = logging.getLogger(__name__)
 
-# ───── Neo4j-Konfiguration ──────────────────────────────────────────
+# ───── Neo4j configuration ──────────────────────────────────────────
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASS = os.getenv("NEO4J_PASS")
@@ -36,18 +37,18 @@ MERGE (a)-[r:DEPENDS_ON {kind:$kind}]->(b)
 """
 
 
-# ───── Ingest-Routine ───────────────────────────────────────────────
+# ───── Ingest routine ───────────────────────────────────────────────
 def ingest(tenant: str) -> Dict[str, int]:
-    """Kopiert Tasks + Dependencies eines Tenants nach Neo4j."""
+    """Copy tasks and dependencies of a tenant into Neo4j."""
     logger.info("Starting Neo4j ingest for tenant '%s'", tenant)
     with driver.session() as g, Session(engine) as db:
-        # Neo4j leeren
+        # Clear Neo4j
         g.run(CLEAN_CYPHER)
 
-        # Tasks dieses Tenants holen
+        # Fetch tasks for this tenant
         tasks = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
 
-        # Dependencies inkl. beteiligter Tasks eager-laden
+        # Eager-load dependencies including involved tasks
         deps = db.exec(
             select(TaskDependency)
             .join(Task, Task.id == TaskDependency.from_id)
@@ -57,12 +58,12 @@ def ingest(tenant: str) -> Dict[str, int]:
                 selectinload(TaskDependency.to_task),
             )
         ).all()
-        # Alle Artefakte dieses Tenants holen (für PRODUCED-Kanten)
+        # Fetch all artifacts of this tenant (for PRODUCED edges)
         artifacts = db.exec(select(Artifact).where(Artifact.task.has(tenant_id=tenant))).all()
 
         merged: set[str] = set()
         with g.begin_transaction() as tx:
-            # zuerst Task-Nodes
+            # first task nodes
             for t in tasks:
                 tx.run(
                     MERGE_TASK,
@@ -76,7 +77,7 @@ def ingest(tenant: str) -> Dict[str, int]:
                 )
                 merged.add(t.id)
 
-            # dann Kanten (Task-Dependencies)
+            # then edges (task dependencies)
             for dep in deps:
                 tx.run(
                     MERGE_DEP,
@@ -84,7 +85,7 @@ def ingest(tenant: str) -> Dict[str, int]:
                     to_id=dep.to_id,
                     kind=getattr(dep, "dependency_type", "blocks"),
                 )
-            # dann Artefakt-Kanten (Task->Artifact)
+            # then artifact edges (Task->Artifact)
             for art in artifacts:
                 tx.run(
                     """

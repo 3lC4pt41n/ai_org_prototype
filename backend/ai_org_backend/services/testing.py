@@ -5,13 +5,9 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
-from ai_org_backend.config import (
-    TEST_CPU_LIMIT,
-    TEST_MEMORY_LIMIT,
-    TEST_TIMEOUT_SECONDS,
-)
+from ai_org_backend.config import TEST_CPU_LIMIT, TEST_MEMORY_LIMIT, TEST_TIMEOUT_SECONDS
 
 DOCKER_IMAGE = "ai_org_test:latest"
 
@@ -74,13 +70,13 @@ def run_tests(tenant_id: str, test_files: List[str]) -> Tuple[bool, str, Optiona
                 )
     except subprocess.TimeoutExpired:
         tests_passed = False
-        note = f"Testlauf nach {TEST_TIMEOUT_SECONDS}s abgebrochen (Timeout)"
+        note = f"Test run aborted after {TEST_TIMEOUT_SECONDS}s (timeout)"
         logging.error(f"[TestingService] {note}")
         subprocess.run(["docker", "kill", container_name], stderr=subprocess.DEVNULL)
         test_output = f"ERROR: {note}"
     except Exception as exc:  # pragma: no cover - subprocess failure
         tests_passed = False
-        note = f"Testausführung fehlgeschlagen: {exc}"
+        note = f"Test execution failed: {exc}"
         logging.error(f"[TestingService] {note}")
         test_output = f"ERROR: {exc}"
     finally:
