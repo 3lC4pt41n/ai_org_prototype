@@ -92,6 +92,8 @@ from ai_org_backend.agents import (  # ensure repo_composer agent is loaded  # n
 
 # ──────────────── Agent tasks (imported) ─────────────
 from ai_org_backend.agents.agent_dev import agent_dev  # noqa: E402
+from ai_org_backend.agents.agent_insight import agent_insight  # noqa: E402
+from ai_org_backend.agents.agent_integration import agent_integration  # noqa: E402
 from ai_org_backend.agents.agent_qa import agent_qa  # noqa: E402
 from ai_org_backend.agents.agent_ux_ui import agent_ux_ui  # noqa: E402
 
@@ -107,6 +109,8 @@ AGENTS = {
     "ux_ui": agent_ux_ui,
     "qa": agent_qa,
     "telemetry": agent_telemetry,
+    "insight": agent_insight,
+    "integration": agent_integration,
     "repo": repo_composer.agent_repo,  # Register new repo_composer agent
 }
 
