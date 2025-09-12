@@ -1,0 +1,79 @@
+name: Deploy Docker Images
+on:
+  push:
+    branches: [ "dev", "qa", "main" ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+# Grant write access to packages (GHCR) and read access to code
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      GHCR_REPO: ghcr.io/${{ secrets.GHCR_USERNAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set target environment tag
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "${GITHUB_REF##*/}" = "dev" ]; then echo "ENV_TAG=dev" >> $GITHUB_ENV;
+          elif [ "${GITHUB_REF##*/}" = "qa" ]; then echo "ENV_TAG=qa" >> $GITHUB_ENV;
+          elif [ "$GITHUB_EVENT_NAME" = "release" ] || [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "ENV_TAG=prod" >> $GITHUB_ENV;
+          else echo "ENV_TAG=latest" >> $GITHUB_ENV; fi
+
+      - name: Set up Docker Buildx (builder)
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Restore Docker layer cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ env.ENV_TAG }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ env.ENV_TAG }}-
+
+      - name: Build and push backend images (API, Orchestrator, Celery workers)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend/ai_org_backend
+          file: backend/ai_org_backend/Dockerfile
+          target: prod
+          push: true
+          tags: ghcr.io/${{ secrets.GHCR_USERNAME }}/api:${{ env.ENV_TAG }},
+                ghcr.io/${{ secrets.GHCR_USERNAME }}/orchestrator:${{ env.ENV_TAG }},
+                ghcr.io/${{ secrets.GHCR_USERNAME }}/celery-architect:${{ env.ENV_TAG }},
+                ghcr.io/${{ secrets.GHCR_USERNAME }}/celery-insight:${{ env.ENV_TAG }},
+                ghcr.io/${{ secrets.GHCR_USERNAME }}/celery-dev:${{ env.ENV_TAG }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: frontend/Dockerfile
+          target: prod
+          push: true
+          tags: ghcr.io/${{ secrets.GHCR_USERNAME }}/frontend:${{ env.ENV_TAG }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Mirror official images to GHCR (Postgres, Redis)
+        run: |
+          docker pull postgres:15 && docker tag postgres:15 ${{ env.GHCR_REPO }}/postgres:15 && docker push ${{ env.GHCR_REPO }}/postgres:15
+          docker pull redis:7 && docker tag redis:7 ${{ env.GHCR_REPO }}/redis:7 && docker push ${{ env.GHCR_REPO }}/redis:7
