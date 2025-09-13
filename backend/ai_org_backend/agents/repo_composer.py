@@ -4,17 +4,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .utils import load_template
-
-# Import Celery app and utilities
-from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.services.storage import save_artefact
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, Artifact
-from ai_org_backend.utils.llm import chat
-from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
+from ai_org_backend.models import Artifact, Task
 from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.tasks.celery_app import celery
+from ai_org_backend.utils.llm import chat
+
+from .utils import load_template
 
 # Load prompt template for repository composition
 PROMPT_TMPL = load_template("repo_composer.j2")
@@ -22,8 +21,11 @@ PROMPT_TMPL = load_template("repo_composer.j2")
 
 @celery.task(name="agent.repo")
 def agent_repo(tenant_id: str, task_id: str) -> None:
-    """Generate initial project repository scaffolding (folders, files, CI stubs) and save as artefacts."""
-    logging.info(f"[repo_composer] Starting repo scaffolding for Task {task_id} (tenant {tenant_id})")
+    """Generate initial project repository scaffolding (folders, files, CI stubs) and
+    save as artifacts."""
+    logging.info(
+        f"[repo_composer] Starting repo scaffolding for Task {task_id} (tenant {tenant_id})"
+    )
     with TASK_LAT.labels("repo", tenant_id).time():
         # Retrieve architecture plan from task or related artefact
         architecture_plan = ""
@@ -41,20 +43,29 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
                     artefact_path = Path("workspace") / task_obj.tenant_id / artefact.repo_path
                     try:
                         architecture_plan = artefact_path.read_text(encoding="utf-8")
-                        logging.info(f"[repo_composer] Loaded architecture plan from artefact {artefact.repo_path}")
+                        logging.info(
+                            "[repo_composer] Loaded architecture plan from artefact %s",
+                            artefact.repo_path,
+                        )
                     except Exception as e:
                         logging.warning(f"[repo_composer] Failed to read blueprint artefact: {e}")
                 # Fallback to task description if no artefact found
                 if not architecture_plan:
                     architecture_plan = task_obj.description or ""
             else:
-                logging.warning(f"[repo_composer] Task {task_id} not found in DB; proceeding with empty plan.")
+                logging.warning(
+                    f"[repo_composer] Task {task_id} not found in DB; proceeding with empty plan."
+                )
         # Render prompt and call LLM to generate repository scaffold
         prompt = PROMPT_TMPL.render(architecture_plan=architecture_plan)
         response = None
         error_msg = None
         try:
-            response = chat(model="o3", messages=[{"role": ChatRole.USER.value, "content": prompt}], temperature=0)
+            response = chat(
+                model="o3",
+                messages=[{"role": ChatRole.USER.value, "content": prompt}],
+                temperature=0,
+            )
             content = response.choices[0].message.content
             logging.info(f"[repo_composer] LLM generated scaffold for Task {task_id}")
         except Exception as exc:
@@ -64,7 +75,11 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         # Record tokens used by LLM
         tokens_used = 0
         try:
-            tokens_used = response.usage.total_tokens if response and hasattr(response, 'usage') else 0
+            tokens_used = (
+                response.usage.total_tokens
+                if response and hasattr(response, "usage")
+                else 0
+            )
         except Exception:
             pass
         # Expect LLM to return JSON with files list; try parsing if possible
@@ -93,7 +108,13 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             PROM_TASK_FAILED.labels(tenant_id).inc()
             TASK_CNT.labels(tenant_id, "repo", "failed").inc()
             return
-        Repo(tenant_id).update(task_id, status="done", owner="Repo", notes=f"{files_created} file(s) created", tokens_actual=tokens_used)
+        Repo(tenant_id).update(
+            task_id,
+            status="done",
+            owner="Repo",
+            notes=f"{files_created} file(s) created",
+            tokens_actual=tokens_used,
+        )
     try:
         debit(
             tenant_id,
@@ -103,4 +124,8 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
     except Exception as e:
         logging.error(f"[repo_composer] Budget debit failed for task {task_id}: {e}")
     TASK_CNT.labels(tenant_id, "repo", "done").inc()
-    logging.info(f"[repo_composer] Completed repo scaffolding for Task {task_id}: {files_created} file(s) saved")
+    logging.info(
+        "[repo_composer] Completed repo scaffolding for Task %s: saved %d file(s)",
+        task_id,
+        files_created,
+    )
