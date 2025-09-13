@@ -52,7 +52,8 @@ jobs:
       - name: Build and push backend images (API, Orchestrator, Celery workers)
         uses: docker/build-push-action@v5
         with:
-          context: ./backend/ai_org_backend
+          # Use the entire repository as context so prompts and Alembic files are available
+          context: .
           file: backend/ai_org_backend/Dockerfile
           target: prod
           push: true
