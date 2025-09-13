@@ -1,7 +1,7 @@
 import logging
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import uuid
 from pathlib import Path
@@ -56,7 +56,7 @@ def run_tests(tenant_id: str, test_files: List[str]) -> Tuple[bool, str, Optiona
             capture_output=True,
             text=True,
             timeout=TEST_TIMEOUT_SECONDS,
-        )
+        )  # nosec B603 B607
         test_output = result.stdout + result.stderr
         tests_passed = result.returncode == 0
         if tests_passed:
@@ -72,7 +72,7 @@ def run_tests(tenant_id: str, test_files: List[str]) -> Tuple[bool, str, Optiona
         tests_passed = False
         note = f"Test run aborted after {TEST_TIMEOUT_SECONDS}s (timeout)"
         logging.error(f"[TestingService] {note}")
-        subprocess.run(["docker", "kill", container_name], stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "kill", container_name], stderr=subprocess.DEVNULL)  # nosec B607
         test_output = f"ERROR: {note}"
     except Exception as exc:  # pragma: no cover - subprocess failure
         tests_passed = False

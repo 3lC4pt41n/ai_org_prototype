@@ -449,8 +449,9 @@ def post_artifact_feedback(
         try:
             file_path = resolve_for_read(artifact.repo_path)
             current_prd = file_path.read_text(encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to read existing PRD file: %s", e)
+            current_prd = ""
         try:
             updated_prd_md = run_requirements_feedback(
                 purpose, feedback=text, current_prd=current_prd

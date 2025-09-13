@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
-import tempfile  # noqa: F401
+import tempfile
+from pathlib import Path
 from typing import Optional, Tuple
 
 
@@ -82,7 +83,7 @@ def run_locust(
     users: int = 20,
     spawn_rate: int = 5,
     run_time: str = "1m",
-    csv_base: str = "/tmp/locust",
+    csv_base: str = str(Path(tempfile.gettempdir()) / "locust"),
 ) -> Tuple[int, str, str]:
     """Run locust headless; returns rc, stdout, stderr. Requires 'locust' in PATH."""
     if shutil.which("locust") is None:

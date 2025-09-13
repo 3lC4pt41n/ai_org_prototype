@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -20,8 +21,9 @@ engine = create_engine(DB_URL, echo=False)
 try:
     with engine.connect() as conn:  # type: ignore[unused-variable]
         pass
-except Exception:
+except Exception as e:
     # Fallback to lightweight SQLite if the configured database is unreachable
+    logging.error("Database unreachable, using in-memory SQLite: %s", e)
     engine = create_engine("sqlite:///:memory:", echo=False)
 
 

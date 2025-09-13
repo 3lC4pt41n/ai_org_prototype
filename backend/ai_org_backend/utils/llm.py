@@ -24,11 +24,11 @@ except Exception:  # pragma: no cover
 
     _backoff = _BackoffStub()
     logging.getLogger(__name__).warning("Package 'backoff' not installed; retry logic is disabled.")
-
-backoff = _backoff
 import openai
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services import budget
+
+backoff = _backoff
 
 
 def _extract_tokens(resp) -> int:
@@ -68,7 +68,10 @@ def chat_completion(
     **kw,
 ) -> str:
     resp = chat(
-        model=model, messages=[{"role": ChatRole.USER.value, "content": prompt}], tenant_id=tenant_id, **kw
+        model=model,
+        messages=[{"role": ChatRole.USER.value, "content": prompt}],
+        tenant_id=tenant_id,
+        **kw,
     )
     return (
         resp["choices"][0]["message"]["content"]
