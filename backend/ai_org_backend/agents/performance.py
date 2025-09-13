@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
@@ -51,7 +52,7 @@ def performance_task(tenant_id: str, task_id: str) -> None:
         users=users,
         spawn_rate=spawn,
         run_time=run_time,
-        csv_base=f"/tmp/locust_{task_id}",
+        csv_base=os.path.join(tempfile.gettempdir(), f"locust_{task_id}"),
     )
     report = (
         f"Host={host}\nUsers={users}\nSpawn={spawn}\nRun={run_time}\n\n"
