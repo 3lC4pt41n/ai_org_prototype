@@ -40,5 +40,5 @@ def test_store_vector_removes_previous_point_and_tracks_version(monkeypatch):
     vs.store_vector("tenant", "art", "hello")
 
     assert vs.client.deleted, "existing point should be removed"
-    assert vs.client.upsert_payload["version"] == 2
-    assert vs.client.upsert_payload["tenant"] == "tenant"
+    assert vs.client.upsert_payload["version"] == 2  # type: ignore[index]
+    assert vs.client.upsert_payload["tenant"] == "tenant"  # type: ignore[index]

@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func
 from sqlmodel import Session, select
+from sqlalchemy import asc, desc
 
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
@@ -194,7 +195,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             art = session.exec(
                 select(Artifact)
                 .where(Artifact.task_id == existing_prd.id)
-                .order_by(Artifact.created_at.desc())
+                .order_by(desc(Artifact.created_at))
             ).first()
         if art:
             try:
@@ -278,7 +279,7 @@ def get_artifact_feedback(
     rows = session.exec(
         select(ArtifactFeedback)
         .where(ArtifactFeedback.artifact_id == artifact_id)
-        .order_by(ArtifactFeedback.version.asc())
+        .order_by(asc(ArtifactFeedback.version))
     ).all()
 
     # Return plain dicts – avoids Pydantic/ORM serialization surprises
@@ -310,7 +311,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
             select(Artifact)
             .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
             .where(Artifact.repo_path.ilike("%architecture_blueprint.md"))
-            .order_by(Artifact.created_at.desc())
+            .order_by(desc(Artifact.created_at))
         ).first()
         if arch_artifact:
             impacted_ids.append(arch_artifact.id)
@@ -318,7 +319,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
             select(Artifact)
             .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
             .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(Artifact.created_at.desc())
+            .order_by(desc(Artifact.created_at))
         ).first()
         if test_artifact:
             impacted_ids.append(test_artifact.id)
@@ -326,7 +327,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
             select(Artifact)
             .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
             .where(Artifact.repo_path.ilike("%ui%"))
-            .order_by(Artifact.created_at.desc())
+            .order_by(desc(Artifact.created_at))
         ).first()
         if ui_artifact:
             impacted_ids.append(ui_artifact.id)
@@ -341,7 +342,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
             select(Artifact)
             .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
             .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(Artifact.created_at.desc())
+            .order_by(desc(Artifact.created_at))
         ).first()
         if test_artifact:
             impacted_ids.append(test_artifact.id)
@@ -353,7 +354,7 @@ def consistency_check(artifact: Artifact, session: Session) -> dict | None:
             select(Artifact)
             .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
             .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(Artifact.created_at.desc())
+            .order_by(desc(Artifact.created_at))
         ).first()
         if test_artifact:
             impacted_ids.append(test_artifact.id)

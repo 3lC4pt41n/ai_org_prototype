@@ -72,7 +72,7 @@ def integration_task(tenant_id: str, task_id: str) -> None:
             messages=[{"role": ChatRole.USER.value, "content": prompt}],
             model=MODEL_PRO,
             temperature=0,
-            tenant=tenant_id,
+            tenant_id=tenant_id,
         )
         RUNS.inc()
         if not resp:

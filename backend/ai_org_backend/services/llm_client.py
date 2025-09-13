@@ -41,20 +41,19 @@ def _get_api_key() -> Optional[str]:
                 content = p.read_text(encoding="utf-8").strip()
                 if content:
                     return content
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning("Could not read API key from file %s: %s", p, e)
 
     # 3) base64 variant (optional)
     b64 = os.getenv("OPENAI_API_KEY_B64")
     if b64:
         try:
             import base64
-
             decoded = base64.b64decode(b64).decode("utf-8").strip()
             if decoded:
                 return decoded
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning("Could not decode OPENAI_API_KEY_B64: %s", e)
 
     return None
 
@@ -102,13 +101,9 @@ def chat_with_tools(
     if _is_thinking_model(use_model):
         extra["reasoning"] = {"effort": "medium"}
 
-    if tenant_id:
-        try:
-            if budget.get_left(tenant_id) <= 0.0:
-                LLM_CALLS.labels(tenant_id, use_model, usage_label, "blocked").inc()
-                raise budget.BudgetExceededError(f"Tenant {tenant_id} has no remaining budget.")
-        except Exception:
-            pass
+    if tenant_id and budget.get_left(tenant_id) <= 0.0:
+        LLM_CALLS.labels(tenant_id, use_model, usage_label, "blocked").inc()
+        raise budget.BudgetExceededError(f"Tenant {tenant_id} has no remaining budget.")
 
     try:
         client = ensure_client()
@@ -146,8 +141,10 @@ def chat_with_tools(
             LLM_COST_USD.labels(tenant_id, use_model, usage_label).inc(cost)
             try:
                 TENANT_BUDGET_LEFT.labels(tenant_id).set(budget.get_left(tenant_id))
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(
+                    "Failed to update TENANT_BUDGET_LEFT for tenant %s: %s", tenant_id, e
+                )
 
         return data
     except Exception as exc:  # pragma: no cover - defensive
