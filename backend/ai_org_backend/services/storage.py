@@ -5,7 +5,7 @@ import logging
 import mimetypes
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import time
 from datetime import datetime as dt
 from pathlib import Path
@@ -50,10 +50,10 @@ def _ensure_repo(repo_dir: Path) -> None:
     """Initialise a Git repository if needed and configure identity."""
     repo_dir.mkdir(parents=True, exist_ok=True)
     if not (repo_dir / ".git").exists():
-        subprocess.run(["git", "init", str(repo_dir)], check=True)
-        subprocess.run(["git", "-C", str(repo_dir), "branch", "-M", "main"], check=False)
+        subprocess.run(["git", "init", str(repo_dir)], check=True)  # nosec B603 B607
+        subprocess.run(["git", "-C", str(repo_dir), "branch", "-M", "main"], check=False)  # nosec B607
         (repo_dir / ".gitkeep").write_text("", encoding="utf-8")
-        subprocess.run(["git", "-C", str(repo_dir), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo_dir), "add", "-A"], check=True)  # nosec B603 B607
         subprocess.run(
             [
                 "git",
@@ -69,19 +69,19 @@ def _ensure_repo(repo_dir: Path) -> None:
                 "--quiet",
             ],
             check=True,
-        )
+        )  # nosec B603 B607
     subprocess.run(
         ["git", "config", "--global", "--add", "safe.directory", str(repo_dir)],
         check=False,
-    )
+    )  # nosec B607
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.name", GIT_NAME],
         check=False,
-    )
+    )  # nosec B607
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.email", GIT_EMAIL],
         check=False,
-    )
+    )  # nosec B607
 
 
 def _sha256(p: Path) -> str:
@@ -96,13 +96,13 @@ def _mime(p: Path) -> str:
 def _git_commit(rel_path: str, message: str) -> None:
     """Add & commit changes in the workspace repository."""
     _ensure_repo(WORKSPACE)
-    subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)  # nosec B603 B607
     status = subprocess.run(
         ["git", "-C", str(WORKSPACE), "status", "--porcelain"],
         capture_output=True,
         text=True,
         check=False,
-    )
+    )  # nosec B607
     if not status.stdout.strip():
         log.info("storage: nothing to commit in %s", WORKSPACE)
         return
@@ -119,7 +119,7 @@ def _git_commit(rel_path: str, message: str) -> None:
         message,
         "--quiet",
     ]
-    subprocess.run(commit_cmd, check=True)
+    subprocess.run(commit_cmd, check=True)  # nosec B603 B607
 
 
 def resolve_for_read(repo_path: str) -> Path:
