@@ -9,7 +9,6 @@ from sqlmodel import Session, func, select
 from ai_org_backend.db import engine
 from ai_org_backend.main import (
     BUDGET_GA,
-    DEFAULT_BUDGET,
     TOKEN_PRICE_PER_1000,
     Repo,
     budget_left,
@@ -174,10 +173,6 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
 
 async def orchestrator() -> None:
     last = time.time()
-    LAST_DONE_COUNT = 0
-    near_budget_alert_sent = False
-    alerted_fail_modules: set[str] = set()
-    alerted_retry_modules: set[str] = set()
 
     await asyncio.to_thread(seed_if_empty)
 
@@ -248,7 +243,7 @@ async def orchestrator() -> None:
         if purpose_to_process:
             p, has_impl_todo = purpose_to_process
             logging.info(
-                "[Orchestrator] Detected approved PRD for purpose %s → start Architect (impl_todo=%s)",
+                "[Orchestrator] Approved PRD for purpose %s -> start Architect (impl_todo=%s)",
                 p.id,
                 has_impl_todo,
             )
@@ -302,7 +297,9 @@ async def orchestrator() -> None:
 
 
 if __name__ == "__main__":
-    import os, sys
+    import os
+    import sys
+
     if not (
         os.path.isdir(os.path.join(os.getcwd(), "alembic"))
         or os.path.isdir(os.path.join(os.path.dirname(__file__), os.pardir, "alembic"))
@@ -311,6 +308,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     from ai_org_backend.services.llm_client import ensure_client
+
     key_present = any(
         os.getenv(v)
         for v in [
@@ -330,6 +328,7 @@ if __name__ == "__main__":
         print("⚠️ [ORCH] No OPENAI_API_KEY found; skipping LLM features.")
 
     from ai_org_backend.orchestrator.graph_orchestrator import driver
+
     try:
         with driver.session() as session:
             session.run("CREATE INDEX IF NOT EXISTS FOR (t:Task) ON (t.status)")

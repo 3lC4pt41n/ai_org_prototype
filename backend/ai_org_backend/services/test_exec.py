@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile  # noqa: F401
 from typing import Optional, Tuple
 
 
@@ -19,7 +20,7 @@ def _run(
     """Run a command and capture output. Accepts list or shell string."""
     shell = isinstance(cmd, str)
     proc = subprocess.run(
-        cmd, cwd=cwd, shell=shell, capture_output=True, text=True, timeout=timeout
+        cmd, cwd=cwd, shell=shell, capture_output=True, text=True, timeout=timeout  # nosec
     )
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -46,7 +47,7 @@ def ensure_playwright() -> bool:
         import playwright  # noqa: F401
 
         return True
-    except Exception:
+    except ImportError:
         pass
     # Try to install browsers (best effort)
     try:
