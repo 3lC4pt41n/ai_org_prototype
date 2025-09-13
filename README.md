@@ -53,6 +53,48 @@ ops/                    # docker‑compose + Helm blueprints
 prompts/                # Jinja2 Agent-Prompts
 scripts/                # helper scripts
 ```
+```mermaid
+flowchart LR
+
+subgraph Client
+
+UI["Frontend (React)"]
+
+end
+
+subgraph Server
+
+API["Backend API (FastAPI)"]
+
+ORCH["Orchestrator\nScheduler"]
+
+CELERY["Celery Workers\n(Queues: dev/qa/ux_ui/telemetry/architect)"]
+
+end
+
+subgraph Data
+
+PG[(PostgreSQL)]
+
+Neo4j[(Neo4j Graph DB)]
+
+Qdrant[(Qdrant Vector DB)]
+
+Redis[(Redis Broker & Cache)]
+
+end
+
+subgraph Monitoring
+
+Prom[[Prometheus]]
+
+Exporter[[Celery Exporter]]
+
+Grafana[[Grafana]]
+
+end
+```
+
 
 ## ⚙️ 2 | Setup & Quick Start (Lokale Installation)
 
@@ -218,6 +260,94 @@ Für LLM-Aufgaben wird ein Pauschalpreis pro 1000 Tokens angesetzt (Default: **0
 
 - **Initialisierung neuer Projekte:** Beim Anlegen einer neuen Purpose (Projekt) sorgt der Orchestrator für ein initiales Backlog. Dazu werden spezielle LLM-Agents aktiv – der *Product Owner* Agent generiert ein *Product Requirements Document* (Produktkonzept), anschließend erstellt der *Architect* einen Architektur-Blueprint und der *Planner* plant daraus initiale Tasks. Diese Tasks (inklusive z. B. "Initialize repository", "Product Requirements Document", "Architecture Blueprint") werden mit ihren Abhängigkeiten in der Datenbank angelegt. Falls beim Start des Systems ein aktiver Purpose noch keinen Backlog hat, führt `seed_if_empty` diesen Seed-Schritt automatisch aus.
 - **Laufende Ablaufsteuerung:** Der Orchestrator läuft als Hintergrund-Scheduler, der kontinuierlich alle offenen Tasks überwacht und zum richtigen Zeitpunkt ausführt. Über Graph-Abfragen (Neo4j) ermittelt er alle bereitstehenden "todo"-Tasks ohne unerledigte Vorgänger. Für jeden solchen Task wird anhand der Beschreibung ein zuständiger Rollen-Agent bestimmt (z. B. *Dev*, *QA*, *UX/UI*), entweder per festen Schlüsselworten oder via LLM-Klassifizierung (`classify_role`). Anschließend setzt der Orchestrator den Task auf "doing" und gibt ihn an einen Celery-Worker der entsprechenden Agentenrolle zur Ausführung. Der Agent bearbeitet die Aufgabe (z. B. Code implementieren, Test durchführen) und erstellt dabei eventuell ein Artefakt.
+```mermaid
+sequenceDiagram
+
+participant U as User (Frontend)
+participant API as Backend API (FastAPI)
+participant ORCH as Orchestrator (Scheduler)
+participant PG as PostgreSQL (Tasks DB)
+participant G as Neo4j (Graph DB)
+participant R as Redis (Broker & Cache)
+participant W as Celery Worker (Agent)
+participant LLM as LLM API (OpenAI)
+
+Note over U,API: 1. Projektinitialisierung
+U->>API: POST /api/purposes (neues Projekt)
+API->>PG: Purpose speichern
+API->>R: Initiales Budget setzen
+API->>LLM: PRD generieren (Product Owner Agent)
+API->>PG: PRD-Task + Artefakt speichern
+API-->>U: PRD-Inhalt zurückgeben
+
+Note over U,API: 2. Freigabe Anforderungen → Architektur & Planung
+U->>API: POST /api/artifacts/PRD/approve
+API->>LLM: Architektur-Blueprint generieren (Architect Agent)
+API->>PG: Blueprint-Task + Artefakt speichern
+API->>LLM: Task-Plan generieren (Planner Agent)
+API->>PG: Tasks (todo) + Abhängigkeiten speichern
+API->>G: Tasks in Neo4j importieren
+API->>R: Pause-Flag entfernen (Projekt aktivieren)
+API-->>U: "approved" Response
+
+Note over ORCH,W: 3. Orchestrierungs-Schleife
+ORCH->>G: Bereit stehende Tasks abfragen
+ORCH->>PG: Task-Details laden
+ORCH->>R: Budget prüfen
+ORCH->>PG: Task-Status auf "doing"
+ORCH->>R: Task in Celery-Queue einstellen
+
+Note over W,LLM: 4. Agenten-Task-Ausführung
+W->>LLM: Task ausführen (Dev/QA/etc.)
+W->>PG: Artefakt speichern (falls vorhanden)
+W->>PG: Task-Status = done/failed aktualisieren
+ORCH->>G: Graph mit Status updaten
+
+Note over U,API: 5. Monitoring & Abschluss
+U->>API: GET /api/graph (Pipeline-Status)
+API->>PG: Tasks abfragen
+API-->>U: Graph-JSON zurückgeben
+U->>API: GET /api/project.zip
+API->>PG: Artefakte sammeln
+API-->>U: ZIP-Download
+```
+```mermaid
+flowchart TB
+U[User] -->|Start / Freigabe / Feedback| API
+API --> ORCH
+subgraph ORCH[Orchestrator]
+O1[Modus prüfen (auto/manuell)]
+O2[PRD-Task erzeugen]
+O3[Architect Agent]
+O4[Planner Agent]
+O5[Tasks einplanen]
+end
+
+subgraph Agents[Celery Workers]
+PO[Product Owner]
+AR[Architect]
+PL[Planner]
+DEV[Developer]
+QA[QA]
+UX[UX/UI]
+end
+
+ORCH -->|delegieren| PO
+ORCH -->|delegieren| AR
+ORCH -->|delegieren| PL
+ORCH -->|Tasks dispatchen| DEV
+ORCH -->|Tasks dispatchen| QA
+ORCH -->|Tasks dispatchen| UX
+ORCH --> PG[(PostgreSQL)]
+ORCH --> G[(Neo4j Graph DB)]
+ORCH --> R[(Redis Budget/Queue)]
+DEV -->|Artefakte speichern| PG
+QA -->|Ergebnisse eintragen| PG
+UX -->|Design-Artefakte| PG
+ORCH -->|Updates| API
+API --> U
+```
+
 - **Abhängigkeits-Graph:** Alle Tasks einer Purpose sind über **TaskDependency**-Kanten zu einem gerichteten azyklischen Graph verbunden. Der Orchestrator stellt sicher, dass kein Task ausgeführt wird, solange abhängige Vorgänger-Tasks noch nicht *done* sind. Über `/api/graph` bzw. `/api/purposes/{id}/graph` kann der aktuelle Task-Graph (Knoten: Tasks mit Status, Kanten: Abhängigkeiten) abgerufen werden.
 - **Nutzer-Freigaben:** Bestimmte Schlüssel-Artefakte erfordern eine manuelle Abnahme, bevor es im Pipeline-Prozess weitergeht. Zum Beispiel pausiert nach Abschluss des PRD-Tasks die Planung, bis das erzeugte PRD-Artefakt vom Nutzer geprüft und via `POST /api/artifacts/{artifact_id}/approve` explizit freigegeben wurde. Ist dies geschehen, startet der Orchestrator die nächste Phase: der *Architect* erstellt den *Architecture Blueprint* und der *Planner* erzeugt daraufhin die Implementierungs-Tasks. Ähnlich muss ein später erstellter *Architecture & Domain Review*-Task vom Nutzer über `/reviews/{task_id}/approve` genehmigt werden, bevor die finalen Schritte erfolgen. Der Orchestrator überwacht solche Freigaben (Flags wie `Artifact.released` bzw. Feedback-Einträge) und setzt die Pipeline fort, sobald die Zustimmung vorliegt.
 - **Fehlerbehandlung & Budget:** Fehlgeschlagene Tasks werden vom Orchestrator automatisch neu versucht (mit begrenzter Anzahl an Retries). Vor dem Start eines Tasks prüft das System außerdem, ob das geschätzte Token-Kontingent (`tokens_plan`) im verbleibenden Budget liegt – ist das Budget zu gering, wird der Task übersprungen (Status wechselt auf "budget_exceeded"). Über `POST /api/pause` bzw. `/api/resume` kann ein Administrator die Pipeline des Tenants manuell anhalten oder weiterlaufen lassen. Zudem protokolliert der Orchestrator laufend Metriken (z. B. Anzahl blockierter Tasks, kritische Pfadlänge) nach Prometheus, um den Fortschritt und Engpässe sichtbar zu machen.
