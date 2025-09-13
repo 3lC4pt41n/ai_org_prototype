@@ -1,8 +1,11 @@
 """Celery agent to compose an initial repository structure based on the architecture plan."""
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+
+from sqlalchemy import func
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
@@ -34,10 +37,15 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             purpose_id = task_obj.purpose_id if task_obj else None
             if task_obj:
                 # Try to find a related architecture blueprint artefact (if any)
-                artefact = db.query(Artifact).join(Task).filter(
-                    Task.purpose_id == task_obj.purpose_id,
-                    Task.description.ilike("%architecture blueprint%")
-                ).first()
+                artefact = (
+                    db.query(Artifact)
+                    .join(Task)
+                    .filter(
+                        Task.purpose_id == task_obj.purpose_id,
+                        func.lower(Task.description).like("%architecture blueprint%"),
+                    )
+                    .first()
+                )
                 if artefact:
                     # Read blueprint content from workspace file
                     artefact_path = Path("workspace") / task_obj.tenant_id / artefact.repo_path
@@ -80,6 +88,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
         files_created = 0
         try:
             import json
+
             data = json.loads(content)
             files = data.get("files", []) if isinstance(data, dict) else []
         except Exception:

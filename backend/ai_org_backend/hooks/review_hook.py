@@ -13,7 +13,7 @@ This avoids invasive edits to pipeline/orchestrator and stays tenant-safe.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
 from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
@@ -184,4 +184,4 @@ def save_artefact_with_review(
 
 
 # ---- Apply monkey-patch on import -------------------------------------------
-_storage.save_artefact = save_artefact_with_review
+_storage.save_artefact = cast(Any, save_artefact_with_review)
