@@ -18,11 +18,20 @@ class DummyChat:
         class _Choice:
             message = _Msg()
 
-        return types.SimpleNamespace(choices=[_Choice()])
+        return types.SimpleNamespace(
+            choices=[_Choice()],
+            usage=types.SimpleNamespace(total_tokens=0),
+        )
 
 
-openai_stub.ChatCompletion = DummyChat
-openai_stub.OpenAIError = Exception
+class DummyOpenAI:
+    def __init__(self, *args, **kwargs):
+        self.chat = types.SimpleNamespace(completions=DummyChat)
+
+
+openai_stub.ChatCompletion = DummyChat  # type: ignore[attr-defined]
+openai_stub.OpenAI = DummyOpenAI  # type: ignore[attr-defined]
+openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
 sys.modules.setdefault("openai", openai_stub)
 
 backoff_stub = types.ModuleType("backoff")
@@ -35,11 +44,12 @@ def _decorator(*args, **kwargs):
     return wrap
 
 
-backoff_stub.on_exception = _decorator
-backoff_stub.expo = lambda *a, **kw: 0
+backoff_stub.on_exception = _decorator  # type: ignore[attr-defined]
+backoff_stub.expo = lambda *a, **kw: 0  # type: ignore[attr-defined]
 sys.modules.setdefault("backoff", backoff_stub)
 os.environ["DISABLE_METRICS"] = "1"
 os.environ["DATABASE_URL"] = "postgresql+psycopg2://postgres:ai@localhost:5432/ai_org_test"
+os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 
 main = importlib.import_module("ai_org_backend.main")
 from ai_org_backend import models  # noqa: E402

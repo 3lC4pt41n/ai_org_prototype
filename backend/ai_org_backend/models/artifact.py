@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .task import Task
 
 
-class Artifact(SQLModel, table=True):
+class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
     """Binary or text output of a task stored on disk."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
