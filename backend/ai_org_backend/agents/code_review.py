@@ -47,7 +47,7 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
         file_path = Path("workspace") / tenant_id / path
         try:
             code = file_path.read_text(encoding="utf-8")
-        except Exception:
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError):
             continue
         if len(code) <= MAX_TOKENS * 4:
             snippet = code.strip()

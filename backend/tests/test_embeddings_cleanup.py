@@ -9,10 +9,10 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     """When overwriting an artifact, old vectors are marked obsolete and new vector persists."""
     # Stub OpenAI embedding API
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = SimpleNamespace(
+    openai_stub.Embedding = SimpleNamespace(  # type: ignore[attr-defined]
         create=lambda *args, **kwargs: {"data": [{"embedding": [0.0]}]}
     )
-    openai_stub.OpenAIError = Exception
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     # Stub Qdrant client and models
@@ -54,16 +54,16 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
                 if all(pl.get(k) == v for k, v in conditions.items()):
                     pl.update(payload)
 
-    qc_stub.QdrantClient = DummyQdrantClient
+    qc_stub.QdrantClient = DummyQdrantClient  # type: ignore[attr-defined]
 
     # Minimal dummy model classes
-    qc_models_stub.Distance = SimpleNamespace(COSINE="COSINE")
-    qc_models_stub.VectorParams = lambda **kwargs: None
-    qc_models_stub.PointStruct = lambda id, vector, payload: SimpleNamespace(id=id, payload=payload)
-    qc_models_stub.Filter = lambda must: SimpleNamespace(must=must)
-    qc_models_stub.FieldCondition = lambda key, match: SimpleNamespace(key=key, match=match)
-    qc_models_stub.MatchValue = lambda value: SimpleNamespace(value=value)
-    qc_models_stub.FilterSelector = lambda filter: SimpleNamespace(filter=filter)
+    qc_models_stub.Distance = SimpleNamespace(COSINE="COSINE")  # type: ignore[attr-defined]
+    qc_models_stub.VectorParams = lambda **kwargs: None  # type: ignore[attr-defined]
+    qc_models_stub.PointStruct = lambda id, vector, payload: SimpleNamespace(id=id, payload=payload)  # type: ignore[attr-defined]
+    qc_models_stub.Filter = lambda must: SimpleNamespace(must=must)  # type: ignore[attr-defined]
+    qc_models_stub.FieldCondition = lambda key, match: SimpleNamespace(key=key, match=match)  # type: ignore[attr-defined]
+    qc_models_stub.MatchValue = lambda value: SimpleNamespace(value=value)  # type: ignore[attr-defined]
+    qc_models_stub.FilterSelector = lambda filter: SimpleNamespace(filter=filter)  # type: ignore[attr-defined]
 
     monkeypatch.setitem(sys.modules, "qdrant_client", qc_stub)
     monkeypatch.setitem(sys.modules, "qdrant_client.models", qc_models_stub)

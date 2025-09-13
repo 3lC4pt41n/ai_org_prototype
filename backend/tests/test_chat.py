@@ -27,22 +27,30 @@ def create_client(monkeypatch):
     importlib.reload(dependencies)
 
     openai_stub = types.ModuleType("openai")
-    openai_stub.ChatCompletion = SimpleNamespace(
-        create=lambda **kwargs: {"choices": [{"message": {"content": "Stubbed answer"}}]}
+    openai_stub.ChatCompletion = SimpleNamespace(  # type: ignore[attr-defined]
+        create=lambda **kwargs: SimpleNamespace(
+            choices=[{"message": {"content": "Stubbed answer"}}],
+            usage=SimpleNamespace(total_tokens=0),
+        )
     )
-    openai_stub.OpenAIError = Exception
+    class DummyOpenAI:
+        def __init__(self, *args, **kwargs):
+            self.chat = SimpleNamespace(completions=openai_stub.ChatCompletion)
+
+    openai_stub.OpenAI = DummyOpenAI  # type: ignore[attr-defined]
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     po_stub = types.ModuleType("ai_org_backend.agents.product_owner")
-    po_stub.run_requirements_feedback = lambda *args, **kwargs: ""
+    po_stub.run_requirements_feedback = lambda *args, **kwargs: ""  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ai_org_backend.agents.product_owner", po_stub)
 
     import ai_org_backend.services.storage as storage
 
-    monkeypatch.setattr(storage, "WORKSPACE", Path(tempfile.mkdtemp()) / "ws")
-    monkeypatch.setattr(storage, "_git_commit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, "_link_neo4j", lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *args, **kwargs: True)
+    monkeypatch.setattr(storage, "WORKSPACE", Path(tempfile.mkdtemp()) / "ws")  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage, "_git_commit", lambda *args, **kwargs: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage, "_link_neo4j", lambda *args, **kwargs: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *args, **kwargs: True)  # type: ignore[attr-defined]
 
     import ai_org_backend.api.chat as chat_module
 
@@ -127,7 +135,7 @@ def test_chat_feedback_flow(monkeypatch):
     client.app.dependency_overrides[oauth2_scheme] = lambda: "token"
     import ai_org_backend.api.chat as chat_module
 
-    monkeypatch.setattr(chat_module, "pool", SimpleNamespace(get=lambda key: b"1"))
+    monkeypatch.setattr(chat_module, "pool", SimpleNamespace(get=lambda key: b"1"))  # type: ignore[attr-defined]
     feedback_msg = "Fehlt Akzeptanzkriterium"
     r = client.post(
         "/api/chat/messages",

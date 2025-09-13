@@ -35,7 +35,7 @@ def ensure_redis_decrbyfloat() -> None:
                 setattr(cls, "decrbyfloat", _impl)
             except Exception:
                 # Prefer to continue silently rather than block import
-                pass
+                pass  # nosec
 
 
 def _iter_target_classes():
@@ -54,4 +54,4 @@ def _iter_target_classes():
 try:
     ensure_redis_decrbyfloat()
 except Exception:
-    pass
+    pass  # nosec

@@ -25,7 +25,7 @@ class TaskStatus(str, Enum):
     BUDGET_EXCEEDED = "budget_exceeded"
 
 
-class Task(SQLModel, table=True):
+class Task(SQLModel, table=True):  # type: ignore[call-arg]
     """Core work item tracked in SQL."""
 
     id: str = Field(
