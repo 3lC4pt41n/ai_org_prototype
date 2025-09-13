@@ -29,9 +29,7 @@ WORKSPACE = Path(
 
 # Git identity (author + committer), configurable via env
 GIT_NAME = os.getenv("GIT_AUTHOR_NAME", os.getenv("GIT_COMMITTER_NAME", "ai-org-bot"))
-GIT_EMAIL = os.getenv(
-    "GIT_AUTHOR_EMAIL", os.getenv("GIT_COMMITTER_EMAIL", "noreply@ai.org")
-)
+GIT_EMAIL = os.getenv("GIT_AUTHOR_EMAIL", os.getenv("GIT_COMMITTER_EMAIL", "noreply@ai.org"))
 
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 driver = GraphDatabase.driver(
@@ -337,7 +335,7 @@ def register_artefact(
         _link_neo4j(task_id, sha)
     except Exception:
         # Fehler im Neo4j-Link wurden bereits geloggt
-        pass
+        pass  # nosec
     # Mark the task as done
     try:
         with Session(engine) as session:

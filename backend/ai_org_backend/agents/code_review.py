@@ -2,29 +2,25 @@ from __future__ import annotations
 
 """Code Review agent that inspects repository code for quality issues."""
 
-import logging
-import re
-import time
-from pathlib import Path
-from typing import List
+import logging  # noqa: E402
+import re  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import List  # noqa: E402
 
-from .utils import load_template
+from ai_org_backend.db import SessionLocal  # noqa: E402
+from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit  # noqa: E402
+from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
+from ai_org_backend.models import Artifact, Purpose, Task  # noqa: E402
+from ai_org_backend.models.chat import ChatRole  # noqa: E402
+from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
+from ai_org_backend.services.storage import save_artefact  # noqa: E402
+from ai_org_backend.tasks.celery_app import celery  # noqa: E402
 
-from ai_org_backend.db import SessionLocal
-from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Artifact, Purpose, Task
-from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
-from ai_org_backend.models.chat import ChatRole
-from ai_org_backend.services.storage import save_artefact
-from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, debit, TOKEN_PRICE_PER_1000
+from .utils import load_template  # noqa: E402
 
-CODE_REVIEW_RUNS = prom_counter(
-    "ai_code_review_runs_total", "Code review agent executions"
-)
-CODE_REVIEW_LAT = prom_hist(
-    "ai_code_review_latency_seconds", "Code review agent latency"
-)
+CODE_REVIEW_RUNS = prom_counter("ai_code_review_runs_total", "Code review agent executions")
+CODE_REVIEW_LAT = prom_hist("ai_code_review_latency_seconds", "Code review agent latency")
 
 PROMPT_TMPL = load_template("code_review.j2")
 
@@ -39,20 +35,12 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
         if not task or not purpose:
             return
         purpose_name = purpose.name
-        artifacts = (
-            session.query(Artifact)
-            .join(Task)
-            .filter(Task.purpose_id == purpose.id)
-            .all()
-        )
+        artifacts = session.query(Artifact).join(Task).filter(Task.purpose_id == purpose.id).all()
     snippets: List[dict] = []
     MAX_TOKENS = 800
     for art in artifacts:
         path = art.repo_path or ""
-        if any(
-            skip in path
-            for skip in ["requirements/", "blueprint", "reports/", "tests/"]
-        ):
+        if any(skip in path for skip in ["requirements/", "blueprint", "reports/", "tests/"]):
             continue
         if not re.search(r"\.(py|js|jsx|ts|tsx|java|html|css)$", path, re.IGNORECASE):
             continue
@@ -66,9 +54,7 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
         else:
             lines = code.splitlines()
             snippet_lines = [
-                ln
-                for ln in lines
-                if ln.strip().startswith(("def ", "class ")) or "TODO" in ln
+                ln for ln in lines if ln.strip().startswith(("def ", "class ")) or "TODO" in ln
             ]
             if not snippet_lines:
                 snippet_lines = lines[:50]

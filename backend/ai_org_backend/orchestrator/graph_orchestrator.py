@@ -67,11 +67,14 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
     m = MD_JSON_RX.search(txt)
     if m:
         return json.loads(m.group(1).strip())
+    data = None
     try:
         lo, hi = txt.index("["), txt.rindex("]")
-        return json.loads(txt[lo : hi + 1])
-    except Exception:
-        pass
+        data = json.loads(txt[lo : hi + 1])
+    except (ValueError, json.JSONDecodeError):
+        data = None
+    if data is not None:
+        return data
     rows = [ln for ln in txt.splitlines() if ln.lstrip().startswith("|")]
     tasks = []
     for r in rows[2:]:

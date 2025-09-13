@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Reviewer Agent (Architecture + Domain) — tenant-aware
 ----------------------------------------------------
@@ -6,20 +7,20 @@ Generates a concise review of the architecture blueprint and domain model.
 Produces a Markdown artefact. **Does not** mark the task done — the user
 must approve via the Reviews API to unblock downstream tasks.
 """
-import logging
-from typing import Optional
+import logging  # noqa: E402
+from typing import Optional  # noqa: E402
 
-from .utils import load_template
-
-from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Purpose, Task
-from ai_org_backend.services.storage import save_artefact
-from ai_org_backend.services.llm_client import chat_with_tools, MODEL_PRO
-from ai_org_backend.tasks.celery_app import celery
-from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.db import SessionLocal  # noqa: E402
 
 # Small metrics parity (keeps style with other agents)
-from ai_org_backend.metrics import prom_counter, prom_hist
+from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
+from ai_org_backend.models import Purpose  # noqa: E402
+from ai_org_backend.models.chat import ChatRole  # noqa: E402
+from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
+from ai_org_backend.services.storage import save_artefact  # noqa: E402
+from ai_org_backend.tasks.celery_app import celery  # noqa: E402
+
+from .utils import load_template  # noqa: E402
 
 REVIEW_RUNS = prom_counter("ai_review_runs_total", "Review agent executions")
 REVIEW_LAT = prom_hist("ai_review_latency_seconds", "Review agent latency")
@@ -45,15 +46,22 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
     Run the reviewer synchronously and return Markdown content.
     """
     import time
+
     with SessionLocal() as s:
         purpose = s.get(Purpose, purpose_id)
         if not purpose:
             return "⚠️ Purpose not found; cannot review."
-        ctx = {"purpose_name": purpose.name, "tenant_id": purpose.tenant_id, "blueprint": blueprint_md}
+        ctx = {
+            "purpose_name": purpose.name,
+            "tenant_id": purpose.tenant_id,
+            "blueprint": blueprint_md,
+        }
         prompt = PROMPT_TMPL.render(**ctx)
         start = time.time()
         try:
-            resp = _call_llm([{"role": ChatRole.USER.value, "content": prompt}], tenant_id=purpose.tenant_id)
+            resp = _call_llm(
+                [{"role": ChatRole.USER.value, "content": prompt}], tenant_id=purpose.tenant_id
+            )
             REVIEW_RUNS.inc()
             if not resp:
                 return "⚠️ Budget exhausted or LLM unavailable; unable to generate review."
@@ -63,7 +71,9 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
 
 
 @celery.task(name="agent.reviewer")
-def reviewer_task(tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str) -> None:
+def reviewer_task(
+    tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str
+) -> None:
     """
     Celery entrypoint — creates the Markdown review artefact for the given review task.
     Leaves the task in 'todo' (awaiting approval).
@@ -73,6 +83,7 @@ def reviewer_task(tenant_id: str, purpose_id: str, blueprint_task_id: str, revie
         # Fetch blueprint content from its artefact(s)
         # Simplicity: we read the latest blueprint artefact saved for blueprint task.
         from ai_org_backend.models import Artefact
+
         blueprint_text = ""
         try:
             # Most recent artefact for the blueprint task (markdown)

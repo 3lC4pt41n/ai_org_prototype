@@ -210,8 +210,9 @@ def agent_dev(tid: str, task_id: str) -> None:
             tokens_used = (
                 response.usage.total_tokens if response and hasattr(response, "usage") else 0
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug("Failed to retrieve token usage for task %s: %s", task_id, e)
+            tokens_used = 0
         # Mark the current task as done and check for follow-up tasks
         Repo(tid).update(
             task_id,

@@ -49,6 +49,7 @@ dev = [
     "pytest-cov",
     "pytest-mock",
     "mypy",
+    "sqlalchemy-stubs",
     "types-requests",
     "isort",
     "pre-commit",
