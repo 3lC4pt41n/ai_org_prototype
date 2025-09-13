@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     from .task import Task
 
 
-class TaskDependency(SQLModel, table=True):
+class TaskDependency(SQLModel, table=True):  # type: ignore[call-arg]
     """Dependency relationships between tasks."""
 
     id: Optional[int] = Field(default=None, primary_key=True)

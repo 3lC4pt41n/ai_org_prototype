@@ -7,10 +7,10 @@ from sqlmodel import Session, SQLModel
 
 def test_register_artefact_overwrites(monkeypatch, tmp_path):
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = types.SimpleNamespace(
+    openai_stub.Embedding = types.SimpleNamespace(  # type: ignore[attr-defined]
         create=lambda *a, **kw: {"data": [{"embedding": [0.0]}]}
     )
-    openai_stub.OpenAIError = Exception
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     monkeypatch.setenv(
@@ -38,9 +38,9 @@ def test_register_artefact_overwrites(monkeypatch, tmp_path):
         session.add(Task(id="t1", tenant_id="demo", description="x", status="done"))
         session.commit()
 
-    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)
-    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)
-    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *a, **k: True)
+    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *a, **k: True)  # type: ignore[attr-defined]
 
     file1 = tmp_path / "demo.txt"
     file1.write_text("v1")

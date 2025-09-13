@@ -21,7 +21,7 @@ class Theme(str, Enum):
         return self.value
 
 
-class Tenant(SQLModel, table=True):
+class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
     """Simple tenant model (multi-tenant future-proofing)."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)

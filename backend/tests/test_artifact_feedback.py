@@ -26,7 +26,7 @@ def create_client(monkeypatch):
     from types import SimpleNamespace
 
     neo4j_stub = types.ModuleType("neo4j")
-    neo4j_stub.GraphDatabase = SimpleNamespace(
+    neo4j_stub.GraphDatabase = SimpleNamespace(  # type: ignore[attr-defined]
         driver=lambda *a, **k: SimpleNamespace(
             session=lambda *a, **k: SimpleNamespace(run=lambda *a, **k: None, close=lambda: None)
         )
@@ -42,12 +42,12 @@ def create_client(monkeypatch):
     importlib.reload(pipeline_module)
 
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = SimpleNamespace(create=lambda *a, **k: {"data": [{"embedding": [0.0]}]})
-    openai_stub.OpenAIError = Exception
+    openai_stub.Embedding = SimpleNamespace(create=lambda *a, **k: {"data": [{"embedding": [0.0]}]})  # type: ignore[attr-defined]
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     prd_stub = types.ModuleType("ai_org_backend.agents.product_owner")
-    prd_stub.run_requirements_feedback = lambda *a, **k: ""
+    prd_stub.run_requirements_feedback = lambda *a, **k: ""  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ai_org_backend.agents.product_owner", prd_stub)
     from ai_org_backend.api.dependencies import get_current_tenant
     from ai_org_backend.api.pipeline import router
@@ -121,15 +121,15 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
     import ai_org_backend.services.storage as storage
 
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = SimpleNamespace(create=lambda *a, **k: {"data": [{"embedding": [0.0]}]})
-    openai_stub.OpenAIError = Exception
+    openai_stub.Embedding = SimpleNamespace(create=lambda *a, **k: {"data": [{"embedding": [0.0]}]})  # type: ignore[attr-defined]
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     monkeypatch.setattr(storage, "WORKSPACE", tmp_path / "ws")
     storage.WORKSPACE.mkdir()
-    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)
-    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)
-    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *a, **k: True)
+    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage.vector_store, "store_vector", lambda *a, **k: True)  # type: ignore[attr-defined]
 
     class DummyRepo:
         def __init__(self, tenant_id):
@@ -145,11 +145,11 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
     )
 
     architect_stub = types.ModuleType("ai_org_backend.agents.architect")
-    architect_stub.run_architect = lambda purpose: "# bp"
+    architect_stub.run_architect = lambda purpose: "# bp"  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ai_org_backend.agents.architect", architect_stub)
 
     planner_stub = types.ModuleType("ai_org_backend.agents.planner")
-    planner_stub.run_planner = lambda bp: []
+    planner_stub.run_planner = lambda bp: []  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ai_org_backend.agents.planner", planner_stub)
 
     tenant_id = "tenant123"
