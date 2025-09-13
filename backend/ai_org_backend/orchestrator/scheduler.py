@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 
+from sqlalchemy import not_
 from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
@@ -111,12 +112,14 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             select(Task)
             .where(Task.purpose_id == purpose_id, Task.status != TaskStatus.DONE)
             .where(
-                Task.description.notin_(
-                    [
-                        "Product Requirements Document",
-                        "Architecture Blueprint",
-                        "Architecture & Domain Review",
-                    ]
+                not_(
+                    func.lower(Task.description).in_(
+                        [
+                            "product requirements document",
+                            "architecture blueprint",
+                            "architecture & domain review",
+                        ]
+                    )
                 )
             )
         ).first()
@@ -153,7 +156,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         prd_task = db_session.exec(
             select(Task).where(
                 Task.purpose_id == purpose_id,
-                Task.description.ilike("Product Requirements Document"),
+                func.lower(Task.description) == "product requirements document",
             )
         ).first()
         if prd_task:

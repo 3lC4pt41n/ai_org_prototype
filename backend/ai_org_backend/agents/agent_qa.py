@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from sqlmodel import select
+from sqlmodel import func, select
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
@@ -223,7 +223,8 @@ def agent_qa(tid: str, task_id: str) -> None:
         with SessionLocal() as session:
             test_artifacts = session.exec(
                 select(Artifact).where(
-                    Artifact.task_id == task_id, Artifact.repo_path.ilike("test%.py")
+                    Artifact.task_id == task_id,
+                    func.lower(Artifact.repo_path).like("test%.py"),
                 )
             ).all()
 
