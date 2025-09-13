@@ -9,16 +9,18 @@ from __future__ import annotations
 
 import os
 
-from .utils import load_template
+from sqlalchemy import desc
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Artefact, Purpose, Task
-from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.test_exec import run_pytest
 from ai_org_backend.tasks.celery_app import celery
+
+from .utils import load_template
 
 RUNS = prom_counter("ai_integration_runs_total", "Integration agent executions")
 LAT = prom_hist("ai_integration_latency_seconds", "Integration agent latency")
@@ -33,7 +35,7 @@ def _load_latest_text_artifact(s, purpose_id: str, path_suffix: str) -> str:
         .join(Task, Task.id == Artefact.task_id)
         .filter(Task.purpose_id == purpose_id)
         .filter(Artefact.filename.endswith(path_suffix))
-        .order_by(Artefact.created_at.desc())
+        .order_by(desc(Artefact.created_at))
     )
     a = q.first()
     return (a.blob.decode("utf-8", errors="ignore") if a and a.blob else "").strip()

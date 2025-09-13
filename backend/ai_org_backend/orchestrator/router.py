@@ -55,8 +55,8 @@ def classify_role(desc: str) -> str:
             first_line = result_str.splitlines()[0]
             if first_line:
                 role = first_line.strip().split()[0]
-    role = normalize_role(role)
-    if not role or role not in AGENT_ROLES:
-        alert(f"Unknown role '{role}', defaulting to dev", "router")
+    normalized = normalize_role(role) or ""
+    if normalized not in AGENT_ROLES:
+        alert(f"Unknown role '{normalized}', defaulting to dev", "router")
         return "dev"
-    return role
+    return normalized
