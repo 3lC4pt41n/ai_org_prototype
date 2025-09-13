@@ -76,13 +76,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "pnpm"                 # use pnpm cache
+          cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: latest
+          run_install: false
 
       - name: Install deps (pnpm)
         working-directory: frontend
@@ -131,6 +132,12 @@ jobs:
           tags: local/ai_backend:test
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+          run_install: false
 
       - name: Build frontend image
         uses: docker/build-push-action@v5
