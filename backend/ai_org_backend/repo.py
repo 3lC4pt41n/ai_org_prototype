@@ -4,6 +4,7 @@ All Task updates go through here to keep SQL DB and Neo4j graph in sync.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable, Optional
 
 from ai_org_backend.db import SessionLocal
@@ -56,8 +57,7 @@ class Repo:
                 purpose_relevance=obj.purpose_relevance,
             )
         except Exception as e:
-            # Intentionally swallow to not block the pipeline; logs are handled by caller/logger
-            pass
+            logging.error("Graph upsert failed during Task update: %s", e)
 
         return obj
 
@@ -111,8 +111,8 @@ class Repo:
                 for pid in depends_on:
                     graph_sync.upsert_task(pid)  # ensure parent node exists
                     graph_sync.upsert_dependency(pid, t.id, kind="FINISH_START")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("Graph upsert failed during Task creation: %s", e)
 
         return t
 
@@ -125,5 +125,5 @@ class Repo:
             s.commit()
         try:
             graph_sync.upsert_dependency(from_id, to_id, kind=kind)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("Graph dependency upsert failed: %s", e)

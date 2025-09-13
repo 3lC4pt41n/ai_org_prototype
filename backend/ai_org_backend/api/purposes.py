@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update
 from sqlmodel import Session, select
@@ -36,8 +38,8 @@ def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
             raise HTTPException(status_code=404, detail="Purpose not found")
     try:
         pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error("Failed to set pause flag: %s", e)
     return {"status": "paused"}
 
 
@@ -71,8 +73,8 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
         if prd_artifact:
             try:
                 pool.delete(f"pause:{tenant_id}:{purpose_id}")
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error("Failed to remove pause flag: %s", e)
             return {"status": "resumed", "idempotent": True}
 
         prd_task_obj = Task(
@@ -104,12 +106,12 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
 
     try:
         pool.delete(f"pause:{tenant_id}:{purpose_id}")
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error("Failed to remove pause flag: %s", e)
     try:
         ingest(tenant_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error("Failed to ingest graph for tenant %s: %s", tenant_id, e)
     return {"status": "started"}
 
 
