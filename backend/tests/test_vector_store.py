@@ -1,6 +1,7 @@
 import sys
 import types
 from types import SimpleNamespace
+from typing import Any
 
 from ai_org_backend.models import Task
 from sqlmodel import Session, SQLModel
@@ -11,10 +12,10 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
 
     # Stub OpenAI before importing storage module
     openai_stub = types.ModuleType("openai")
-    openai_stub.Embedding = types.SimpleNamespace(
+    openai_stub.Embedding = types.SimpleNamespace(  # type: ignore[attr-defined]
         create=lambda *a, **kw: {"data": [{"embedding": [0.0]}]}
     )
-    openai_stub.OpenAIError = Exception
+    openai_stub.OpenAIError = Exception  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", openai_stub)
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
@@ -42,16 +43,16 @@ def test_register_artefact_triggers_vector_store(monkeypatch, tmp_path):
         session.add(Task(id="t1", tenant_id="demo", description="x", status="done"))
         session.commit()
 
-    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)
-    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)
+    monkeypatch.setattr(storage, "_link_neo4j", lambda *a, **k: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(storage, "_git_commit", lambda *a, **k: None)  # type: ignore[attr-defined]
 
-    called = {}
+    called: dict[str, Any] = {}
 
     def fake_store(tenant, artifact_id, text, metadata):
         called.update(tenant=tenant, artifact_id=artifact_id, text=text, metadata=metadata)
         return True
 
-    monkeypatch.setattr(storage.vector_store, "store_vector", fake_store)
+    monkeypatch.setattr(storage.vector_store, "store_vector", fake_store)  # type: ignore[attr-defined]
 
     file_path = tmp_path / "demo.txt"
     file_path.write_text("hello world " * 15)

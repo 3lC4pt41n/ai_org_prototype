@@ -39,14 +39,14 @@ class ChatIntent(str, Enum):
         return self.value
 
 
-class ChatMessageArtifact(SQLModel, table=True):
+class ChatMessageArtifact(SQLModel, table=True):  # type: ignore[call-arg]
     """Join table linking chat messages to artifacts."""
 
     chat_message_id: str = Field(foreign_key="chatmessage.id", primary_key=True)
     artifact_id: str = Field(foreign_key="artifact.id", primary_key=True)
 
 
-class ChatMessage(SQLModel, table=True):
+class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     """Chat message in an interactive conversation."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -69,7 +69,7 @@ class ChatMessage(SQLModel, table=True):
     )
 
 
-class ChatThreadContext(SQLModel, table=True):
+class ChatThreadContext(SQLModel, table=True):  # type: ignore[call-arg]
     """Summary context for chat threads."""
 
     purpose_id: str = Field(primary_key=True, foreign_key="purpose.id")

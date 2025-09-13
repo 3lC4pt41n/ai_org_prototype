@@ -11,7 +11,7 @@ class FeedbackType(str, Enum):
     BLUEPRINT = "blueprint"
 
 
-class Feedback(SQLModel, table=True):
+class Feedback(SQLModel, table=True):  # type: ignore[call-arg]
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
     tenant_id: str = Field(foreign_key="tenant.id", nullable=False)

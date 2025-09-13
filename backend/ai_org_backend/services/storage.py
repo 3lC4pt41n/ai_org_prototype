@@ -51,7 +51,7 @@ def _ensure_repo(repo_dir: Path) -> None:
     repo_dir.mkdir(parents=True, exist_ok=True)
     if not (repo_dir / ".git").exists():
         subprocess.run(["git", "init", str(repo_dir)], check=True)  # nosec B603 B607
-        subprocess.run(["git", "-C", str(repo_dir), "branch", "-M", "main"], check=False)  # nosec B607
+        subprocess.run(["git", "-C", str(repo_dir), "branch", "-M", "main"], check=False)  # nosec B603 B607
         (repo_dir / ".gitkeep").write_text("", encoding="utf-8")
         subprocess.run(["git", "-C", str(repo_dir), "add", "-A"], check=True)  # nosec B603 B607
         subprocess.run(
@@ -73,15 +73,15 @@ def _ensure_repo(repo_dir: Path) -> None:
     subprocess.run(
         ["git", "config", "--global", "--add", "safe.directory", str(repo_dir)],
         check=False,
-    )  # nosec B607
+    )  # nosec B603 B607
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.name", GIT_NAME],
         check=False,
-    )  # nosec B607
+    )  # nosec B603 B607
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.email", GIT_EMAIL],
         check=False,
-    )  # nosec B607
+    )  # nosec B603 B607
 
 
 def _sha256(p: Path) -> str:
@@ -102,7 +102,7 @@ def _git_commit(rel_path: str, message: str) -> None:
         capture_output=True,
         text=True,
         check=False,
-    )  # nosec B607
+    )  # nosec B603 B607
     if not status.stdout.strip():
         log.info("storage: nothing to commit in %s", WORKSPACE)
         return

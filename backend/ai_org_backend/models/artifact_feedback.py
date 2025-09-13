@@ -5,7 +5,7 @@ from typing import Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 
-class ArtifactFeedback(SQLModel, table=True):
+class ArtifactFeedback(SQLModel, table=True):  # type: ignore[call-arg]
     __tablename__ = "artifactfeedback"  # ← konsistent mit der Migration
     """Feedback entries for a specific artifact.
 

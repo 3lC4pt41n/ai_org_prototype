@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .tenant import Tenant
 
 
-class Purpose(SQLModel, table=True):
+class Purpose(SQLModel, table=True):  # type: ignore[call-arg]
     """High level project purpose."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
