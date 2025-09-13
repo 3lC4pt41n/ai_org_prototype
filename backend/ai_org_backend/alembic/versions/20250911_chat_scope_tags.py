@@ -60,7 +60,8 @@ def upgrade() -> None:
     # 3. Migrate existing data: set scope for old messages and create join entries
     op.execute("UPDATE chatmessage SET scope='artifact' WHERE artifact_id IS NOT NULL;")
     op.execute(
-        "INSERT INTO chatmessageartifact (chat_message_id, artifact_id) SELECT id, artifact_id FROM chatmessage WHERE artifact_id IS NOT NULL;"
+        "INSERT INTO chatmessageartifact (chat_message_id, artifact_id) "
+        "SELECT id, artifact_id FROM chatmessage WHERE artifact_id IS NOT NULL;"
     )
     op.execute("UPDATE chatmessage SET intent='note' WHERE role IN ('assistant', 'agent');")
     # 4. Remove default values
