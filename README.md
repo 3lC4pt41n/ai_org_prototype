@@ -313,39 +313,44 @@ API-->>U: ZIP-Download
 ```
 ```mermaid
 flowchart TB
-U[User] -->|Start / Freigabe / Feedback| API
-API --> ORCH
-subgraph ORCH[Orchestrator]
-O1[Modus prüfen (auto/manuell)]
-O2[PRD-Task erzeugen]
-O3[Architect Agent]
-O4[Planner Agent]
-O5[Tasks einplanen]
-end
+    U[User] -->|Start / Freigabe / Feedback| API
+    API --> ORCH
 
-subgraph Agents[Celery Workers]
-PO[Product Owner]
-AR[Architect]
-PL[Planner]
-DEV[Developer]
-QA[QA]
-UX[UX/UI]
-end
+    subgraph ORCH [Orchestrator]
+        O1["Modus prüfen (auto/manuell)"]
+        O2["PRD-Task erzeugen"]
+        O3["Architect Agent"]
+        O4["Planner Agent"]
+        O5["Tasks einplanen"]
+    end
 
-ORCH -->|delegieren| PO
-ORCH -->|delegieren| AR
-ORCH -->|delegieren| PL
-ORCH -->|Tasks dispatchen| DEV
-ORCH -->|Tasks dispatchen| QA
-ORCH -->|Tasks dispatchen| UX
-ORCH --> PG[(PostgreSQL)]
-ORCH --> G[(Neo4j Graph DB)]
-ORCH --> R[(Redis Budget/Queue)]
-DEV -->|Artefakte speichern| PG
-QA -->|Ergebnisse eintragen| PG
-UX -->|Design-Artefakte| PG
-ORCH -->|Updates| API
-API --> U
+    subgraph Agents [Celery Workers]
+        PO["Product Owner"]
+        AR["Architect"]
+        PL["Planner"]
+        DEV["Developer"]
+        QA["QA"]
+        UX["UX/UI"]
+    end
+
+    ORCH -->|delegieren| PO
+    ORCH -->|delegieren| AR
+    ORCH -->|delegieren| PL
+    ORCH -->|Tasks dispatchen| DEV
+    ORCH -->|Tasks dispatchen| QA
+    ORCH -->|Tasks dispatchen| UX
+
+    ORCH --> PG[(PostgreSQL)]
+    ORCH --> G[(Neo4j Graph DB)]
+    ORCH --> R[(Redis Budget/Queue)]
+
+    DEV -->|Artefakte speichern| PG
+    QA -->|Ergebnisse eintragen| PG
+    UX -->|Design-Artefakte| PG
+
+    ORCH -->|Updates| API
+    API --> U
+
 ```
 
 - **Abhängigkeits-Graph:** Alle Tasks einer Purpose sind über **TaskDependency**-Kanten zu einem gerichteten azyklischen Graph verbunden. Der Orchestrator stellt sicher, dass kein Task ausgeführt wird, solange abhängige Vorgänger-Tasks noch nicht *done* sind. Über `/api/graph` bzw. `/api/purposes/{id}/graph` kann der aktuelle Task-Graph (Knoten: Tasks mit Status, Kanten: Abhängigkeiten) abgerufen werden.
