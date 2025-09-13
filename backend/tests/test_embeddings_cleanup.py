@@ -83,6 +83,9 @@ def test_overwrite_vector_cleanup(monkeypatch, tmp_path):
     monkeypatch.delitem(sys.modules, "ai_org_backend.config", raising=False)
     monkeypatch.delitem(sys.modules, "ai_org_backend.services.storage", raising=False)
     storage = importlib.import_module("ai_org_backend.services.storage")
+    assert hasattr(storage, "_link_neo4j")  # type: ignore[attr-defined]
+    assert hasattr(storage, "_git_commit")  # type: ignore[attr-defined]
+    assert hasattr(storage, "WORKSPACE")  # type: ignore[attr-defined]
 
     # Monkeypatch Neo4j and git commit functions to no-ops
     storage._link_neo4j = lambda *args, **kwargs: None

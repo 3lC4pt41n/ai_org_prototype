@@ -35,9 +35,11 @@ def _call_llm(messages, tenant_id: Optional[str]) -> Optional[dict]:
     """
     try:
         # Preferred: budget-aware billing
-        return chat_with_tools(messages=messages, model=MODEL_PRO, temperature=0, tenant=tenant_id)
+        return chat_with_tools(
+            messages=messages, model=MODEL_PRO, temperature=0, tenant_id=tenant_id
+        )
     except TypeError:
-        # Fallback: older signature without 'tenant'
+        # Fallback: older signature without 'tenant_id'
         return chat_with_tools(messages=messages, model=MODEL_PRO, temperature=0)
 
 
