@@ -241,10 +241,10 @@ def post_chat(
                         media_type=prd_artifact.media_type if prd_artifact else "text/markdown",
                         allow_overwrite=True,
                     )
-                assistant_content = "I'll incorporate that."
+                assistant_content = "Ich arbeite das ein."
                 agent_content = (
-                    "Note: Also check architecture, tests, and UI documentation for "
-                    "consistency with the updated requirements."
+                    "Hinweis: Überprüfe auch Architektur, Tests und UI-Dokumentation auf "
+                    "Konsistenz mit den aktualisierten Anforderungen."
                 )
                 agent_msg = ChatMessage(
                     tenant_id=tenant_id,
