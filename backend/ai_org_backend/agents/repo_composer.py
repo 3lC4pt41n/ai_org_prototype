@@ -74,14 +74,8 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             logging.error(f"[repo_composer] LLM generation failed: {exc}")
         # Record tokens used by LLM
         tokens_used = 0
-        try:
-            tokens_used = (
-                response.usage.total_tokens
-                if response and hasattr(response, "usage")
-                else 0
-            )
-        except Exception:
-            pass
+        if response and hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
+            tokens_used = response.usage.total_tokens or 0
         # Expect LLM to return JSON with files list; try parsing if possible
         files_created = 0
         try:

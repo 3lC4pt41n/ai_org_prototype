@@ -257,6 +257,7 @@ def register_artefact(
                     word_count = len(text_content.split())
                 except Exception as exc:  # pragma: no cover - defensive
                     logging.warning("Failed to read text content for %s: %s", tgt, exc)
+                    text_content = None
                     word_count = 0
                 tokens = int(word_count * 1.5)
                 task_obj.tokens_actual += tokens
