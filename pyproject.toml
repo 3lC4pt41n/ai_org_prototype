@@ -9,10 +9,12 @@ known_first_party = ["ai_org_backend"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
 # Wähle gängige Regel-Sets; wir können später schärfer stellen.
 select = ["E", "F", "W", "I"]
 ignore = []
-target-version = "py311"
 
 [tool.poetry.dependencies]
 # (bestehende Einträge unverändert lassen)

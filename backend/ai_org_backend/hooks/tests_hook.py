@@ -262,4 +262,4 @@ def update_with_tests(self, task_id: str, **fields):
 
 
 # Activate patch
-_Repo.update = update_with_tests
+setattr(_Repo, "update", update_with_tests)

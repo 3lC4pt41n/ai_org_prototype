@@ -10,6 +10,8 @@ must approve via the Reviews API to unblock downstream tasks.
 import logging  # noqa: E402
 from typing import Optional  # noqa: E402
 
+from sqlalchemy import desc
+
 from ai_org_backend.db import SessionLocal  # noqa: E402
 
 # Small metrics parity (keeps style with other agents)
@@ -92,7 +94,7 @@ def reviewer_task(
             art = (
                 s.query(Artefact)
                 .filter(Artefact.task_id == blueprint_task_id)
-                .order_by(Artefact.created_at.desc())
+                .order_by(desc(Artefact.created_at))
                 .first()
             )
             if art and art.blob:
