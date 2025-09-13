@@ -64,11 +64,7 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         content = resp["choices"][0]["message"]["content"]
         return content
     except BudgetExceededError:
-        save_artefact(
-            tenant_id=tenant_id,
-            filename="architect_budget.md",
-            content=b"Budget exhausted during architecture planning. Please top up and retry.",
-        )
+        logger.error("Budget exhausted during architecture planning for tenant %s", tenant_id)
         return "\u26d4 Budget exhausted. Architecture step skipped."
     finally:
         ARCHITECT_LATENCY.observe(time.time() - start)
