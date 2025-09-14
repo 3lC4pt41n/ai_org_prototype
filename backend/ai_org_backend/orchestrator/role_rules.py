@@ -18,8 +18,8 @@ Canonical roles (kept small & stable to match router -> queues):
   - dev, ux_ui, qa, telemetry, repo, architect, product, qa_review, qa_refactor
 """
 
-import re
-from typing import Optional, Dict, List, Tuple
+import re  # noqa: E402
+from typing import Dict, List, Optional, Tuple  # noqa: E402
 
 # Canonical roles the router understands (must match router mapping)
 CANONICAL_ROLES = {

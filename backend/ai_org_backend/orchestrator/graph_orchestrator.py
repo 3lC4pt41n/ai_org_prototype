@@ -70,7 +70,7 @@ def _extract_tasks(txt: str) -> List[Dict[str, Any]]:
     try:
         lo, hi = txt.index("["), txt.rindex("]")
         return json.loads(txt[lo : hi + 1])
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
         pass
     rows = [ln for ln in txt.splitlines() if ln.lstrip().startswith("|")]
     tasks = []
