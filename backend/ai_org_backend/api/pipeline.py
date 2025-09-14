@@ -4,10 +4,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func
 from sqlmodel import Session, select
-from sqlalchemy import asc, desc
 
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
@@ -486,7 +486,7 @@ def post_artifact_feedback(
                 purpose_id=purpose.id if purpose else None,
                 artifact_id=None,
                 task_id=artifact.task_id,
-                role=ChatRole.AGENT.value,
+                role=ChatRole.AGENT,
                 content=json.dumps(impacted, ensure_ascii=False),
             )
             session.add(agent_msg)
