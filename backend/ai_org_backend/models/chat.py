@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 from sqlmodel import Field, Relationship, SQLModel
 
 
-# helper to ensure SA enums use the *values* of our StrEnums
+# Helper: ensure SA enums use lowercase values of our StrEnums
 def _values(enum_cls: type[StrEnum]) -> list[str]:
     return [member.value for member in enum_cls]
 
@@ -61,7 +61,6 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     task_id: Optional[str] = Field(default=None, foreign_key="task.id")
     # Map to Postgres ENUMs using the lowercase values to match existing DB
     role: ChatRole = Field(
-        nullable=False,
         sa_column=sa.Column(
             sa.Enum(ChatRole, name="chatrole", values_callable=_values),
             nullable=False,
@@ -69,7 +68,6 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     )
     scope: ChatScope = Field(
         default=ChatScope.GLOBAL,
-        nullable=False,
         sa_column=sa.Column(
             sa.Enum(ChatScope, name="chatscope", values_callable=_values),
             nullable=False,
@@ -77,7 +75,6 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     )
     intent: ChatIntent = Field(
         default=ChatIntent.QUESTION,
-        nullable=False,
         sa_column=sa.Column(
             sa.Enum(ChatIntent, name="chatintent", values_callable=_values),
             nullable=False,
