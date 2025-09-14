@@ -1,5 +1,7 @@
 .env
-node_modules
+# Node modules
+node_modules/
+.pnpm-store/
 .venv/
 backend/ai_org_backend.egg-info/
 

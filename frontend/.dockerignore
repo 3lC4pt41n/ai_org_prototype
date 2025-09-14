@@ -1,6 +1,5 @@
 # --- Minimierter Build-Kontext für das Frontend ---
 # Paketmanager-/Cache-Verzeichnisse
-node_modules
 **/node_modules
 .pnpm-store
 .yarn

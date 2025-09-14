@@ -1,5 +1,4 @@
 # Monorepo-Root: falls andere Services aus dem Root bauen, weiterhin schweren Ballast ignorieren
-node_modules
 **/node_modules
 .pnpm-store
 .git
