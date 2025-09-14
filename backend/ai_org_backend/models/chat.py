@@ -7,6 +7,12 @@ import sqlalchemy as sa
 from pydantic import ConfigDict
 from sqlmodel import Field, Relationship, SQLModel
 
+
+# helper to ensure SA enums use the *values* of our StrEnums
+def _values(enum_cls: type[StrEnum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 if TYPE_CHECKING:  # pragma: no cover
     from .artifact import Artifact
 
@@ -53,9 +59,30 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
     artifact_id: Optional[str] = Field(default=None, foreign_key="artifact.id")
     task_id: Optional[str] = Field(default=None, foreign_key="task.id")
-    role: ChatRole = Field(nullable=False)
-    scope: ChatScope = Field(default=ChatScope.GLOBAL, nullable=False)
-    intent: ChatIntent = Field(default=ChatIntent.QUESTION, nullable=False)
+    # Map to Postgres ENUMs using the lowercase values to match existing DB
+    role: ChatRole = Field(
+        nullable=False,
+        sa_column=sa.Column(
+            sa.Enum(ChatRole, name="chatrole", values_callable=_values),
+            nullable=False,
+        ),
+    )
+    scope: ChatScope = Field(
+        default=ChatScope.GLOBAL,
+        nullable=False,
+        sa_column=sa.Column(
+            sa.Enum(ChatScope, name="chatscope", values_callable=_values),
+            nullable=False,
+        ),
+    )
+    intent: ChatIntent = Field(
+        default=ChatIntent.QUESTION,
+        nullable=False,
+        sa_column=sa.Column(
+            sa.Enum(ChatIntent, name="chatintent", values_callable=_values),
+            nullable=False,
+        ),
+    )
     content: str = Field(nullable=False, max_length=5000)
     metadata_: dict | None = Field(
         default=None, sa_column=sa.Column("metadata", sa.JSON), alias="metadata"
