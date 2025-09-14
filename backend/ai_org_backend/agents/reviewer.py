@@ -10,7 +10,7 @@ must approve via the Reviews API to unblock downstream tasks.
 import logging  # noqa: E402
 from typing import Optional  # noqa: E402
 
-from sqlalchemy import desc
+from sqlalchemy import desc  # noqa: E402
 
 from ai_org_backend.db import SessionLocal  # noqa: E402
 
@@ -111,5 +111,6 @@ def reviewer_task(
         review_md.encode("utf-8"),
         filename="reviews/architecture_domain_review.md",
         allow_overwrite=True,
+        media_type="text/markdown",
     )
     logging.info("[Reviewer] Review artefact saved for task=%s", review_task_id)
