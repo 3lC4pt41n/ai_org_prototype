@@ -111,7 +111,7 @@ AGENTS = {
     "telemetry": agent_telemetry,
     "insight": agent_insight,
     "integration": agent_integration,
-    "repo": repo_composer.agent_repo,  # Register new repo_composer agent
+    "repo": repo_composer.agent_repo,  # Register repo_composer agent  # type: ignore[has-type]
 }
 
 
@@ -163,7 +163,7 @@ if os.getenv("DISABLE_METRICS") != "1":
 @app.post("/task")
 async def create_task(d: Dict, current_tenant: Tenant = Depends(get_current_tenant)):
     t = Repo(current_tenant.id).add_task(
-        purpose_id=d.get("purpose_id"),
+        purpose_id=str(d.get("purpose_id", "")),
         description=d.get("description", "blank"),
         business_value=d.get("business_value", 1),
         tokens_plan=d.get("tokens_plan", 0),
