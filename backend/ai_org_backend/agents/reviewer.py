@@ -97,8 +97,11 @@ def reviewer_task(
                 .order_by(desc(Artefact.created_at))
                 .first()
             )
-            if art and art.blob:
-                blueprint_text = art.blob.decode("utf-8", errors="ignore")
+            if art:
+                from ai_org_backend.services.storage import resolve_for_read
+
+                file_path = resolve_for_read(art.repo_path)
+                blueprint_text = file_path.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
             logging.error("[Reviewer] Failed to load blueprint artefact: %s", e)
             blueprint_text = ""

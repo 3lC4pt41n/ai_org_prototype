@@ -80,6 +80,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         if not purpose:
             alert(f"Purpose {purpose_id} not found for planning", "orchestrator")
             return
+        tenant_id = purpose.tenant_id
 
     try:
         blueprint_md = run_architect(purpose)
@@ -89,7 +90,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
 
     with Session(engine) as db_session:
         blueprint_task = Task(
-            tenant_id=TENANT,
+            tenant_id=tenant_id,
             purpose_id=purpose_id,
             description="Architecture Blueprint",
             status="done",
@@ -104,7 +105,9 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             media_type="text/markdown",
             allow_overwrite=True,
         )
-        Repo(TENANT).update(blueprint_task.id, owner="Architect", notes="Blueprint completed")
+        Repo(tenant_id).update(
+            blueprint_task.id, owner="Architect", notes="Blueprint completed"
+        )
 
     # Nur planen, wenn keine Implementierungs-Todos existieren
     with Session(engine) as db_session:
@@ -140,7 +143,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         if tasks_plan:
             for t in tasks_plan:
                 task_obj = Task(
-                    tenant_id=TENANT,
+                    tenant_id=tenant_id,
                     purpose_id=purpose_id,
                     description=t.get("description", ""),
                     business_value=float(t.get("business_value", 1.0)),
@@ -169,7 +172,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 db_session.commit()
 
     try:
-        ingest(TENANT)
+        ingest(tenant_id)
     except Exception as e:
         alert(f"Orchestrator: ingest failed for purpose {purpose_id}: {e}", "warn")
 
