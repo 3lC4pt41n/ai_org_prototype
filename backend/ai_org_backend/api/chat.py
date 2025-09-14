@@ -1,8 +1,10 @@
 import logging
 from datetime import datetime
+from typing import Any, Iterable, Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy import desc, not_
 from sqlmodel import Session, delete, select
 from starlette.concurrency import run_in_threadpool
 
@@ -28,6 +30,40 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 PROMPT_TEMPLATE = load_template("aimar.j2")
+
+
+def _coerce_role(role: Optional[str]) -> ChatRole:
+    """Coerce any input ('USER'|'user'|None) into ChatRole (defaults to user)."""
+    if not role:
+        return ChatRole.USER
+    try:
+        return ChatRole(role.lower())
+    except Exception:
+        return ChatRole.USER
+
+
+def _coerce_scope(scope: Optional[str], artifact_ids: Optional[Iterable[str]] = None) -> ChatScope:
+    """Map scope strings to ChatScope; 'auto' becomes MIXED if >1 artefact, else ARTIFACT/ GLOBAL."""
+    if not scope:
+        return ChatScope.GLOBAL
+    s = scope.lower()
+    if s == "global":
+        return ChatScope.GLOBAL
+    if s == "artifact":
+        return ChatScope.ARTIFACT
+    if s == "mixed":
+        return ChatScope.MIXED
+    if s == "auto":
+        count = len(list(artifact_ids or []))
+        return (
+            ChatScope.MIXED
+            if count > 1
+            else (ChatScope.ARTIFACT if count == 1 else ChatScope.GLOBAL)
+        )
+    # fallback
+    return ChatScope.GLOBAL
+
+
 ws_router = APIRouter(prefix="/ws")
 
 
@@ -52,50 +88,48 @@ def get_chat_messages(
     if artifact_id:
         messages_query = (
             messages_query.join(ChatMessageArtifact)
-            .where(ChatMessageArtifact.artifact_id.in_(artifact_id))
+            .where(ChatMessageArtifact.artifact_id.in_(artifact_id))  # type: ignore[attr-defined]
             .distinct()
         )
     elif scope:
         if scope == ChatScope.GLOBAL:
             subq = select(ChatMessageArtifact.chat_message_id)
-            messages_query = messages_query.where(ChatMessage.id.not_in(subq))
+            messages_query = messages_query.where(
+                not_(ChatMessage.id.in_(subq))  # type: ignore[attr-defined]
+            )
         elif scope == ChatScope.ARTIFACT:
             messages_query = messages_query.join(ChatMessageArtifact).distinct()
         elif scope == ChatScope.MIXED:
             messages_query = messages_query.where(ChatMessage.scope == ChatScope.MIXED)
 
     messages = session.exec(messages_query.order_by(ChatMessage.created_at)).all()
-    history: list[dict] = []
+    out: list[dict] = []
     msg_ids = [m.id for m in messages]
     link_map: dict[str, list[str]] = {}
     if msg_ids:
         links = session.exec(
             select(ChatMessageArtifact.chat_message_id, ChatMessageArtifact.artifact_id).where(
-                ChatMessageArtifact.chat_message_id.in_(msg_ids)
+                ChatMessageArtifact.chat_message_id.in_(msg_ids)  # type: ignore[attr-defined]
             )
         ).all()
         for msg_id, art_id in links:
             link_map.setdefault(msg_id, []).append(art_id)
 
     for m in messages:
-        role = m.role.value if hasattr(m, "role") else str(m.role)
-        if role == ChatRole.USER.value:
-            author = current_tenant.name
-        elif role == ChatRole.ASSISTANT.value:
-            author = "AImar"
-        else:
-            author = "Agent"
-        history.append(
+        out.append(
             {
                 "id": m.id,
-                "role": role,
+                # Always serialize as lowercase string value to match UI enum
+                "role": getattr(m.role, "value", str(m.role)).lower(),
                 "content": m.content,
-                "author": author,
-                "created_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None,
+                "author": (
+                    current_tenant.name if getattr(m, "role", None) == ChatRole.USER else "AImar"
+                ),
+                "created_at": getattr(m, "created_at", None),
                 "artifact_ids": link_map.get(m.id, []),
             }
         )
-    return history
+    return out
 
 
 @router.post("/messages")
@@ -138,12 +172,7 @@ def post_chat(
         if len(artifact_ids) == 1:
             task_id = task.id  # use last fetched task
 
-    if artifact_ids:
-        final_scope = ChatScope.MIXED if len(artifact_ids) > 1 else ChatScope.ARTIFACT
-    elif scope_input and scope_input in ChatScope._value2member_map_:
-        final_scope = ChatScope(scope_input)
-    else:
-        final_scope = ChatScope.GLOBAL
+    final_scope = _coerce_scope(scope_input, artifact_ids)
 
     intent_enum = (
         ChatIntent(intent_input)
@@ -156,7 +185,7 @@ def post_chat(
         purpose_id=purpose_id,
         artifact_id=artifact_ids[0] if artifact_ids else None,
         task_id=task_id,
-        role=ChatRole.USER,
+        role=_coerce_role("USER"),
         content=text,
         scope=final_scope,
         intent=intent_enum,
@@ -171,6 +200,7 @@ def post_chat(
         logger.error("Failed to save user chat message: %s", e)
         raise HTTPException(status_code=500, detail="Could not save message")
 
+    assistant_content: str | None = None
     if user_msg.intent == ChatIntent.APPROVAL:
         for aid in artifact_ids:
             artifact = session.get(Artifact, aid)
@@ -199,8 +229,6 @@ def post_chat(
         except Exception as e:  # pragma: no cover - Redis failure
             logger.error("Redis get failed: %s", e)
             paused = False
-
-        assistant_content: str | None = None
         if paused:
             trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
             if text.lower() in trivial_responses:
@@ -210,8 +238,8 @@ def post_chat(
                     prd_artifact = session.exec(
                         select(Artifact)
                         .where(Artifact.task.has(purpose_id=purpose_id))
-                        .where(Artifact.repo_path.ilike("%product_requirements.md"))
-                        .order_by(Artifact.created_at.desc())
+                        .where(Artifact.repo_path.ilike("%product_requirements.md"))  # type: ignore[attr-defined]
+                        .order_by(desc(Artifact.created_at))
                     ).first()
                 except Exception:
                     prd_artifact = None
@@ -226,7 +254,7 @@ def post_chat(
                     prd_task = session.exec(
                         select(Task)
                         .where(Task.purpose_id == purpose_id)
-                        .where(Task.description.ilike("%Product Requirements Document%"))
+                        .where(Task.description.ilike("%Product Requirements Document%"))  # type: ignore[attr-defined]
                     ).first()
                     target_task_id = prd_task.id if prd_task else None
                 if target_task_id:
@@ -270,11 +298,13 @@ def post_chat(
             if artifact_ids:
                 conv_query = (
                     conv_query.join(ChatMessageArtifact)
-                    .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+                    .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))  # type: ignore[attr-defined]
                     .distinct()
                 )
             else:
-                conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
+                conv_query = conv_query.where(
+                    ChatMessage.artifact_id.is_(None)  # type: ignore[union-attr]
+                )
             conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
             if not artifact_ids:
                 chat_context = session.get(ChatThreadContext, purpose_id)
@@ -331,7 +361,7 @@ def post_chat(
             .where(
                 ChatMessage.tenant_id == tenant_id,
                 ChatMessage.purpose_id == purpose_id,
-                ChatMessage.artifact_id.is_(None),
+                ChatMessage.artifact_id.is_(None),  # type: ignore[union-attr]
             )
             .order_by(ChatMessage.created_at)
         ).all()
@@ -408,7 +438,7 @@ def post_chat(
                         session.rollback()
                         logger.error("Failed to update chat summary: %s", e)
 
-    response = {
+    response: dict[str, Any] = {
         "id": assistant_msg.id,
         "role": assistant_msg.role.value,
         "content": assistant_msg.content,
@@ -555,9 +585,9 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     purpose_id=purpose_id,
                     artifact_id=artifact_id,
                     task_id=None,
-                    role=ChatRole.USER,
+                    role=_coerce_role("USER"),
                     content=user_text,
-                    scope=ChatScope.GLOBAL,
+                    scope=_coerce_scope(_scope_input, artifact_ids),
                     intent=(
                         ChatIntent(intent_input)
                         if intent_input in ChatIntent._value2member_map_
@@ -616,7 +646,10 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         session.rollback()
                         logger.error("Failed to save approval response message: %s", e)
                     await websocket.send_json(
-                        {"role": "assistant", "content": assistant_msg.content}
+                        {
+                            "role": ChatRole.ASSISTANT.value,
+                            "content": assistant_msg.content,
+                        }
                     )
                     continue
                 try:
@@ -636,8 +669,8 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             prd_artifact = session.exec(
                                 select(Artifact)
                                 .where(Artifact.task.has(purpose_id=purpose_id))
-                                .where(Artifact.repo_path.ilike("%product_requirements.md"))
-                                .order_by(Artifact.created_at.desc())
+                                .where(Artifact.repo_path.ilike("%product_requirements.md"))  # type: ignore[attr-defined]
+                                .order_by(desc(Artifact.created_at))
                             ).first()
                         except Exception:
                             prd_artifact = None
@@ -657,7 +690,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                     select(Task)
                                     .where(Task.purpose_id == purpose_id)
                                     .where(
-                                        Task.description.ilike("%Product Requirements Document%")
+                                        Task.description.ilike("%Product Requirements Document%")  # type: ignore[attr-defined]
                                     )
                                 ).first()
                                 target_task_id = prd_task.id if prd_task else None
@@ -690,11 +723,13 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     if artifact_ids:
                         conv_query = (
                             conv_query.join(ChatMessageArtifact)
-                            .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+                            .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))  # type: ignore[attr-defined]
                             .distinct()
                         )
                     else:
-                        conv_query = conv_query.where(ChatMessage.artifact_id.is_(None))
+                        conv_query = conv_query.where(
+                            ChatMessage.artifact_id.is_(None)  # type: ignore[union-attr]
+                        )
                     conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
                     if not artifact_ids:
                         chat_context = session.get(ChatThreadContext, purpose_id)
@@ -758,7 +793,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                 await websocket.send_json(
                     {
                         "id": assistant_msg.id,
-                        "role": assistant_msg.role.value,
+                        "role": ChatRole.ASSISTANT.value,
                         "content": assistant_msg.content,
                         "created_at": assistant_msg.created_at.isoformat(),
                     }
@@ -770,7 +805,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         .where(
                             ChatMessage.tenant_id == tenant_id,
                             ChatMessage.purpose_id == purpose_id,
-                            ChatMessage.artifact_id.is_(None),
+                            ChatMessage.artifact_id.is_(None),  # type: ignore[union-attr]
                         )
                         .order_by(ChatMessage.created_at)
                     ).all()
