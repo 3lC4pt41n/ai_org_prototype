@@ -274,6 +274,7 @@ services:
       # Nur das Frontend als Kontext schicken (schneller & stabiler)
       context: ../frontend
       dockerfile: Dockerfile
+    image: local/ai_frontend:latest
     profiles: ["ui"]
     ports:
       - "5732:80"
