@@ -19,11 +19,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add theme column to tenant for light/dark preference."""
+    bind = op.get_bind()
+    usertheme_enum = sa.Enum("light", "dark", name="usertheme")
+    usertheme_enum.create(bind, checkfirst=True)
     op.add_column(
         "tenant",
         sa.Column(
             "theme",
-            sa.Enum("light", "dark", name="usertheme"),
+            usertheme_enum,
             nullable=False,
             server_default="light",
         ),
@@ -34,5 +37,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove theme column and enum."""
+    bind = op.get_bind()
     op.drop_column("tenant", "theme")
-    op.execute("DROP TYPE IF EXISTS usertheme")
+    sa.Enum(name="usertheme").drop(bind, checkfirst=True)
