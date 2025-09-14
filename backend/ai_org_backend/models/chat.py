@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
 import sqlalchemy as sa
@@ -11,32 +11,29 @@ if TYPE_CHECKING:  # pragma: no cover
     from .artifact import Artifact
 
 
-class ChatRole(str, Enum):
+class ChatRole(StrEnum):
+    """Role of a chat message author."""
+
     USER = "user"
     ASSISTANT = "assistant"
     AGENT = "agent"
 
-    def __str__(self) -> str:
-        return self.value
 
+class ChatScope(StrEnum):
+    """Scope in which the chat message should be interpreted."""
 
-class ChatScope(str, Enum):
     GLOBAL = "global"
     ARTIFACT = "artifact"
     MIXED = "mixed"
 
-    def __str__(self) -> str:
-        return self.value
 
+class ChatIntent(StrEnum):
+    """High level intent of the chat message."""
 
-class ChatIntent(str, Enum):
     QUESTION = "question"
     FEEDBACK = "feedback"
     NOTE = "note"
     APPROVAL = "approval"
-
-    def __str__(self) -> str:
-        return self.value
 
 
 class ChatMessageArtifact(SQLModel, table=True):  # type: ignore[call-arg]
