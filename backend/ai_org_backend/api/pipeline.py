@@ -255,6 +255,17 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             owner="ProductOwner",
             notes="PRD completed",
         )
+        # If the purpose is in auto mode, mark the PRD artifact as released
+        # so the orchestrator can continue with blueprint generation.
+        if purpose.mode == "auto":
+            with Session(engine) as session:
+                prd_art = session.exec(
+                    select(Artifact).where(Artifact.task_id == prd_task_obj.id)
+                ).first()
+                if prd_art:
+                    prd_art.released = True
+                    session.add(prd_art)
+                    session.commit()
 
     return {"purpose_id": purpose.id, "requirements": prd_content}
 
