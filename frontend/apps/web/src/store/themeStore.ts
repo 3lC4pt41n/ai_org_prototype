@@ -14,12 +14,12 @@ const useThemeStore = create<ThemeState>((set, get) => ({
     const newTheme = current === "light" ? "dark" : "light";
     set({ theme: newTheme });
     // Persist user preference to backend
-    postJson("/theme", { theme: newTheme }).catch((err) => {
+    postJson("/settings/theme", { theme: newTheme }).catch((err) => {
       console.error("Failed to update theme preference", err);
     });
   },
   fetchTheme: () => {
-    getJson<{ theme: string }>("/theme")
+    getJson<{ theme: string }>("/settings/theme")
       .then((data) => {
         if (data && (data.theme === "light" || data.theme === "dark")) {
           set({ theme: data.theme });
