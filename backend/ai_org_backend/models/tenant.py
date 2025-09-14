@@ -13,12 +13,11 @@ if TYPE_CHECKING:
     from .task import Task
 
 
-class Theme(str, Enum):
-    LIGHT = "light"
-    DARK = "dark"
+class UserTheme(str, Enum):
+    """Enum for UI theme preference (must match Postgres ENUM values)."""
 
-    def __str__(self) -> str:
-        return self.value
+    light = "light"
+    dark = "dark"
 
 
 class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
@@ -40,9 +39,13 @@ class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
     enable_code_review: bool = Field(default=True)
     enable_refactor: bool = Field(default=True)
     # UI theme preference (light or dark mode)
-    theme: Theme = Field(
-        default=Theme.LIGHT,
-        sa_column=sa.Column(sa.Enum(Theme, name="usertheme"), nullable=False),
+    theme: UserTheme = Field(
+        default=UserTheme.light,
+        sa_column=sa.Column(
+            sa.Enum(UserTheme, name="usertheme"),
+            nullable=False,
+            server_default="light",
+        ),
     )
 
     # FIXED: Import List from typing explicitly, no __future__ annotations
