@@ -63,8 +63,10 @@ export default function AImarChatPanel({
   const formatArtifactLabel = (artifact: any) => {
     if (!artifact) return '';
     const fileName = artifact.repo_path?.split('/').pop() || '';
-    if (fileName.toLowerCase().includes('product_requirements')) return 'PRD';
-    if (fileName.toLowerCase().includes('architecture')) return 'Architektur';
+    if (fileName.toLowerCase().includes('product_requirements')) return 'Produktanforderung';
+    if (fileName.toLowerCase().includes('architecture_domain_review'))
+      return 'Architektur & Domain Review';
+    if (fileName.toLowerCase().includes('architecture_blueprint')) return 'Architektur';
     const name = fileName.replace(/_/g, ' ');
     return name.charAt(0).toUpperCase() + name.slice(1);
   };

@@ -4,6 +4,7 @@ import { api, getJson } from '../lib/api';
 interface Purpose {
   id: string;
   name: string;
+  mode?: 'manual' | 'auto';
 }
 
 interface Task {
@@ -81,6 +82,7 @@ interface PipelineState {
   startPurpose: (purposeId: string) => Promise<void>;
   pauseAll: () => Promise<void>;
   startAll: () => Promise<void>;
+  updatePurposeMode: (purposeId: string, mode: 'manual' | 'auto') => Promise<void>;
 }
 
 const usePipelineStore = create<PipelineState>((set, get) => ({
@@ -288,6 +290,26 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       }
       console.error('startPurpose failed', err);
       set({ error: err });
+    }
+  },
+
+  updatePurposeMode: async (purposeId: string, mode: 'manual' | 'auto') => {
+    try {
+      await api.patch(`/purposes/${purposeId}`, { mode });
+      set((state) => ({
+        purposes: state.purposes.map((p) =>
+          p.id === purposeId
+            ? {
+                ...p,
+                mode,
+              }
+            : p,
+        ),
+      }));
+    } catch (err) {
+      console.error('updatePurposeMode failed', err);
+      set({ error: err });
+      throw err;
     }
   },
 

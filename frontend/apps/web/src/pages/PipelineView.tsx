@@ -8,6 +8,9 @@ import {
   Hammer,
   ClipboardCheck,
   CheckCircle2,
+  Target,
+  ShieldCheck,
+  Rocket,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -29,7 +32,18 @@ interface ArtifactItem {
   task_desc?: string;
 }
 
-type PhaseId = 'vision' | 'prd' | 'architecture' | 'implementation' | 'review';
+const PIPELINE_PHASES = [
+  { id: 'purpose', title: 'Projektziel', icon: Target },
+  { id: 'vision', title: 'Vision', icon: Lightbulb },
+  { id: 'prd', title: 'Produktanforderung', icon: FileText },
+  { id: 'architecture', title: 'Architektur', icon: CircuitBoard },
+  { id: 'architecture_review', title: 'Architektur & Domain Review', icon: ShieldCheck },
+  { id: 'implementation', title: 'Implementierung', icon: Hammer },
+  { id: 'review', title: 'Review', icon: ClipboardCheck },
+  { id: 'release', title: 'Release', icon: Rocket },
+] as const;
+
+type PhaseId = (typeof PIPELINE_PHASES)[number]['id'];
 
 interface PhaseMeta {
   id: PhaseId;
@@ -41,18 +55,24 @@ interface PhaseMeta {
   isUpcoming: boolean;
 }
 
-const PHASE_ORDER: PhaseId[] = ['vision', 'prd', 'architecture', 'implementation', 'review'];
+const PHASE_ORDER: PhaseId[] = PIPELINE_PHASES.map((phase) => phase.id);
 
 const PHASE_DESCRIPTIONS: Record<PhaseId, string> = {
+  purpose:
+    'Lege das Projektziel fest, indem du einen Purpose auswählst oder erstellst. Dies bestimmt den weiteren Verlauf der Pipeline.',
   vision:
-    'Definiere Zielsetzung und Kontext des Projekts. Wähle einen Purpose aus, um den weiteren Verlauf zu steuern.',
+    'Schärfe Vision und Kontext des Projekts. Dokumentiere Rahmenbedingungen, Zielgruppen und Erfolgsfaktoren.',
   prd: 'Erarbeite die Produktanforderungen und stelle sicher, dass alle Stakeholder den gleichen Stand teilen.',
   architecture:
     'Gestalte das technische Fundament. Das Architektur-Blueprint bildet die Basis für eine belastbare Implementierung.',
+  architecture_review:
+    'Überprüfe Architekturentscheidungen gemeinsam mit Domain-Expert*innen und gib das Review-Dokument frei.',
   implementation:
     'Arbeite die Aufgaben aus dem Task-Graph ab und kollaboriere mit dem Team entlang der Pipeline.',
   review:
-    'Führe finale Abstimmungen durch, gib Deliverables frei und sichere die Übergabe in den Betrieb.',
+    'Koordiniere finale Abstimmungen, teste Ergebnisse und bereite die Freigabe vor.',
+  release:
+    'Schließe das Projekt ab, indem du alle Artefakte freigibst und das Release kommunizierst.',
 };
 
 export default function PipelineView() {
@@ -100,12 +120,24 @@ export default function PipelineView() {
   const archArtifact = artifacts.find((a) =>
     a.repo_path?.toLowerCase().includes('architecture_blueprint'),
   );
+  const architectureReviewArtifact = artifacts.find((a) =>
+    a.repo_path?.toLowerCase().includes('architecture_domain_review'),
+  );
   const architectureArtifactId = archArtifact?.id ?? null;
+  const architectureReviewArtifactId = architectureReviewArtifact?.id ?? null;
 
-  const prdPending = paused && !archArtifact; // bleibt für Status-Icon Logik bestehen
-  const archPending = paused && !!archArtifact;
-  const prdStatusIcon = prdPending ? '🕓' : '✅';
-  const archStatusIcon = archArtifact ? (archPending ? '🕓' : '✅') : '✅';
+  const prdAwaitingApproval = !!prdArtifact && !prdArtifact.released;
+  const architectureAwaitingApproval = !!archArtifact && !archArtifact.released;
+  const architectureReviewAwaitingApproval =
+    !!architectureReviewArtifact && !architectureReviewArtifact.released;
+
+  const prdStatusIcon = prdArtifact ? (prdAwaitingApproval ? '🕓' : '✅') : '🕓';
+  const archStatusIcon = archArtifact ? (architectureAwaitingApproval ? '🕓' : '✅') : '🕓';
+  const architectureReviewStatusIcon = architectureReviewArtifact
+    ? architectureReviewAwaitingApproval
+      ? '🕓'
+      : '✅'
+    : '🕓';
   const graphStatusIcon = paused ? '🕓' : '✅';
 
   const tasksStatusValues = Object.values(tasksStatus ?? {});
@@ -138,20 +170,46 @@ export default function PipelineView() {
     [tasksStatusValues],
   );
 
-  const visionCompleted = Boolean(selectedPurposeId);
-  const prdCompleted = Boolean(prdArtifact);
-  const architectureCompleted = Boolean(archArtifact);
+  const purposeCompleted = Boolean(selectedPurposeId);
+  const visionCompleted = Boolean(prdArtifact);
+  const prdCompleted = Boolean(prdArtifact?.released);
+  const architectureCompleted = Boolean(archArtifact?.released);
+  const architectureReviewCompleted = Boolean(architectureReviewArtifact?.released);
   const implementationCompleted = allTasksDone;
-  const reviewCompleted = implementationCompleted && backlogEmpty && allArtifactsReleased;
+  const reviewCompleted = implementationCompleted && backlogEmpty;
+  const releaseCompleted = reviewCompleted && allArtifactsReleased;
+
+  const phaseCompletion: Record<PhaseId, boolean> = {
+    purpose: purposeCompleted,
+    vision: visionCompleted,
+    prd: prdCompleted,
+    architecture: architectureCompleted,
+    architecture_review: architectureReviewCompleted,
+    implementation: implementationCompleted,
+    review: reviewCompleted,
+    release: releaseCompleted,
+  };
 
   const recommendedPhase = useMemo<PhaseId>(() => {
+    if (!purposeCompleted) return 'purpose';
     if (!visionCompleted) return 'vision';
     if (!prdCompleted) return 'prd';
     if (!architectureCompleted) return 'architecture';
+    if (!architectureReviewCompleted) return 'architecture_review';
     if (!implementationCompleted) return 'implementation';
     if (!reviewCompleted) return 'review';
-    return 'review';
-  }, [visionCompleted, prdCompleted, architectureCompleted, implementationCompleted, reviewCompleted]);
+    if (!releaseCompleted) return 'release';
+    return 'release';
+  }, [
+    purposeCompleted,
+    visionCompleted,
+    prdCompleted,
+    architectureCompleted,
+    architectureReviewCompleted,
+    implementationCompleted,
+    reviewCompleted,
+    releaseCompleted,
+  ]);
 
   const [currentPhase, setCurrentPhaseInternal] = useState<PhaseId>(recommendedPhase);
   const [chatFilterValue, setChatFilterValue] = useState<string>('all');
@@ -159,19 +217,23 @@ export default function PipelineView() {
 
   const applyChatFilterForPhase = useCallback(
     (phase: PhaseId, options?: { redirectArtifactId?: string }) => {
-      if (phase === 'architecture') {
+      if (phase === 'architecture' || phase === 'architecture_review') {
         if (options?.redirectArtifactId) {
           setChatFilterValue(options.redirectArtifactId);
           return;
         }
-        if (architectureArtifactId) {
+        if (phase === 'architecture' && architectureArtifactId) {
           setChatFilterValue(architectureArtifactId);
+          return;
+        }
+        if (phase === 'architecture_review' && architectureReviewArtifactId) {
+          setChatFilterValue(architectureReviewArtifactId);
           return;
         }
       }
       setChatFilterValue('all');
     },
-    [architectureArtifactId],
+    [architectureArtifactId, architectureReviewArtifactId],
   );
 
   useEffect(() => {
@@ -224,33 +286,35 @@ export default function PipelineView() {
   }, [selectedPurposeId]);
 
   const phases = useMemo<PhaseMeta[]>(() => {
-    const definitions: Array<{
-      id: PhaseId;
-      title: string;
-      icon: LucideIcon;
-      completed: boolean;
-    }> = [
-      { id: 'vision', title: 'Vision', icon: Lightbulb, completed: visionCompleted },
-      { id: 'prd', title: 'PRD', icon: FileText, completed: prdCompleted },
-      { id: 'architecture', title: 'Architektur', icon: CircuitBoard, completed: architectureCompleted },
-      { id: 'implementation', title: 'Implementierung', icon: Hammer, completed: implementationCompleted },
-      { id: 'review', title: 'Review', icon: ClipboardCheck, completed: reviewCompleted },
-    ];
     let previousCompleted = true;
-    return definitions.map((phase, index) => {
+    return PIPELINE_PHASES.map((phase, index) => {
+      const completed = phaseCompletion[phase.id];
       const isCurrent = currentPhase === phase.id;
-      const isUpcoming = !phase.completed && !previousCompleted && !isCurrent;
-      if (!phase.completed) {
+      const isUpcoming = !completed && !previousCompleted && !isCurrent;
+      if (!completed) {
         previousCompleted = false;
       }
       return {
-        ...phase,
+        id: phase.id,
+        title: phase.title,
+        icon: phase.icon,
+        completed,
         index,
         isCurrent,
         isUpcoming,
       } satisfies PhaseMeta;
     });
-  }, [visionCompleted, prdCompleted, architectureCompleted, implementationCompleted, reviewCompleted, currentPhase]);
+  }, [
+    currentPhase,
+    purposeCompleted,
+    visionCompleted,
+    prdCompleted,
+    architectureCompleted,
+    architectureReviewCompleted,
+    implementationCompleted,
+    reviewCompleted,
+    releaseCompleted,
+  ]);
 
   const currentPhaseMeta = phases.find((phase) => phase.id === currentPhase) ?? phases[0];
 
@@ -353,19 +417,22 @@ export default function PipelineView() {
 
   const phaseContent = (() => {
     switch (currentPhase) {
-      case 'vision':
+      case 'purpose':
         return (
           <div className="space-y-6">
             <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Projektvision</h3>
+              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Projektziel festlegen</h3>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Nutze den Selektor im Kopfbereich, um ein Projektziel zu aktivieren oder neu anzulegen. Damit bestimmst du,
+                welche Artefakte und Aufgaben in den folgenden Schritten erzeugt werden.
+              </p>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                 {selectedPurpose
                   ? `Aktueller Purpose: ${selectedPurpose.name}`
-                  : 'Noch kein Purpose ausgewählt. Erstelle oder aktiviere einen Purpose, um die Vision zu konkretisieren.'}
+                  : 'Noch kein Purpose ausgewählt. Wähle einen Purpose aus, um den Ablauf zu starten.'}
               </p>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Beschreibe Zielbild, Nutzen und Grenzen deiner Initiative. Nach der Festlegung der Vision schaltet sich
-                der nächste Schritt – das Product Requirements Document – frei.
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Tipp: Halte ergänzende Rahmenbedingungen direkt im Chat fest, sobald du zur Vision-Phase wechselst.
               </p>
             </section>
             <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
@@ -392,14 +459,31 @@ export default function PipelineView() {
                 </ul>
               ) : (
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  Noch keine Purposes vorhanden. Lege einen neuen Purpose an, um die Pipeline zu starten.
+                  Noch keine Purposes vorhanden. Lege ein Projektziel an, um mit der Pipeline zu starten.
+                </p>
+              )}
+            </section>
+          </div>
+        );
+      case 'vision':
+        return (
+          <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Projektvision schärfen</h3>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Beschreibe Zielbild, Nutzen und Grenzen deiner Initiative. Die erarbeiteten Leitplanken fließen in die
+                Produktanforderung ein.
+              </p>
+              {selectedPurpose && (
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  Aktueller Purpose: <span className="font-medium">{selectedPurpose.name}</span>
                 </p>
               )}
             </section>
             {renderChatPanel({
-              title: 'Ideen mit AImar festhalten',
+              title: 'Vision mit AImar ausarbeiten',
               description:
-                'Nutze den Dialog, um Vision, Zielgruppen und Erfolgsfaktoren zu beschreiben. Deine Eingaben bilden die Grundlage für die nächsten Phasen.',
+                'Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen.',
             })}
           </div>
         );
@@ -410,30 +494,28 @@ export default function PipelineView() {
               {renderChatPanel({
                 title: 'Produkt-Owner-Dialog',
                 description:
-                  'Führe den Dialog mit AImar, um Anforderungen zu verfeinern, offene Fragen zu klären und neue Informationen anzureichern.',
+                  'Verfeinere Anforderungen, beantworte Rückfragen und gib zusätzliche Kontexte, damit die Produktanforderung vollständig wird.',
                 placeholderTitle: 'AImar-Dialog noch nicht verfügbar',
                 placeholderDescription:
-                  'Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und das PRD vorzubereiten.',
+                  'Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und die Produktanforderung vorzubereiten.',
                 className: 'h-full',
               })}
               {prdArtifact ? (
                 <ArtifactSection
-                  title="Product Requirements Document"
+                  title="Produktanforderung"
                   artifact={prdArtifact}
                   statusIcon={prdStatusIcon}
-                  showFeedback={prdPending}
+                  showFeedback={prdAwaitingApproval}
                   onApproved={(info) => handleArtifactApproved('prd', info)}
                 />
               ) : (
                 <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-                  <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">PRD in Erstellung</h3>
+                  <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Produktanforderung in Erstellung</h3>
                   <p className="mt-2">
-                    Sobald das Product Requirements Document generiert wurde, erscheint es hier zur Durchsicht und
-                    Kommentierung.
+                    Sobald die Produktanforderung generiert wurde, erscheint sie hier zur Durchsicht und Kommentierung.
                   </p>
                   <p className="mt-2">
-                    Nutze den Dialog mit AImar, um zusätzliche Anforderungen zu beschreiben oder Unklarheiten zu
-                    adressieren.
+                    Nutze den Dialog mit AImar, um zusätzliche Anforderungen zu beschreiben oder Unklarheiten zu adressieren.
                   </p>
                 </section>
               )}
@@ -448,19 +530,18 @@ export default function PipelineView() {
                 title="Architektur"
                 artifact={archArtifact}
                 statusIcon={archStatusIcon}
-                showFeedback={archPending}
+                showFeedback={architectureAwaitingApproval}
                 onApproved={(info) => handleArtifactApproved('architecture', info)}
               />
             ) : (
               <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
                 <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Architektur in Vorbereitung</h3>
                 <p className="mt-2">
-                  Das Architektur-Blueprint ist noch nicht verfügbar. Sobald die Modellierung abgeschlossen ist, kannst du
-                  hier Feedback geben.
+                  Das Architektur-Blueprint ist noch nicht verfügbar. Sobald die Modellierung abgeschlossen ist, kannst du hier Feedback geben.
                 </p>
                 {prdArtifact && (
                   <p className="mt-2">
-                    Das PRD liegt bereits vor und dient als Grundlage für die Architekturphase.
+                    Die Produktanforderung liegt bereits vor und dient als Grundlage für die Architekturphase.
                   </p>
                 )}
               </section>
@@ -469,6 +550,37 @@ export default function PipelineView() {
               title: 'Rückfragen zur Architektur',
               description:
                 'Besprich technische Annahmen oder kläre Änderungswünsche. Der Chat bleibt verfügbar, auch wenn der Fokus auf dem Blueprint liegt.',
+            })}
+          </div>
+        );
+      case 'architecture_review':
+        return (
+          <div className="space-y-6">
+            {architectureReviewArtifact ? (
+              <ArtifactSection
+                title="Architektur & Domain Review"
+                artifact={architectureReviewArtifact}
+                statusIcon={architectureReviewStatusIcon}
+                showFeedback={architectureReviewAwaitingApproval}
+                onApproved={(info) => handleArtifactApproved('architecture_review', info)}
+              />
+            ) : (
+              <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+                <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Review in Vorbereitung</h3>
+                <p className="mt-2">
+                  Der Review-Bericht wird erstellt. Sobald die Domain-Expert*innen ihre Einschätzung abgegeben haben, erscheint das Dokument hier.
+                </p>
+                {archArtifact && (
+                  <p className="mt-2">
+                    Der Architektur-Entwurf wurde bereits erstellt und bildet die Grundlage für dieses Review.
+                  </p>
+                )}
+              </section>
+            )}
+            {renderChatPanel({
+              title: 'Abstimmung mit Reviewer*innen',
+              description:
+                'Dokumentiere Rückfragen, Freigaben oder benötigte Anpassungen, bevor die Implementierung weitergeht.',
             })}
           </div>
         );
@@ -481,8 +593,7 @@ export default function PipelineView() {
               <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
                 <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Aufgaben werden vorbereitet</h3>
                 <p className="mt-2">
-                  Der Task-Graph steht noch nicht zur Verfügung. Sobald Aufgaben generiert wurden, erscheint der Graph in
-                  dieser Phase.
+                  Der Task-Graph steht noch nicht zur Verfügung. Sobald Aufgaben generiert wurden, erscheint der Graph in dieser Phase.
                 </p>
               </section>
             )}
@@ -500,9 +611,7 @@ export default function PipelineView() {
             <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Review-Übersicht</h3>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {releasedArtifacts.length > 0
-                  ? `${releasedArtifacts.length} von ${artifacts.length} Artefakten sind bereits freigegeben.`
-                  : 'Noch keine Artefakte wurden freigegeben. Prüfe die Ergebnisse und markiere sie als bereit für den Rollout.'}
+                Prüfe die erstellten Artefakte, sammle Feedback aus dem Team und entscheide, welche Ergebnisse für das Release bereit sind.
               </p>
               <ul className="mt-4 space-y-2 text-sm">
                 {artifacts.length > 0 ? (
@@ -534,6 +643,53 @@ export default function PipelineView() {
             })}
           </div>
         );
+      case 'release': {
+        const checklist = [
+          { label: 'Aufgaben abgeschlossen', done: implementationCompleted },
+          { label: 'Backlog leer', done: backlogEmpty },
+          { label: 'Alle Artefakte freigegeben', done: allArtifactsReleased },
+        ];
+        return (
+          <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Release vorbereiten</h3>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Koordiniere den Go-Live und stelle sicher, dass alle Freigaben vorliegen. Die Checkliste zeigt den aktuellen Status.
+              </p>
+              <ul className="mt-4 space-y-2 text-sm">
+                {checklist.map((item) => (
+                  <li key={item.label} className="flex items-center justify-between gap-3">
+                    <span className="text-slate-700 dark:text-slate-200">{item.label}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        item.done
+                          ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-300'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      {item.done ? 'Erledigt' : 'Offen'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {releaseCompleted ? (
+                <p className="mt-4 text-sm text-green-600 dark:text-green-400">
+                  Alle Voraussetzungen erfüllt – das Release kann kommuniziert werden.
+                </p>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                  Markiere fehlende Schritte als abgeschlossen, um das Projekt erfolgreich zu beenden.
+                </p>
+              )}
+            </section>
+            {renderChatPanel({
+              title: 'Release-Kommunikation',
+              description:
+                'Nutze den Chat für Abstimmungen zum Go-Live, zur Dokumentation oder für Lessons Learned nach Abschluss.',
+            })}
+          </div>
+        );
+      }
       default:
         return null;
     }
@@ -541,29 +697,42 @@ export default function PipelineView() {
 
   const phaseSidebarContent = (() => {
     switch (currentPhase) {
+      case 'purpose':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phase-Ziele</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Aktiviere das passende Projektziel und stimme dich mit Stakeholdern ab, bevor du in die Vision einsteigst.
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-300">
+              <li>Purpose auswählen oder neu anlegen</li>
+              <li>Verantwortlichkeiten für den nächsten Schritt klären</li>
+            </ul>
+          </section>
+        );
       case 'vision':
         return (
           <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phase-Ziele</h3>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Sammle Ideen und schärfe die Projektvision, bevor du in die Ausarbeitung gehst.
+              Sammle Kontext, dokumentiere Annahmen und stelle sicher, dass alle Beteiligten das gleiche Zielbild teilen.
             </p>
             <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-300">
-              <li>Purpose auswählen oder erstellen</li>
               <li>Vision und Kontext im Chat dokumentieren</li>
+              <li>Offene Fragen für die Produktanforderung sammeln</li>
             </ul>
           </section>
         );
       case 'prd':
         return (
           <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">PRD-Fortschritt</h3>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Produktanforderung</h3>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {prdArtifact
-                ? prdPending
-                  ? 'Der PRD-Entwurf wartet auf dein Feedback oder die Freigabe.'
-                  : 'PRD freigegeben – die Architekturphase kann starten.'
-                : 'Das PRD wird aktuell generiert. Du wirst informiert, sobald der Entwurf vorliegt.'}
+                ? prdAwaitingApproval
+                  ? 'Die Produktanforderung wartet auf dein Feedback oder eine Freigabe.'
+                  : 'Produktanforderung freigegeben – die Architektur kann weiterarbeiten.'
+                : 'Die Produktanforderung wird erstellt. Du wirst informiert, sobald ein Entwurf vorliegt.'}
             </p>
             {prdArtifact?.created_at && (
               <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
@@ -578,14 +747,32 @@ export default function PipelineView() {
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Architektur-Status</h3>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {archArtifact
-                ? archPending
-                  ? 'Die Architektur wartet auf dein Feedback oder eine Freigabe.'
-                  : 'Architektur bestätigt – die Implementierung kann fortgesetzt werden.'
+                ? architectureAwaitingApproval
+                  ? 'Der Architektur-Entwurf wartet auf dein Feedback oder eine Freigabe.'
+                  : 'Architektur bestätigt – das Domain-Review kann erfolgen.'
                 : 'Der Blueprint wird vorbereitet. Prüfe später erneut die Ergebnisse.'}
             </p>
             {archArtifact?.created_at && (
               <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
                 Vorschlag erzeugt am {new Date(archArtifact.created_at).toLocaleString()}
+              </p>
+            )}
+          </section>
+        );
+      case 'architecture_review':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Domain Review</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {architectureReviewArtifact
+                ? architectureReviewAwaitingApproval
+                  ? 'Das Review-Dokument wartet auf deine Rückmeldung oder Freigabe.'
+                  : 'Review bestätigt – der Weg zur Implementierung ist frei.'
+                : 'Das Review wird vorbereitet. Du erhältst eine Benachrichtigung, sobald der Entwurf bereitsteht.'}
+            </p>
+            {architectureReviewArtifact?.created_at && (
+              <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+                Review erstellt am {new Date(architectureReviewArtifact.created_at).toLocaleString()}
               </p>
             )}
           </section>
@@ -640,18 +827,32 @@ export default function PipelineView() {
           <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Review-Fokus</h3>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Fasse die Ergebnisse zusammen, sammle finales Feedback und schließe verbleibende Freigaben ab.
+              Richte den Blick auf verbleibende Feedback-Schleifen und plane Freigaben für das Release ein.
             </p>
             <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
               {artifacts.length > 0
                 ? `${releasedArtifacts.length}/${artifacts.length} Artefakte freigegeben.`
                 : 'Noch keine Artefakte erzeugt.'}
             </p>
-            {allArtifactsReleased && artifacts.length > 0 && (
-              <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-                Alle Deliverables bestätigt – Projekt bereit für den Abschluss.
+            {releasedArtifacts.length < artifacts.length && artifacts.length > 0 && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Plane Freigaben ein, damit der Release-Schritt nahtlos folgen kann.
               </p>
             )}
+          </section>
+        );
+      case 'release':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Release-Status</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Stimme finale Kommunikation und Übergaben ab. Ein erfolgreicher Abschluss setzt freigegebene Artefakte und einen leeren Backlog voraus.
+            </p>
+            <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+              {releaseCompleted
+                ? 'Alle Kriterien erfüllt – das Release kann kommuniziert werden.'
+                : 'Noch offene Punkte vorhanden. Schließe Checkliste und Freigaben ab.'}
+            </p>
           </section>
         );
       default:
