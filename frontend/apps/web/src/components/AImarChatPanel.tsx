@@ -23,9 +23,16 @@ interface Message {
 interface ChatPanelProps {
   purposeId: string;
   paused?: boolean;
+  filterValue?: string;
+  onFilterValueChange?: (value: string) => void;
 }
 
-export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelProps) {
+export default function AImarChatPanel({
+  purposeId,
+  paused = false,
+  filterValue: controlledFilterValue,
+  onFilterValueChange,
+}: ChatPanelProps) {
   const artifacts = usePipelineStore((s) => s.artifacts);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
@@ -37,7 +44,21 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
   const [scope, setScope] = useState<'global' | 'artifact' | 'auto'>('global');
   const [selectedArtifacts, setSelectedArtifacts] = useState<string[]>([]);
   const [suggestionsMap, setSuggestionsMap] = useState<Record<string, string[]>>({});
-  const [filterValue, setFilterValue] = useState<string>('all');
+  const [localFilterValue, setLocalFilterValue] = useState<string>('all');
+  const activeFilterValue = controlledFilterValue ?? localFilterValue;
+
+  useEffect(() => {
+    if (controlledFilterValue !== undefined) {
+      setLocalFilterValue(controlledFilterValue);
+    }
+  }, [controlledFilterValue]);
+
+  const handleFilterChange = (value: string) => {
+    if (controlledFilterValue === undefined) {
+      setLocalFilterValue(value);
+    }
+    onFilterValueChange?.(value);
+  };
 
   const formatArtifactLabel = (artifact: any) => {
     if (!artifact) return '';
@@ -102,13 +123,16 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
   }, [messages.length]);
 
   useEffect(() => {
-    if (filterValue === 'all' || filterValue === 'global') {
+    if (activeFilterValue === 'all' || activeFilterValue === 'global') {
       setScope('global');
-    } else if (filterValue) {
+      if (activeFilterValue !== 'global') {
+        setSelectedArtifacts([]);
+      }
+    } else if (activeFilterValue) {
       setScope('artifact');
-      setSelectedArtifacts([filterValue]);
+      setSelectedArtifacts([activeFilterValue]);
     }
-  }, [filterValue]);
+  }, [activeFilterValue]);
 
   useEffect(() => {
     if (!purposeId) return;
@@ -266,8 +290,8 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
       </div>
       <div className="mb-2">
         <select
-          value={filterValue}
-          onChange={(e) => setFilterValue(e.target.value)}
+          value={activeFilterValue}
+          onChange={(e) => handleFilterChange(e.target.value)}
           className="w-full max-w-[220px] text-xs border border-slate-300 rounded px-1 py-0.5"
         >
           <option value="all">Alle Nachrichten</option>
@@ -284,11 +308,11 @@ export default function AImarChatPanel({ purposeId, paused = false }: ChatPanelP
       <div className="flex-1 overflow-y-auto mb-2">
         {messages
           .filter((m) => {
-            if (filterValue === 'global') {
+            if (activeFilterValue === 'global') {
               return !(m as any).artifact_ids || (m as any).artifact_ids.length === 0;
             }
-            if (filterValue && filterValue !== 'all' && filterValue !== 'global') {
-              return (m as any).artifact_ids && (m as any).artifact_ids.includes(filterValue);
+            if (activeFilterValue && activeFilterValue !== 'all' && activeFilterValue !== 'global') {
+              return (m as any).artifact_ids && (m as any).artifact_ids.includes(activeFilterValue);
             }
             return true;
           })
