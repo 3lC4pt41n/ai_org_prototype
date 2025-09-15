@@ -23,8 +23,8 @@ from .vector_store import VectorStore
 
 log = logging.getLogger(__name__)
 
-# Workspace root configured via settings
-WORKSPACE = settings.workspace_dir.resolve()
+# Workspace root from settings (unified)
+WORKSPACE: Path = settings.workspace_dir.resolve()
 
 # Git identity (author + committer), configurable via env
 GIT_NAME = os.getenv("GIT_AUTHOR_NAME", os.getenv("GIT_COMMITTER_NAME", "ai-org-bot"))
