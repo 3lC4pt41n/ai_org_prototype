@@ -168,7 +168,7 @@ services:
       - GIT_AUTHOR_EMAIL=noreply@ai.org
       - GIT_COMMITTER_NAME=ai-org-bot
       - GIT_COMMITTER_EMAIL=noreply@ai.org
-      - WORKSPACE_DIR=/app/ai_org_backend/workspace
+      - WORKSPACE_DIR=/app/workspace
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - ALGORITHM=${ALGORITHM}
@@ -192,7 +192,7 @@ services:
       qdrant:
         condition: service_started
     volumes:
-      - ../workspace:/app/ai_org_backend/workspace
+      - ../workspace:/app/workspace
 
   orchestrator:
     build:
@@ -202,7 +202,7 @@ services:
     image: local/ai_backend_orchestrator:latest
     env_file:
       - ../.env
-    working_dir: /app  # Im Arbeitsverzeichnis /app liegt alembic.ini
+    working_dir: /app/backend/ai_org_backend  # Im Arbeitsverzeichnis mit alembic.ini
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
@@ -215,6 +215,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       # explizit injizieren – garantiert, auch ohne env_file
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WORKSPACE_DIR=/app/workspace
       - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
       - TENANT_NAME=Tim Mergenthaler
     depends_on:
@@ -226,7 +227,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
-
+    volumes:
+       - ../workspace:/app/workspace
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
