@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   History,
   Package,
@@ -100,6 +100,7 @@ export default function PipelineView() {
   const archArtifact = artifacts.find((a) =>
     a.repo_path?.toLowerCase().includes('architecture_blueprint'),
   );
+  const architectureArtifactId = archArtifact?.id ?? null;
 
   const prdPending = paused && !archArtifact; // bleibt für Status-Icon Logik bestehen
   const archPending = paused && !!archArtifact;
@@ -153,7 +154,25 @@ export default function PipelineView() {
   }, [visionCompleted, prdCompleted, architectureCompleted, implementationCompleted, reviewCompleted]);
 
   const [currentPhase, setCurrentPhaseInternal] = useState<PhaseId>(recommendedPhase);
+  const [chatFilterValue, setChatFilterValue] = useState<string>('all');
   const userSelectedPhaseRef = useRef(false);
+
+  const applyChatFilterForPhase = useCallback(
+    (phase: PhaseId, options?: { redirectArtifactId?: string }) => {
+      if (phase === 'architecture') {
+        if (options?.redirectArtifactId) {
+          setChatFilterValue(options.redirectArtifactId);
+          return;
+        }
+        if (architectureArtifactId) {
+          setChatFilterValue(architectureArtifactId);
+          return;
+        }
+      }
+      setChatFilterValue('all');
+    },
+    [architectureArtifactId],
+  );
 
   useEffect(() => {
     setCurrentPhaseInternal((prev) => {
@@ -162,17 +181,47 @@ export default function PipelineView() {
       if (!userSelectedPhaseRef.current || recommendedIndex > prevIndex) {
         if (recommendedIndex !== prevIndex) {
           userSelectedPhaseRef.current = false;
+          applyChatFilterForPhase(recommendedPhase);
         }
         return recommendedPhase;
       }
       return prev;
     });
-  }, [recommendedPhase]);
+  }, [recommendedPhase, applyChatFilterForPhase]);
+
+  const setPhase = useCallback(
+    (phase: PhaseId, options?: { redirectArtifactId?: string }) => {
+      userSelectedPhaseRef.current = true;
+      setCurrentPhaseInternal(phase);
+      applyChatFilterForPhase(phase, options);
+    },
+    [applyChatFilterForPhase],
+  );
 
   const handlePhaseSelect = (phase: PhaseId) => {
-    userSelectedPhaseRef.current = true;
-    setCurrentPhaseInternal(phase);
+    setPhase(phase);
   };
+
+  const getNextPhase = (phase: PhaseId): PhaseId | null => {
+    const index = PHASE_ORDER.indexOf(phase);
+    if (index === -1 || index >= PHASE_ORDER.length - 1) {
+      return null;
+    }
+    return PHASE_ORDER[index + 1];
+  };
+
+  const handleArtifactApproved = (
+    phase: PhaseId,
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => {
+    const nextPhase = getNextPhase(phase);
+    if (!nextPhase) return;
+    setPhase(nextPhase, { redirectArtifactId: info?.redirectArtifactId });
+  };
+
+  useEffect(() => {
+    setChatFilterValue('all');
+  }, [selectedPurposeId]);
 
   const phases = useMemo<PhaseMeta[]>(() => {
     const definitions: Array<{
@@ -250,7 +299,12 @@ export default function PipelineView() {
             <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">{title}</h3>
             {description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>}
           </div>
-          <AImarChatPanel purposeId={selectedPurposeId} paused={paused} />
+          <AImarChatPanel
+            purposeId={selectedPurposeId}
+            paused={paused}
+            filterValue={chatFilterValue}
+            onFilterValueChange={setChatFilterValue}
+          />
         </div>
       </section>
     );
@@ -368,6 +422,7 @@ export default function PipelineView() {
                   artifact={prdArtifact}
                   statusIcon={prdStatusIcon}
                   showFeedback={prdPending}
+                  onApproved={(info) => handleArtifactApproved('prd', info)}
                 />
               ) : (
                 <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
@@ -394,6 +449,7 @@ export default function PipelineView() {
                 artifact={archArtifact}
                 statusIcon={archStatusIcon}
                 showFeedback={archPending}
+                onApproved={(info) => handleArtifactApproved('architecture', info)}
               />
             ) : (
               <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">

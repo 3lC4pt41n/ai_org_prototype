@@ -26,6 +26,7 @@ interface Props {
   statusIcon: React.ReactNode;
   /** zeige Eingabe nur, wenn pausiert */
   showFeedback?: boolean;
+  onApproved?: (payload: { redirectArtifactId?: string; redirectArtifactUrl?: string }) => void;
 }
 
 export default function ArtifactSection({
@@ -33,6 +34,7 @@ export default function ArtifactSection({
   artifact,
   statusIcon,
   showFeedback = false,
+  onApproved,
 }: Props) {
   const [content, setContent] = useState<string>('');
   const [contentType, setContentType] = useState<string | null>(null);
@@ -50,8 +52,6 @@ export default function ArtifactSection({
   const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
   const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
   const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
-  const selectArtifact = usePipelineStore((s) => s.selectArtifact);
-  const setActiveTab = usePipelineStore((s) => s.setActiveTab);
   const allArtifacts = usePipelineStore((s) => s.artifacts);
   // Determine version history for this artifact (all artifacts of same task)
   interface ArtifactFull extends Artifact {
@@ -226,20 +226,19 @@ export default function ArtifactSection({
       if (selectedPurposeId) {
         await fetchGraphAndStatus(selectedPurposeId);
       }
-      // Auto-jump to the newly created blueprint if provided by backend
-      if (resp?.artifact_redirect_id) {
-        // wähle und öffne automatisch die Blueprint-Ansicht
-        selectArtifact(resp.artifact_redirect_id);
-        if (setActiveTab) {
-          setActiveTab('artifacts');
-        }
-        toast.success('Architekturvorschlag erstellt – automatisch geöffnet.');
-        // optional: direkt laden, um Viewer sofort mit Inhalt zu füllen
-        try {
-          await fetchVersionContent(selectedArtifactId);
-        } catch {
-          /* ignore load error */
-        }
+      const redirectArtifactId = resp?.artifact_redirect_id;
+      const redirectArtifactUrl = resp?.artifact_redirect_url;
+      onApproved?.({
+        redirectArtifactId: redirectArtifactId ?? undefined,
+        redirectArtifactUrl: redirectArtifactUrl ?? undefined,
+      });
+      if (redirectArtifactId) {
+        toast.success('Architekturvorschlag erstellt – Architekturphase geöffnet.');
+      }
+      try {
+        await fetchVersionContent(selectedArtifactId);
+      } catch {
+        /* ignore load error */
       }
     } catch {
       setSubmitState('err');
