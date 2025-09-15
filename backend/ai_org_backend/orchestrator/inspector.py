@@ -4,7 +4,7 @@ from prometheus_client import Counter, Gauge
 from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
-from ai_org_backend.models import Task, TaskStatus
+from ai_org_backend.models import Task, TaskStatus, Tenant
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
 PROM_TASK_BLOCKED = Gauge(
@@ -48,3 +48,18 @@ def todo_count(tenant: str) -> int:
 def alert(msg: str, kind: str = "orch") -> None:
     print(f"⚠️  [{kind.upper()}] {msg}")
     PROM_ALERT_CNT.labels(kind).inc()
+
+
+def budget_left(tenant: str) -> float:
+    """Gibt das verbleibende Budget für einen Tenant zurück."""
+    with Session(engine) as s:
+        t = s.get(Tenant, tenant)
+        if not t:
+            return 0.0
+        value = float(t.balance)
+        # optional: Metrik setzen
+        if value <= 0:
+            PROM_BUDGET_BLOCKED.labels(tenant).set(1)
+        else:
+            PROM_BUDGET_BLOCKED.labels(tenant).set(0)
+        return value
