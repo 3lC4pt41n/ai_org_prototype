@@ -17,15 +17,14 @@ from sqlmodel import Session
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Task
+from ai_org_backend.settings import settings
 
 from .vector_store import VectorStore
 
 log = logging.getLogger(__name__)
 
-# Workspace root (can be overridden via WORKSPACE_DIR env)
-WORKSPACE = Path(
-    os.getenv("WORKSPACE_DIR", str(Path(__file__).resolve().parent.parent / "workspace"))
-).resolve()
+# Workspace root configured via settings
+WORKSPACE = settings.workspace_dir.resolve()
 
 # Git identity (author + committer), configurable via env
 GIT_NAME = os.getenv("GIT_AUTHOR_NAME", os.getenv("GIT_COMMITTER_NAME", "ai-org-bot"))
