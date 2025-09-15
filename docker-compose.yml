@@ -112,6 +112,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
       - TENANT_NAME="Tim Mergenthaler"
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,6 +123,8 @@ services:
       qdrant:
         # Do not block the whole stack on a strict Qdrant healthcheck.
         condition: service_started
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-architect:
     build:
@@ -140,6 +143,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,6 +151,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-insight:
     build:
@@ -165,6 +171,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,6 +179,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-dev:
     build:
@@ -194,6 +203,7 @@ services:
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,6 +211,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-exporter:
     image: danihodovic/celery-exporter:latest
