@@ -115,6 +115,28 @@ export default function PipelineView() {
   const allArtifactsReleased = artifacts.length > 0 && releasedArtifacts.length === artifacts.length;
   const selectedPurpose = purposes.find((p) => p.id === selectedPurposeId) || null;
 
+  const statusInfo: Record<string, { label: string; color: string }> = {
+    todo: { label: 'Todo', color: 'bg-yellow-500 text-black' },
+    doing: { label: 'In Progress', color: 'bg-blue-500 text-white' },
+    done: { label: 'Done', color: 'bg-green-600 text-white' },
+    failed: { label: 'Failed', color: 'bg-red-600 text-white' },
+    blocked: { label: 'Blocked', color: 'bg-gray-500 text-white' },
+    skipped: { label: 'Skipped', color: 'bg-gray-500 text-white' },
+    budget_exceeded: {
+      label: 'Blocked (Budget)',
+      color: 'bg-gray-500 text-white',
+    },
+  };
+
+  const statusCounters = useMemo(
+    () =>
+      tasksStatusValues.reduce<Record<string, number>>((acc, status) => {
+        acc[status] = (acc[status] ?? 0) + 1;
+        return acc;
+      }, {}),
+    [tasksStatusValues],
+  );
+
   const visionCompleted = Boolean(selectedPurposeId);
   const prdCompleted = Boolean(prdArtifact);
   const architectureCompleted = Boolean(archArtifact);
@@ -190,17 +212,88 @@ export default function PipelineView() {
     return 'Bereit';
   };
 
-  const chatPanel = selectedPurposeId ? (
-    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
-      <AImarChatPanel purposeId={selectedPurposeId} paused={paused} />
-    </section>
-  ) : (
-    <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-      <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Kein Purpose ausgewählt</h3>
-      <p className="mt-2">
-        Wähle im Kopfbereich einen Purpose aus, um Artefakte zu erstellen und mit dem KI-Produkt Owner zu
-        interagieren.
+  const renderChatPanel = ({
+    title,
+    description,
+    placeholderTitle,
+    placeholderDescription,
+    className = '',
+  }: {
+    title: string;
+    description?: string;
+    placeholderTitle?: string;
+    placeholderDescription?: string;
+    className?: string;
+  }) => {
+    if (!selectedPurposeId) {
+      return (
+        <section
+          className={`rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300 ${className}`.trim()}
+        >
+          <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
+            {placeholderTitle ?? 'Kein Purpose ausgewählt'}
+          </h3>
+          <p className="mt-2">
+            {placeholderDescription ??
+              'Wähle im Kopfbereich einen Purpose aus, um Artefakte zu erstellen und mit dem KI-Produkt Owner zu interagieren.'}
+          </p>
+        </section>
+      );
+    }
+
+    return (
+      <section
+        className={`rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm ${className}`.trim()}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">{title}</h3>
+            {description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>}
+          </div>
+          <AImarChatPanel purposeId={selectedPurposeId} paused={paused} />
+        </div>
+      </section>
+    );
+  };
+
+  const renderBacklogSection = () => (
+    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-700 dark:text-slate-200">
+          <History className="h-4 w-4 text-slate-500 dark:text-slate-400" /> Aufgaben-Backlog
+        </h3>
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          {backlog.length > 0 ? `${backlog.length} offene Einträge` : 'keine offenen Aufgaben'}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        {backlog.length > 0
+          ? 'Überwache den Status der Aufgaben und gib bei Bedarf Rückmeldung, um Blocker schnell zu erkennen.'
+          : 'Der Backlog ist aktuell leer – sobald neue Aufgaben geplant werden, erscheinen sie hier.'}
       </p>
+      <ul className="mt-4 space-y-2 text-sm">
+        {backlog.map((t: any) => (
+          <li
+            key={t.id}
+            className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="text-slate-700 dark:text-slate-200">
+              <span className="text-amber-500 font-mono mr-2">{t.id}</span>
+              {t.description}
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                statusInfo[t.status]?.color ?? 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {statusInfo[t.status]?.label ?? t.status}
+            </span>
+          </li>
+        ))}
+        {backlog.length === 0 && (
+          <li className="italic text-slate-500 dark:text-slate-400">Keine offenen Aufgaben 🎉</li>
+        )}
+      </ul>
     </section>
   );
 
@@ -217,8 +310,8 @@ export default function PipelineView() {
                   : 'Noch kein Purpose ausgewählt. Erstelle oder aktiviere einen Purpose, um die Vision zu konkretisieren.'}
               </p>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Nutze die Auswahl oben, um einen Purpose zu setzen. Sobald eine Vision feststeht, werden nachfolgende
-                Phasen freigeschaltet.
+                Beschreibe Zielbild, Nutzen und Grenzen deiner Initiative. Nach der Festlegung der Vision schaltet sich
+                der nächste Schritt – das Product Requirements Document – frei.
               </p>
             </section>
             <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
@@ -249,31 +342,47 @@ export default function PipelineView() {
                 </p>
               )}
             </section>
+            {renderChatPanel({
+              title: 'Ideen mit AImar festhalten',
+              description:
+                'Nutze den Dialog, um Vision, Zielgruppen und Erfolgsfaktoren zu beschreiben. Deine Eingaben bilden die Grundlage für die nächsten Phasen.',
+            })}
           </div>
         );
       case 'prd':
         return (
           <div className="space-y-6">
-            {prdArtifact ? (
-              <ArtifactSection
-                title="Product Requirements Document"
-                artifact={prdArtifact}
-                statusIcon={prdStatusIcon}
-                showFeedback={prdPending}
-              />
-            ) : (
-              <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-                <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">PRD in Erstellung</h3>
-                <p className="mt-2">
-                  Sobald das Product Requirements Document generiert wurde, erscheint es hier zur Durchsicht und
-                  Kommentierung.
-                </p>
-                <p className="mt-2">
-                  Beobachte den Backlog auf der rechten Seite, um den Fortschritt der zugrunde liegenden Aufgaben zu
-                  verfolgen.
-                </p>
-              </section>
-            )}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              {renderChatPanel({
+                title: 'Produkt-Owner-Dialog',
+                description:
+                  'Führe den Dialog mit AImar, um Anforderungen zu verfeinern, offene Fragen zu klären und neue Informationen anzureichern.',
+                placeholderTitle: 'AImar-Dialog noch nicht verfügbar',
+                placeholderDescription:
+                  'Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und das PRD vorzubereiten.',
+                className: 'h-full',
+              })}
+              {prdArtifact ? (
+                <ArtifactSection
+                  title="Product Requirements Document"
+                  artifact={prdArtifact}
+                  statusIcon={prdStatusIcon}
+                  showFeedback={prdPending}
+                />
+              ) : (
+                <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+                  <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">PRD in Erstellung</h3>
+                  <p className="mt-2">
+                    Sobald das Product Requirements Document generiert wurde, erscheint es hier zur Durchsicht und
+                    Kommentierung.
+                  </p>
+                  <p className="mt-2">
+                    Nutze den Dialog mit AImar, um zusätzliche Anforderungen zu beschreiben oder Unklarheiten zu
+                    adressieren.
+                  </p>
+                </section>
+              )}
+            </div>
           </div>
         );
       case 'architecture':
@@ -300,6 +409,11 @@ export default function PipelineView() {
                 )}
               </section>
             )}
+            {renderChatPanel({
+              title: 'Rückfragen zur Architektur',
+              description:
+                'Besprich technische Annahmen oder kläre Änderungswünsche. Der Chat bleibt verfügbar, auch wenn der Fokus auf dem Blueprint liegt.',
+            })}
           </div>
         );
       case 'implementation':
@@ -316,7 +430,12 @@ export default function PipelineView() {
                 </p>
               </section>
             )}
-            {chatPanel}
+            {renderBacklogSection()}
+            {renderChatPanel({
+              title: 'Synchronisation mit AImar',
+              description:
+                'Nutze den Chat, um Blocker, Testabdeckung oder Learnings zu dokumentieren. So bleibt das Delivery-Team auf Kurs.',
+            })}
           </div>
         );
       case 'review':
@@ -353,7 +472,10 @@ export default function PipelineView() {
                 )}
               </ul>
             </section>
-            {chatPanel}
+            {renderChatPanel({
+              title: 'Abschluss & Feedback',
+              description: 'Halte finale Entscheidungen fest oder melde letzte Änderungswünsche an das Team zurück.',
+            })}
           </div>
         );
       default:
@@ -361,18 +483,125 @@ export default function PipelineView() {
     }
   })();
 
-  const statusInfo: Record<string, { label: string; color: string }> = {
-    todo: { label: 'Todo', color: 'bg-yellow-500 text-black' },
-    doing: { label: 'In Progress', color: 'bg-blue-500 text-white' },
-    done: { label: 'Done', color: 'bg-green-600 text-white' },
-    failed: { label: 'Failed', color: 'bg-red-600 text-white' },
-    blocked: { label: 'Blocked', color: 'bg-gray-500 text-white' },
-    skipped: { label: 'Skipped', color: 'bg-gray-500 text-white' },
-    budget_exceeded: {
-      label: 'Blocked (Budget)',
-      color: 'bg-gray-500 text-white',
-    },
-  };
+  const phaseSidebarContent = (() => {
+    switch (currentPhase) {
+      case 'vision':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phase-Ziele</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Sammle Ideen und schärfe die Projektvision, bevor du in die Ausarbeitung gehst.
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-300">
+              <li>Purpose auswählen oder erstellen</li>
+              <li>Vision und Kontext im Chat dokumentieren</li>
+            </ul>
+          </section>
+        );
+      case 'prd':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">PRD-Fortschritt</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {prdArtifact
+                ? prdPending
+                  ? 'Der PRD-Entwurf wartet auf dein Feedback oder die Freigabe.'
+                  : 'PRD freigegeben – die Architekturphase kann starten.'
+                : 'Das PRD wird aktuell generiert. Du wirst informiert, sobald der Entwurf vorliegt.'}
+            </p>
+            {prdArtifact?.created_at && (
+              <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+                Letzte Aktualisierung: {new Date(prdArtifact.created_at).toLocaleString()}
+              </p>
+            )}
+          </section>
+        );
+      case 'architecture':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Architektur-Status</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {archArtifact
+                ? archPending
+                  ? 'Die Architektur wartet auf dein Feedback oder eine Freigabe.'
+                  : 'Architektur bestätigt – die Implementierung kann fortgesetzt werden.'
+                : 'Der Blueprint wird vorbereitet. Prüfe später erneut die Ergebnisse.'}
+            </p>
+            {archArtifact?.created_at && (
+              <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+                Vorschlag erzeugt am {new Date(archArtifact.created_at).toLocaleString()}
+              </p>
+            )}
+          </section>
+        );
+      case 'implementation': {
+        const statusOrder: Array<keyof typeof statusInfo> = [
+          'doing',
+          'todo',
+          'done',
+          'blocked',
+          'failed',
+          'skipped',
+          'budget_exceeded',
+        ];
+        const summaryEntries = statusOrder
+          .map((status) => [status, statusCounters[status] ?? 0] as const)
+          .filter(([, count]) => count > 0);
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Task-Übersicht</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {hasTasks
+                ? 'Behalte Fortschritt und Blocker im Blick, um die Umsetzung zu steuern.'
+                : 'Sobald Aufgaben eingeplant sind, erscheinen Kennzahlen zu den Stati hier.'}
+            </p>
+            {summaryEntries.length > 0 && (
+              <ul className="mt-3 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                {summaryEntries.map(([status, count]) => (
+                  <li key={status} className="flex items-center justify-between">
+                    <span>{statusInfo[status]?.label ?? status}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        statusInfo[status]?.color ?? 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {allTasksDone && backlogEmpty && (
+              <p className="mt-3 text-xs text-green-600 dark:text-green-400">
+                Alle Aufgaben abgeschlossen – bereite den Abschluss vor.
+              </p>
+            )}
+          </section>
+        );
+      }
+      case 'review':
+        return (
+          <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Review-Fokus</h3>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Fasse die Ergebnisse zusammen, sammle finales Feedback und schließe verbleibende Freigaben ab.
+            </p>
+            <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+              {artifacts.length > 0
+                ? `${releasedArtifacts.length}/${artifacts.length} Artefakte freigegeben.`
+                : 'Noch keine Artefakte erzeugt.'}
+            </p>
+            {allArtifactsReleased && artifacts.length > 0 && (
+              <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                Alle Deliverables bestätigt – Projekt bereit für den Abschluss.
+              </p>
+            )}
+          </section>
+        );
+      default:
+        return null;
+    }
+  })();
 
   function downloadArtifactFile(artifactId: string, filename: string) {
     const token = localStorage.getItem('token');
@@ -505,34 +734,9 @@ export default function PipelineView() {
         </div>
 
         <aside className="w-80 flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 overflow-y-auto">
-          <h2 className="flex items-center gap-2 text-lg mb-2 text-slate-700 dark:text-slate-200">
-            <History className="w-4 h-4" /> Backlog
-          </h2>
-          <ul className="space-y-2 text-sm">
-            {backlog.map((t: any) => (
-              <li
-                key={t.id}
-                className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-              >
-                <div className="text-slate-700 dark:text-slate-200">
-                  <span className="text-amber-500 font-mono mr-2">{t.id}</span>
-                  {t.description}
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    statusInfo[t.status]?.color ?? 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {statusInfo[t.status]?.label ?? t.status}
-                </span>
-              </li>
-            ))}
-            {backlog.length === 0 && (
-              <li className="italic text-slate-500 dark:text-slate-400">Queue is empty 🎉</li>
-            )}
-          </ul>
+          {phaseSidebarContent && <div className="mb-6">{phaseSidebarContent}</div>}
 
-          <h2 className="flex items-center gap-2 text-lg mt-6 mb-2 text-slate-700 dark:text-slate-200">
+          <h2 className="flex items-center gap-2 text-lg mb-2 text-slate-700 dark:text-slate-200">
             <Package className="w-4 h-4" /> Artifacts
           </h2>
           <ul className="space-y-2 text-sm">
