@@ -52,5 +52,7 @@ if __name__ == "__main__":
         launch_worker(["architect"])
     elif role_group == "insight":
         launch_worker(["insight"])
+    elif role_group == "reviewer":
+        launch_worker(["reviewer"])
     else:
-        launch_worker(["dev", "qa", "ux_ui", "telemetry"])
+        launch_worker(["dev", "qa", "ux_ui", "telemetry", "reviewer"])
