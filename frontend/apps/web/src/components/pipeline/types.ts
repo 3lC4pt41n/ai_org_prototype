@@ -1,0 +1,93 @@
+import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import type { PhaseId } from './phaseConfig';
+
+export interface ArtifactItem {
+  id: string;
+  repo_path?: string;
+  url?: string;
+  created_at?: string;
+  media_type?: string;
+  released?: boolean;
+  task_id?: string;
+  task_desc?: string;
+}
+
+export interface PurposeSummary {
+  id: string;
+  name: string;
+  mode?: 'manual' | 'auto';
+}
+
+export interface PipelineGraphNode {
+  id: string;
+  data: { label: string; status?: string };
+  position: { x: number; y: number };
+  style?: Record<string, string>;
+}
+
+export interface PipelineGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export type StatusInfoMap = Record<string, { label: string; color: string }>;
+
+export type ChatPanelRenderer = (options: {
+  title: string;
+  description?: string;
+  placeholderTitle?: string;
+  placeholderDescription?: string;
+  className?: string;
+}) => ReactNode;
+
+export interface PhaseNavItem {
+  id: PhaseId;
+  title: string;
+  icon: LucideIcon;
+  completed: boolean;
+  index: number;
+  isCurrent: boolean;
+  isUpcoming: boolean;
+  statusLabel: string;
+}
+
+export interface PhaseViewContext {
+  purposes: PurposeSummary[];
+  selectedPurpose: PurposeSummary | null;
+  selectedPurposeId: string | null;
+  renderChatPanel: ChatPanelRenderer;
+  prdArtifact?: ArtifactItem;
+  prdAwaitingApproval: boolean;
+  prdStatusIcon: ReactNode;
+  onPrdApproved: (
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => void;
+  archArtifact?: ArtifactItem;
+  architectureAwaitingApproval: boolean;
+  archStatusIcon: ReactNode;
+  onArchitectureApproved: (
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => void;
+  architectureReviewArtifact?: ArtifactItem;
+  architectureReviewAwaitingApproval: boolean;
+  architectureReviewStatusIcon: ReactNode;
+  onArchitectureReviewApproved: (
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => void;
+  graphNodes: PipelineGraphNode[];
+  graphEdges: PipelineGraphEdge[];
+  graphStatusIcon: ReactNode;
+  renderBacklogSection: () => ReactNode;
+  artifacts: ArtifactItem[];
+  releasedArtifacts: ArtifactItem[];
+  hasTasks: boolean;
+  statusInfo: StatusInfoMap;
+  statusCounters: Record<string, number>;
+  allTasksDone: boolean;
+  backlogEmpty: boolean;
+  implementationCompleted: boolean;
+  allArtifactsReleased: boolean;
+  releaseCompleted: boolean;
+}
