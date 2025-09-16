@@ -107,7 +107,7 @@ def _schedule_reviewer_job(
     Enqueue Celery job. We rely on the default 'celery' queue to keep this portable.
     """
     try:
-        reviewer_task.delay(tenant_id, purpose_id, blueprint_task_id, review_task_id)
+        reviewer_task.delay(tenant_id, review_task_id, purpose_id, blueprint_task_id)
         logging.info(
             "[ReviewHook] Enqueued reviewer job (tenant=%s, purpose=%s)", tenant_id, purpose_id
         )
