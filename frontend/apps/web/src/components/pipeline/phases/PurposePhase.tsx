@@ -1,10 +1,35 @@
+import { FormEvent, useState } from 'react';
 import type { PhaseViewContext } from '../types';
 
 export function PurposePhaseContent({
   purposes,
   selectedPurpose,
   selectedPurposeId,
+  onCreatePurpose,
+  creatingPurpose,
 }: PhaseViewContext) {
+  const [newPurposeName, setNewPurposeName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = newPurposeName.trim();
+    if (!value || !onCreatePurpose) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const ok = await onCreatePurpose(value);
+      if (ok) {
+        setNewPurposeName('');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isBusy = creatingPurpose || submitting;
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
@@ -51,6 +76,38 @@ export function PurposePhaseContent({
             Noch keine Purposes vorhanden. Lege ein Projektziel an, um mit der Pipeline zu starten.
           </p>
         )}
+        <form
+          onSubmit={handleCreate}
+          className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/40"
+        >
+          <label
+            htmlFor="pipeline-new-purpose"
+            className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+          >
+            Neues Projektziel anlegen
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              id="pipeline-new-purpose"
+              type="text"
+              value={newPurposeName}
+              onChange={(e) => setNewPurposeName(e.target.value)}
+              placeholder="Projektziel benennen"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              disabled={isBusy || !onCreatePurpose}
+            />
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isBusy || !onCreatePurpose || !newPurposeName.trim()}
+            >
+              Anlegen
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Das neue Projektziel startet automatisch mit der Vision-Phase.
+          </p>
+        </form>
       </section>
     </div>
   );

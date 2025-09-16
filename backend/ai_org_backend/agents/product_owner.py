@@ -3,12 +3,16 @@ from __future__ import annotations
 import logging
 import time
 
+from sqlalchemy import desc
+from sqlmodel import select
+
+from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Purpose
+from ai_org_backend.models import Artifact, Purpose
+from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
-from ai_org_backend.db import SessionLocal
-from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.services.storage import resolve_for_read
 
 from .utils import load_template
 
@@ -28,6 +32,7 @@ logger = logging.getLogger(__name__)
 def run_requirements(purpose: Purpose) -> str:
     """Generate a detailed Product Requirements Document (PRD) for the given project purpose."""
 
+    vision_md = ""
     with SessionLocal() as db:
         fresh_purpose = db.get(Purpose, purpose.id)
         if not fresh_purpose:
@@ -36,7 +41,38 @@ def run_requirements(purpose: Purpose) -> str:
         purpose_name = fresh_purpose.name
         tenant_id = fresh_purpose.tenant_id
 
-    ctx = {"purpose": purpose_name}
+        try:
+            vision_art = db.exec(
+                select(Artifact)
+                .where(
+                    Artifact.task.has(
+                        purpose_id=fresh_purpose.id, tenant_id=fresh_purpose.tenant_id
+                    )
+                )
+                .where(Artifact.repo_path.ilike("%vision%"))
+                .order_by(desc(Artifact.created_at))
+            ).first()
+        except Exception as exc:
+            logger.warning("Failed to load vision artifact metadata: %s", exc)
+            vision_art = None
+
+    if vision_art:
+        try:
+            file_path = resolve_for_read(vision_art.repo_path)
+            vision_md = file_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Failed to read vision artefact %s: %s", vision_art.id, exc)
+
+    if vision_md:
+        logger.info(
+            "PRD agent using latest vision for purpose %s (chars=%d)",
+            purpose.id,
+            len(vision_md),
+        )
+    else:
+        logger.info("PRD agent starting without vision context for purpose %s", purpose.id)
+
+    ctx = {"purpose": purpose_name, "vision": vision_md}
     prompt = PROMPT_TMPL.render(**ctx)
     start_time = time.time()
     try:
@@ -48,9 +84,20 @@ def run_requirements(purpose: Purpose) -> str:
         )
         PRODUCT_REQ_RUNS.inc()
         content = resp["choices"][0]["message"]["content"]
+        logger.info(
+            "PRD agent succeeded for purpose %s (chars=%d)",
+            purpose.id,
+            len(content or ""),
+        )
         return content
     except BudgetExceededError:
+        logger.warning(
+            "PRD agent budget exceeded for purpose %s", purpose.id
+        )
         return "⚠️ Budget exhausted during requirements gathering. Please top up and retry."
+    except Exception:
+        logger.exception("PRD agent failed for purpose %s", purpose.id)
+        raise
     finally:
         PRODUCT_REQ_LATENCY.observe(time.time() - start_time)
 

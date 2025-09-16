@@ -1,8 +1,13 @@
+import ArtifactSection from '../../ArtifactSection';
 import type { PhaseViewContext } from '../types';
 
 export function VisionPhaseContent({
   selectedPurpose,
   renderChatPanel,
+  visionArtifact,
+  visionStatusIcon,
+  visionAwaitingApproval,
+  onVisionApproved,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
@@ -20,26 +25,58 @@ export function VisionPhaseContent({
           </p>
         )}
       </section>
-      {renderChatPanel({
-        title: 'Vision mit AImar ausarbeiten',
-        description:
-          'Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen.',
-      })}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        {renderChatPanel({
+          title: 'Vision mit AImar ausarbeiten',
+          description:
+            'Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen.',
+          placeholderTitle: 'Vision noch nicht verfügbar',
+          placeholderDescription:
+            'Lege zunächst ein Projektziel an, um die Vision zu starten. Sobald ein Artefakt erstellt wurde, erscheint es hier zur Freigabe.',
+          className: 'h-full',
+        })}
+        {visionArtifact ? (
+          <ArtifactSection
+            title="Vision"
+            artifact={visionArtifact}
+            statusIcon={visionStatusIcon}
+            showFeedback={visionAwaitingApproval}
+            onApproved={onVisionApproved}
+          />
+        ) : (
+          <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Vision in Erstellung</h3>
+            <p className="mt-2">
+              Sobald die Vision generiert wurde, erscheint sie hier zur Durchsicht und Freigabe. Nutze den Chat auf der linken Seite, um Kontext und Ziele zu definieren.
+            </p>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
 
-export function VisionPhaseSidebar() {
+export function VisionPhaseSidebar({ visionArtifact, visionAwaitingApproval }: PhaseViewContext) {
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phase-Ziele</h3>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Sammle Kontext, dokumentiere Annahmen und stelle sicher, dass alle Beteiligten das gleiche Zielbild teilen.
+        {visionArtifact
+          ? visionAwaitingApproval
+            ? 'Vision liegt vor und wartet auf dein Feedback oder eine Freigabe.'
+            : 'Vision freigegeben – die Produktanforderung nutzt dieses Briefing als Ausgangspunkt.'
+          : 'Sammle Kontext, dokumentiere Annahmen und stelle sicher, dass alle Beteiligten das gleiche Zielbild teilen.'}
       </p>
       <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-300">
         <li>Vision und Kontext im Chat dokumentieren</li>
-        <li>Offene Fragen für die Produktanforderung sammeln</li>
+        <li>Stakeholder, Zielgruppen und Erfolgskriterien festhalten</li>
+        <li>Vision freigeben, um die Produktanforderung zu starten</li>
       </ul>
+      {visionArtifact?.created_at && (
+        <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+          Letzte Aktualisierung: {new Date(visionArtifact.created_at).toLocaleString()}
+        </p>
+      )}
     </section>
   );
 }
