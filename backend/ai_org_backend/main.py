@@ -96,6 +96,7 @@ from ai_org_backend.agents.agent_insight import agent_insight  # noqa: E402
 from ai_org_backend.agents.agent_integration import agent_integration  # noqa: E402
 from ai_org_backend.agents.agent_qa import agent_qa  # noqa: E402
 from ai_org_backend.agents.agent_ux_ui import agent_ux_ui  # noqa: E402
+from ai_org_backend.agents.reviewer import reviewer_task  # noqa: E402
 
 
 @celery.task(name="agent.telemetry")
@@ -112,6 +113,7 @@ AGENTS = {
     "insight": agent_insight,
     "integration": agent_integration,
     "repo": repo_composer.agent_repo,  # Register repo_composer agent  # type: ignore[has-type]
+    "reviewer": reviewer_task,
 }
 
 
