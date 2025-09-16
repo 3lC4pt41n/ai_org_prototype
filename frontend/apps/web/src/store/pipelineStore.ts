@@ -65,6 +65,8 @@ interface PipelineState {
   feedbacks: Feedback[];
   isLoading: boolean;
   paused: boolean;
+  budgetLeft: number | null;
+  budgetTotal: number | null;
   error: unknown | null;
   activeTab: string;
   setSelectedPurpose: (id: string) => void;
@@ -98,6 +100,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   feedbacks: [],
   isLoading: false,
   paused: false,
+  budgetLeft: null,
+  budgetTotal: null,
   error: null,
   activeTab: 'graph',
 
@@ -176,11 +180,21 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
       tasks.forEach((t: any) => {
         taskStatusMap[t.id] = t.status;
       });
+      const parseBudget = (value: unknown): number | null => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string') {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+      };
       set({
         graphNodes: nodes,
         graphEdges: edges,
         tasksStatus: taskStatusMap,
         paused: !!statusData?.paused,
+        budgetLeft: parseBudget(statusData?.budget_left),
+        budgetTotal: parseBudget(statusData?.budget_total),
         error: null,
       });
     } catch (err) {
@@ -190,6 +204,8 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
         graphEdges: [],
         tasksStatus: {},
         paused: false,
+        budgetLeft: null,
+        budgetTotal: null,
         error: err,
       });
     }

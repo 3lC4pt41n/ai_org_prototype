@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CheckCircle2, CircleDashed, Clock3, History, Package } from 'lucide-react';
+import {
+  CheckCircle2,
+  CircleDashed,
+  Clock3,
+  History,
+  Package,
+  PauseCircle,
+  PlayCircle,
+} from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import usePipelineStore from '../store/pipelineStore';
 import PurposeSelector from '../components/PurposeSelector';
 import ArtifactSection from '../components/ArtifactSection';
 import GraphSection from '../components/GraphSection';
-import { API_BASE } from '../lib/api';
+import { API_BASE, getJson, postJson } from '../lib/api';
 import AImarChatPanel from '../components/AImarChatPanel';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
@@ -42,6 +50,8 @@ export default function PipelineView() {
   const paused = usePipelineStore((s) => s.paused);
   const isLoading = usePipelineStore((s) => s.isLoading);
   const error = usePipelineStore((s) => s.error);
+  const budgetLeft = usePipelineStore((s) => s.budgetLeft);
+  const budgetTotal = usePipelineStore((s) => s.budgetTotal);
   const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const fetchPurposes = usePipelineStore((s) => s.fetchPurposes);
   const setSelectedPurpose = usePipelineStore((s) => s.setSelectedPurpose);
@@ -49,10 +59,30 @@ export default function PipelineView() {
   const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
   const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
 
+  const [allowResearch, setAllowResearch] = useState<boolean | null>(null);
+  const [updatingResearch, setUpdatingResearch] = useState(false);
+  const [creatingPurpose, setCreatingPurpose] = useState(false);
+
   useEffect(() => {
     fetchPurposes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchPurposes]);
+
+  useEffect(() => {
+    let active = true;
+    getJson<{ allow_web_research: boolean }>('/settings/research')
+      .then((data) => {
+        if (!active) return;
+        setAllowResearch(Boolean(data?.allow_web_research));
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllowResearch(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedPurposeId && purposes.length > 0) {
@@ -70,10 +100,64 @@ export default function PipelineView() {
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
+  const toggleResearch = useCallback(async () => {
+    if (allowResearch == null || updatingResearch) return;
+    setUpdatingResearch(true);
+    try {
+      const res = await postJson<{ allow_web_research: boolean }>('/settings/research', {
+        allow_web_research: !allowResearch,
+      });
+      const next = Boolean(res?.allow_web_research);
+      setAllowResearch(next);
+      toast.success(next ? 'Webrecherche aktiviert.' : 'Webrecherche deaktiviert.');
+    } catch {
+      toast.error('Webrecherche konnte nicht umgestellt werden.');
+    } finally {
+      setUpdatingResearch(false);
+    }
+  }, [allowResearch, updatingResearch]);
+
+  const handleCreatePurpose = useCallback(
+    async (purposeName: string) => {
+      const trimmed = purposeName.trim();
+      if (!trimmed) return false;
+      setCreatingPurpose(true);
+      const toastId = toast.loading('Projektziel wird angelegt …');
+      try {
+        const res = await postJson<{ purpose_id: string }>('/purposes', { purpose: trimmed });
+        const newPurposeId = res?.purpose_id;
+        if (newPurposeId) {
+          setSelectedPurpose(newPurposeId);
+        }
+        await fetchPurposes();
+        if (newPurposeId) {
+          await fetchGraphAndStatus(newPurposeId);
+        }
+        await fetchArtifacts();
+        await fetchBacklog();
+        toast.success('Projektziel erstellt.', { id: toastId });
+        return true;
+      } catch {
+        toast.error('Projektziel konnte nicht erstellt werden.', { id: toastId });
+        return false;
+      } finally {
+        setCreatingPurpose(false);
+      }
+    },
+    [fetchArtifacts, fetchBacklog, fetchGraphAndStatus, fetchPurposes, setSelectedPurpose],
+  );
+
+  const visionArtifacts = artifacts.filter((a) =>
+    a.repo_path?.toLowerCase().includes('vision/'),
+  );
+  const visionArtifact =
+    visionArtifacts.length > 0 ? visionArtifacts[visionArtifacts.length - 1] : undefined;
+
   const prdArtifacts = artifacts.filter((a) =>
     a.repo_path?.toLowerCase().includes('product_requirements'),
   );
   const prdArtifact = prdArtifacts.length > 0 ? prdArtifacts[prdArtifacts.length - 1] : undefined;
+  const visionAwaitingApproval = !!visionArtifact && !visionArtifact.released;
   const archArtifact = artifacts.find((a) =>
     a.repo_path?.toLowerCase().includes('architecture_blueprint'),
   );
@@ -110,6 +194,14 @@ export default function PipelineView() {
     );
   };
 
+  const visionStatusIcon = buildStatusIcon(
+    visionArtifact ? (visionAwaitingApproval ? 'pending' : 'done') : 'missing',
+    visionArtifact
+      ? visionAwaitingApproval
+        ? 'Vision wartet auf Freigabe'
+        : 'Vision freigegeben'
+      : 'Vision wird erstellt',
+  );
   const prdStatusIcon = buildStatusIcon(
     prdArtifact ? (prdAwaitingApproval ? 'pending' : 'done') : 'missing',
     prdArtifact
@@ -150,6 +242,10 @@ export default function PipelineView() {
   const releasedArtifacts = artifacts.filter((a) => a.released);
   const allArtifactsReleased = artifacts.length > 0 && releasedArtifacts.length === artifacts.length;
   const selectedPurpose = purposes.find((p) => p.id === selectedPurposeId) || null;
+  const budgetLabel =
+    budgetLeft != null && budgetTotal != null
+      ? `${budgetLeft.toFixed(2)} / ${budgetTotal.toFixed(2)} USD`
+      : '…';
 
   const statusInfo: Record<string, { label: string; color: string }> = {
     todo: { label: 'Todo', color: 'bg-yellow-500 text-black' },
@@ -174,7 +270,7 @@ export default function PipelineView() {
   );
 
   const purposeCompleted = Boolean(selectedPurposeId);
-  const visionCompleted = Boolean(prdArtifact);
+  const visionCompleted = Boolean(visionArtifact?.released);
   const prdCompleted = Boolean(prdArtifact?.released);
   const architectureCompleted = Boolean(archArtifact?.released);
   const architectureReviewCompleted = Boolean(architectureReviewArtifact?.released);
@@ -426,6 +522,12 @@ export default function PipelineView() {
     selectedPurpose,
     selectedPurposeId,
     renderChatPanel,
+    onCreatePurpose: handleCreatePurpose,
+    creatingPurpose,
+    visionArtifact,
+    visionAwaitingApproval,
+    visionStatusIcon,
+    onVisionApproved: (info) => handleArtifactApproved('vision', info),
     prdArtifact,
     prdAwaitingApproval,
     prdStatusIcon,
@@ -487,29 +589,54 @@ export default function PipelineView() {
   return (
     <div className="flex flex-col h-screen">
       <div className="bg-gray-100 dark:bg-slate-800 p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <PurposeSelector />
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Status
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
-                paused
-                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'
-                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-              }`}
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+            <PurposeSelector />
+            <button
+              type="button"
+              onClick={toggleResearch}
+              disabled={allowResearch == null || updatingResearch}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                allowResearch
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-700'
+                  : 'bg-slate-200 hover:bg-slate-300 text-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
             >
-              {paused ? (
-                <>
-                  <Clock3 className="h-4 w-4" aria-hidden /> Pausiert
-                </>
+              {(allowResearch ?? false) ? (
+                <PauseCircle className="h-4 w-4" aria-hidden />
               ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4" aria-hidden /> Läuft
-                </>
+                <PlayCircle className="h-4 w-4" aria-hidden />
               )}
-            </span>
+              {allowResearch == null ? 'Web …' : allowResearch ? 'Web aus' : 'Web an'}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Status
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
+                  paused
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                }`}
+              >
+                {paused ? (
+                  <>
+                    <Clock3 className="h-4 w-4" aria-hidden /> Pausiert
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" aria-hidden /> Läuft
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Budget:{' '}
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{budgetLabel}</span>
+            </div>
           </div>
         </div>
       </div>
