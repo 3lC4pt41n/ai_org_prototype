@@ -10,13 +10,14 @@ must approve via the Reviews API to unblock downstream tasks.
 import logging  # noqa: E402
 from typing import Optional  # noqa: E402
 
-from sqlalchemy import desc  # noqa: E402
+from sqlalchemy import desc, func  # noqa: E402
+from sqlmodel import select  # noqa: E402
 
 from ai_org_backend.db import SessionLocal  # noqa: E402
 
 # Small metrics parity (keeps style with other agents)
 from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
-from ai_org_backend.models import Purpose  # noqa: E402
+from ai_org_backend.models import Purpose, Task  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.repo import Repo  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
@@ -79,42 +80,79 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
 def reviewer_task(
     tenant_id: str,
     review_task_id: str,
-    purpose_id: str,
-    blueprint_task_id: str,
+    purpose_id: str | None = None,
+    blueprint_task_id: str | None = None,
 ) -> None:
     """
     Celery entrypoint — creates the Markdown review artefact for the given review task.
     Leaves the task in 'todo' (awaiting approval).
     """
-    logging.info("[Reviewer] Generating review for purpose=%s (tenant=%s)", purpose_id, tenant_id)
+    resolved_purpose_id = purpose_id
+    resolved_blueprint_id = blueprint_task_id
     purpose_auto_mode = False
+    blueprint_text = ""
+
     with SessionLocal() as s:
         # Fetch blueprint content from its artefact(s)
-        # Simplicity: we read the latest blueprint artefact saved for blueprint task.
         from ai_org_backend.models import Artefact
 
-        blueprint_text = ""
         try:
-            purpose = s.get(Purpose, purpose_id)
+            review_task = s.get(Task, review_task_id)
+            if not review_task:
+                logging.error(
+                    "[Reviewer] Review task %s not found; aborting review generation",
+                    review_task_id,
+                )
+                return
+            if resolved_purpose_id is None:
+                resolved_purpose_id = review_task.purpose_id
+            if resolved_purpose_id is None:
+                logging.error(
+                    "[Reviewer] Could not determine purpose for review task %s", review_task_id
+                )
+                return
+
+            purpose = s.get(Purpose, resolved_purpose_id)
             if purpose and getattr(purpose, "mode", None) == "auto":
                 purpose_auto_mode = True
-            # Most recent artefact for the blueprint task (markdown)
-            art = (
-                s.query(Artefact)
-                .filter(Artefact.task_id == blueprint_task_id)
-                .order_by(desc(Artefact.created_at))
-                .first()
-            )
-            if art:
-                from ai_org_backend.services.storage import resolve_for_read
 
-                file_path = resolve_for_read(art.repo_path)
-                blueprint_text = file_path.read_text(encoding="utf-8", errors="ignore")
+            if resolved_blueprint_id is None:
+                blueprint_task = s.exec(
+                    select(Task)
+                    .where(
+                        Task.purpose_id == resolved_purpose_id,
+                        func.lower(Task.description) == "architecture blueprint",
+                    )
+                    .order_by(desc(Task.created_at))
+                ).first()
+                if blueprint_task:
+                    resolved_blueprint_id = blueprint_task.id
+
+            if resolved_blueprint_id is None:
+                logging.warning(
+                    "[Reviewer] No blueprint task found for purpose=%s", resolved_purpose_id
+                )
+            else:
+                art = s.exec(
+                    select(Artefact)
+                    .where(Artefact.task_id == resolved_blueprint_id)
+                    .order_by(desc(Artefact.created_at))
+                ).first()
+                if art:
+                    from ai_org_backend.services.storage import resolve_for_read
+
+                    file_path = resolve_for_read(art.repo_path)
+                    blueprint_text = file_path.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
-            logging.error("[Reviewer] Failed to load blueprint artefact: %s", e)
+            logging.error("[Reviewer] Failed to prepare review context: %s", e)
             blueprint_text = ""
 
-    review_md = run_reviewer(purpose_id, blueprint_text)
+    logging.info(
+        "[Reviewer] Generating review for purpose=%s (tenant=%s)",
+        resolved_purpose_id,
+        tenant_id,
+    )
+    review_md = run_reviewer(resolved_purpose_id, blueprint_text)
 
     # Persist the review artefact (keep task status todo; user will approve)
     try:
@@ -141,7 +179,7 @@ def reviewer_task(
             logging.info(
                 "[Reviewer] Auto-approved review task %s (purpose %s)",
                 review_task_id,
-                purpose_id,
+                resolved_purpose_id,
             )
         except Exception as e:
             logging.error(

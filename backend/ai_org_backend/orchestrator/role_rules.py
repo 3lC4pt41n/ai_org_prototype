@@ -32,6 +32,7 @@ CANONICAL_ROLES = {
     "product",
     "qa_review",
     "qa_refactor",
+    "reviewer",
 }
 
 _RULES: List[Tuple[str, re.Pattern]] = []
@@ -271,6 +272,10 @@ def heuristic_role(text: str) -> Optional[str]:
         return "telemetry"
     if "agent.security" in t or "bandit" in t or "pip-audit" in t or "owasp" in t:
         return "telemetry"
+    if "architecture & domain review" in t or "domain review" in t:
+        return "reviewer"
+    if "architecture review" in t and "domain" in t:
+        return "reviewer"
 
     # Keyword rules (first match wins)
     for role, rx in _RULES:
@@ -334,6 +339,10 @@ def normalize_role(s: str) -> Optional[str]:
         "refactor": "qa_refactor",
         "refactoring": "qa_refactor",
         "cleanup": "qa_refactor",
+        "architecture & domain review": "reviewer",
+        "domain review": "reviewer",
+        "architecture review": "reviewer",
+        "reviewer": "reviewer",
         # Default
         "developer": "dev",
         "development": "dev",
