@@ -77,7 +77,10 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
 
 @celery.task(name="agent.reviewer")
 def reviewer_task(
-    tenant_id: str, purpose_id: str, blueprint_task_id: str, review_task_id: str
+    tenant_id: str,
+    review_task_id: str,
+    purpose_id: str,
+    blueprint_task_id: str,
 ) -> None:
     """
     Celery entrypoint — creates the Markdown review artefact for the given review task.
