@@ -88,6 +88,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         alert(f"Orchestrator: Architect failed for purpose {purpose_id}: {e}", "error")
         return
 
+    blueprint_task_id = ""
     with Session(engine) as db_session:
         blueprint_task = Task(
             tenant_id=tenant_id,
@@ -98,18 +99,22 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         db_session.add(blueprint_task)
         db_session.commit()
         db_session.refresh(blueprint_task)
+        blueprint_task_id = blueprint_task.id
         save_artefact(
-            blueprint_task.id,
+            blueprint_task_id,
             blueprint_md.encode("utf-8"),
             filename="blueprints/architecture_blueprint.md",
             media_type="text/markdown",
             allow_overwrite=True,
         )
         Repo(tenant_id).update(
-            blueprint_task.id, owner="Architect", notes="Blueprint completed"
+            blueprint_task_id, owner="Architect", notes="Blueprint completed"
         )
 
     # Nur planen, wenn keine Implementierungs-Todos existieren
+    if not blueprint_task_id:
+        return
+
     with Session(engine) as db_session:
         existing_impl = db_session.exec(
             select(Task)
@@ -153,6 +158,35 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 )
                 db_session.add(task_obj)
         db_session.commit()
+
+    with Session(engine) as db_session:
+        review_task = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "architecture & domain review",
+            )
+        ).first()
+        if review_task:
+            tasks = db_session.exec(
+                select(Task).where(Task.purpose_id == purpose_id)
+            ).all()
+            for t in tasks:
+                desc = (t.description or "").strip().lower()
+                if t.id in (blueprint_task_id, review_task.id) or desc in [
+                    "product requirements document",
+                    "architecture blueprint",
+                    "architecture & domain review",
+                ]:
+                    continue
+                exists = db_session.exec(
+                    select(TaskDependency).where(
+                        TaskDependency.from_id == review_task.id,
+                        TaskDependency.to_id == t.id,
+                    )
+                ).first()
+                if not exists:
+                    db_session.add(TaskDependency(from_id=review_task.id, to_id=t.id))
+            db_session.commit()
 
     # Markiere PRD-Artefakt als released (nur zur Sicherheit)
     with Session(engine) as db_session:
