@@ -18,6 +18,7 @@ from ai_org_backend.db import SessionLocal  # noqa: E402
 from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
 from ai_org_backend.models import Purpose  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
+from ai_org_backend.repo import Repo  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
 from ai_org_backend.services.storage import save_artefact  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
@@ -83,6 +84,7 @@ def reviewer_task(
     Leaves the task in 'todo' (awaiting approval).
     """
     logging.info("[Reviewer] Generating review for purpose=%s (tenant=%s)", purpose_id, tenant_id)
+    purpose_auto_mode = False
     with SessionLocal() as s:
         # Fetch blueprint content from its artefact(s)
         # Simplicity: we read the latest blueprint artefact saved for blueprint task.
@@ -90,6 +92,9 @@ def reviewer_task(
 
         blueprint_text = ""
         try:
+            purpose = s.get(Purpose, purpose_id)
+            if purpose and getattr(purpose, "mode", None) == "auto":
+                purpose_auto_mode = True
             # Most recent artefact for the blueprint task (markdown)
             art = (
                 s.query(Artefact)
@@ -109,11 +114,35 @@ def reviewer_task(
     review_md = run_reviewer(purpose_id, blueprint_text)
 
     # Persist the review artefact (keep task status todo; user will approve)
-    save_artefact(
-        review_task_id,
-        review_md.encode("utf-8"),
-        filename="reviews/architecture_domain_review.md",
-        allow_overwrite=True,
-        media_type="text/markdown",
-    )
-    logging.info("[Reviewer] Review artefact saved for task=%s", review_task_id)
+    try:
+        save_artefact(
+            review_task_id,
+            review_md.encode("utf-8"),
+            filename="reviews/architecture_domain_review.md",
+            allow_overwrite=True,
+            media_type="text/markdown",
+        )
+        logging.info("[Reviewer] Review artefact saved for task=%s", review_task_id)
+    except Exception as e:
+        logging.error("[Reviewer] Failed to save review artefact for task=%s: %s", review_task_id, e)
+        return
+
+    if purpose_auto_mode:
+        try:
+            Repo(tenant_id).update(
+                review_task_id,
+                status="done",
+                owner="Review",
+                notes="approved",
+            )
+            logging.info(
+                "[Reviewer] Auto-approved review task %s (purpose %s)",
+                review_task_id,
+                purpose_id,
+            )
+        except Exception as e:
+            logging.error(
+                "[Reviewer] Failed to auto-approve review task %s: %s",
+                review_task_id,
+                e,
+            )
