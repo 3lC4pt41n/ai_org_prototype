@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Task, TaskDependency
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,9 @@ SET   t.status            = $status,
       t.business_value    = $bv,
       t.tokens_plan       = $tok_plan,
       t.tokens_actual     = $tok_act,
-      t.purpose_relevance = $purp_rel
+      t.purpose_relevance = $purp_rel,
+      t.purpose_id        = $purpose_id,
+      t.tenant_id         = $tenant_id
 """
 
 MERGE_DEP = """
@@ -47,6 +49,8 @@ def ingest(tenant: str) -> Dict[str, int]:
 
         # Fetch tasks for this tenant
         tasks = db.exec(select(Task).where(Task.tenant_id == tenant)).all()
+        purposes = db.exec(select(Purpose).where(Purpose.tenant_id == tenant)).all()
+        purpose_by_id = {p.id: p for p in purposes}
 
         # Eager-load dependencies including involved tasks
         deps = db.exec(
@@ -74,8 +78,30 @@ def ingest(tenant: str) -> Dict[str, int]:
                     tok_plan=t.tokens_plan,
                     tok_act=t.tokens_actual,
                     purp_rel=t.purpose_relevance,
+                    purpose_id=t.purpose_id,
+                    tenant_id=t.tenant_id,
                 )
                 merged.add(t.id)
+
+            # ensure Purpose nodes exist and are linked to their tasks
+            for t in tasks:
+                if not t.purpose_id:
+                    continue
+                purpose = purpose_by_id.get(t.purpose_id)
+                tx.run(
+                    """
+                    MERGE (p:Purpose {id:$pid})
+                      ON CREATE SET p.name=$pname, p.tenant_id=$tenant
+                      ON MATCH SET p.name=coalesce($pname, p.name), p.tenant_id=$tenant
+                    WITH p
+                    MATCH (task:Task {id:$tid})
+                    MERGE (p)-[:HAS_TASK]->(task)
+                    """,
+                    pid=t.purpose_id,
+                    pname=getattr(purpose, "name", None),
+                    tenant=tenant,
+                    tid=t.id,
+                )
 
             # then edges (task dependencies)
             for dep in deps:
@@ -91,6 +117,7 @@ def ingest(tenant: str) -> Dict[str, int]:
                     """
                     MERGE (a:Artifact {sha256:$sha})
                       ON CREATE SET a.created_at=$ts
+                    WITH a
                     MATCH (t:Task {id:$tid})
                     MERGE (t)-[:PRODUCED]->(a)
                     """,
