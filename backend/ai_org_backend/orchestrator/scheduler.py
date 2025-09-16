@@ -166,6 +166,34 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 func.lower(Task.description) == "architecture & domain review",
             )
         ).first()
+        if not review_task:
+            review_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose_id,
+                description="Architecture & Domain Review",
+                business_value=0.0,
+                tokens_plan=0,
+                purpose_relevance=1.0,
+                status="todo",
+                owner="Review",
+                notes="awaiting_approval",
+            )
+            db_session.add(review_task)
+            db_session.commit()
+            db_session.refresh(review_task)
+
+        if review_task and blueprint_task_id:
+            edge_exists = db_session.exec(
+                select(TaskDependency).where(
+                    TaskDependency.from_id == blueprint_task_id,
+                    TaskDependency.to_id == review_task.id,
+                )
+            ).first()
+            if not edge_exists:
+                db_session.add(
+                    TaskDependency(from_id=blueprint_task_id, to_id=review_task.id)
+                )
+
         if review_task:
             tasks = db_session.exec(
                 select(Task).where(Task.purpose_id == purpose_id)

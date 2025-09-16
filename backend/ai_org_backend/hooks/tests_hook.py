@@ -15,6 +15,7 @@ from typing import List
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task, TaskDependency, Tenant
+from sqlmodel import select
 from ai_org_backend.repo import Repo as _Repo
 
 _orig_update = _Repo.update
@@ -55,26 +56,27 @@ def _create_task(tenant_id: str, purpose_id: str, desc: str, owner: str) -> Task
 def _depends_on_all_non_special(target_id: str, purpose_id: str) -> None:
     """Wire dependencies: every non-special task -> target (idempotent)."""
     with SessionLocal() as s:
-        all_tasks: List[Task] = s.query(Task).filter(Task.purpose_id == purpose_id).all()
+        all_tasks: List[Task] = s.exec(select(Task).where(Task.purpose_id == purpose_id)).all()
         for t in all_tasks:
             if t.id == target_id:
                 continue
             if (t.description or "").strip().lower() in SPECIAL:
                 continue
             # Does edge exist?
-            exists = (
-                s.query(TaskDependency)
-                .filter(TaskDependency.from_id == t.id, TaskDependency.to_id == target_id)
-                .first()
-            )
-            if not exists:
+            exists = s.exec(
+                select(TaskDependency.id).where(
+                    TaskDependency.from_id == t.id,
+                    TaskDependency.to_id == target_id,
+                )
+            ).first()
+            if exists is None:
                 s.add(TaskDependency(from_id=t.id, to_id=target_id))
         s.commit()
 
 
 def _all_non_test_done(purpose_id: str) -> bool:
     with SessionLocal() as s:
-        tasks: List[Task] = s.query(Task).filter(Task.purpose_id == purpose_id).all()
+        tasks: List[Task] = s.exec(select(Task).where(Task.purpose_id == purpose_id)).all()
         for t in tasks:
             d = (t.description or "").strip().lower()
             if d in SPECIAL:
@@ -101,7 +103,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         tenant = s.get(Tenant, tenant_id)
 
         # Check which testing tasks exist / status
-        tasks = s.query(Task).filter(Task.purpose_id == purpose_id).all()
+        tasks = s.exec(select(Task).where(Task.purpose_id == purpose_id)).all()
         by_desc = {(t.description or "").strip().lower(): t for t in tasks}
 
         code_rev = by_desc.get("code review")
@@ -208,12 +210,13 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
             if e2e is None:
                 e2e = _create_task(tenant_id, purpose_id, "E2E & Acceptance Tests", owner="QA-E2E")
                 # Depend e2e on integration
-                exists = (
-                    s.query(TaskDependency)
-                    .filter(TaskDependency.from_id == it.id, TaskDependency.to_id == e2e.id)
-                    .first()
-                )
-                if not exists:
+                exists = s.exec(
+                    select(TaskDependency.id).where(
+                        TaskDependency.from_id == it.id,
+                        TaskDependency.to_id == e2e.id,
+                    )
+                ).first()
+                if exists is None:
                     s.add(TaskDependency(from_id=it.id, to_id=e2e.id))
                     s.commit()
             if str(e2e.status) == "todo":
@@ -228,10 +231,24 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         if e2e and str(e2e.status) == "done":
             if perf is None:
                 perf = _create_task(tenant_id, purpose_id, "Performance Tests", owner="QA-Perf")
+            dep_perf = s.exec(
+                select(TaskDependency.id).where(
+                    TaskDependency.from_id == e2e.id,
+                    TaskDependency.to_id == perf.id,
+                )
+            ).first()
+            if dep_perf is None:
                 s.add(TaskDependency(from_id=e2e.id, to_id=perf.id))
                 s.commit()
             if sec is None:
                 sec = _create_task(tenant_id, purpose_id, "Security Scan", owner="QA-Sec")
+            dep_sec = s.exec(
+                select(TaskDependency.id).where(
+                    TaskDependency.from_id == e2e.id,
+                    TaskDependency.to_id == sec.id,
+                )
+            ).first()
+            if dep_sec is None:
                 s.add(TaskDependency(from_id=e2e.id, to_id=sec.id))
                 s.commit()
             if str(perf.status) == "todo":
