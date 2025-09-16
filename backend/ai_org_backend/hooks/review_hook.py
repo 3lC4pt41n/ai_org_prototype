@@ -18,6 +18,7 @@ from typing import Any, Optional, cast
 from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Artifact, Task, TaskDependency
+from sqlmodel import select
 from ai_org_backend.services import storage as _storage
 
 # Keep original pointer so we can call it
@@ -31,15 +32,13 @@ def _ensure_review_task(tenant_id: str, purpose_id: str) -> Task:
     """
     with SessionLocal() as s:
         # Try to find an existing review task for this purpose
-        t = (
-            s.query(Task)
-            .filter(
+        t = s.exec(
+            select(Task).where(
                 Task.tenant_id == tenant_id,
                 Task.purpose_id == purpose_id,
                 Task.description == "Architecture & Domain Review",
             )
-            .first()
-        )
+        ).first()
         if t:
             return t
         # Create a new review task
@@ -70,32 +69,31 @@ def _wire_dependencies_after_blueprint(
     """
     with SessionLocal() as s:
         # Edge: blueprint -> review
-        if (
-            s.query(TaskDependency)
-            .filter(
-                TaskDependency.from_id == blueprint_task_id, TaskDependency.to_id == review_task_id
+        edge = s.exec(
+            select(TaskDependency.id).where(
+                TaskDependency.from_id == blueprint_task_id,
+                TaskDependency.to_id == review_task_id,
             )
-            .first()
-            is None
-        ):
+        ).first()
+        if edge is None:
             s.add(TaskDependency(from_id=blueprint_task_id, to_id=review_task_id))
             s.commit()
 
         # Edge(s): review -> all other tasks (repo init + dev + anything else)
-        other_tasks = (
-            s.query(Task).filter(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id).all()
-        )
+        other_tasks = s.exec(
+            select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose_id)
+        ).all()
         for t in other_tasks:
             if t.id in (blueprint_task_id, review_task_id):
                 continue
             # Skip if edge already exists
-            exists = (
-                s.query(TaskDependency)
-                .filter(TaskDependency.from_id == review_task_id, TaskDependency.to_id == t.id)
-                .first()
-                is not None
-            )
-            if not exists:
+            exists = s.exec(
+                select(TaskDependency.id).where(
+                    TaskDependency.from_id == review_task_id,
+                    TaskDependency.to_id == t.id,
+                )
+            ).first()
+            if exists is None:
                 s.add(TaskDependency(from_id=review_task_id, to_id=t.id))
         s.commit()
 

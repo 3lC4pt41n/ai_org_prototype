@@ -4,6 +4,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 from pydantic import ConfigDict
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -82,7 +83,9 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     )
     content: str = Field(nullable=False, max_length=5000)
     metadata_: dict | None = Field(
-        default=None, sa_column=sa.Column("metadata", sa.JSON), alias="metadata"
+        default=None,
+        sa_column=sa.Column("metadata", JSONB, nullable=True),
+        alias="metadata",
     )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     artifacts: list["Artifact"] = Relationship(

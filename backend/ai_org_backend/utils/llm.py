@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
     logging.getLogger(__name__).warning("Package 'backoff' not installed; retry logic is disabled.")
 import openai
 from ai_org_backend.models.chat import ChatRole
-from ai_org_backend.services import budget
+from ai_org_backend.services import budget, llm_client
 
 backoff = _backoff
 
@@ -35,8 +35,17 @@ def _extract_tokens(resp) -> int:
     usage = getattr(resp, "usage", None)
     if isinstance(resp, dict):
         usage = resp.get("usage")
-    if usage and isinstance(usage, dict):
-        return int(usage.get("total_tokens") or 0)
+    if usage:
+        if isinstance(usage, dict):
+            return int(usage.get("total_tokens") or 0)
+        total = getattr(usage, "total_tokens", None)
+        if total is None and hasattr(usage, "to_dict"):
+            total = usage.to_dict().get("total_tokens")
+        if total is not None:
+            try:
+                return int(total)
+            except (TypeError, ValueError):
+                pass
     try:
         content = (
             resp["choices"][0]["message"].get("content")
@@ -50,7 +59,8 @@ def _extract_tokens(resp) -> int:
 
 @backoff.on_exception(backoff.expo, openai.OpenAIError, max_tries=3)
 def chat(model: str, messages: list[dict], tenant_id: str | None = None, **kw):
-    resp = openai.ChatCompletion.create(model=model, messages=messages, **kw)
+    client = llm_client.ensure_client()
+    resp = client.chat.completions.create(model=model, messages=messages, **kw)
     total_tokens = _extract_tokens(resp)
     if tenant_id and total_tokens > 0:
         try:
