@@ -5,6 +5,7 @@ from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
 from ai_org_backend.models import Task, TaskStatus, Tenant
+from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 
 PROM_ALERT_CNT = Counter("ai_alerts_total", "Alerts triggered", ["type"])
 PROM_TASK_BLOCKED = Gauge(
@@ -50,16 +51,35 @@ def alert(msg: str, kind: str = "orch") -> None:
     PROM_ALERT_CNT.labels(kind).inc()
 
 
-def budget_left(tenant: str) -> float:
-    """Gibt das verbleibende Budget für einen Tenant zurück."""
+def budget_left(tenant: str, purpose: str | None = None) -> float:
+    """Return remaining budget for a tenant or a specific purpose."""
+
     with Session(engine) as s:
-        t = s.get(Tenant, tenant)
-        if not t:
-            return 0.0
-        value = float(t.balance)
-        # optional: Metrik setzen
+        tenant_obj = s.get(Tenant, tenant)
+
+    if not tenant_obj:
+        return 0.0
+
+    # Tenant-wide budget comes from the SQL balance field.
+    if not purpose:
+        value = float(tenant_obj.balance)
         if value <= 0:
             PROM_BUDGET_BLOCKED.labels(tenant).set(1)
         else:
             PROM_BUDGET_BLOCKED.labels(tenant).set(0)
         return value
+
+    # Purpose-specific budgets are tracked in Redis; fall back to default if missing.
+    redis_value: float | None = None
+    try:
+        raw = pool.get(f"budget:{tenant}:{purpose}") if pool is not None else None
+        if raw is not None:
+            redis_value = float(raw)
+    except Exception:
+        redis_value = None
+
+    if redis_value is not None:
+        return redis_value
+
+    # Fallback: return default project budget if nothing stored yet.
+    return float(DEFAULT_BUDGET)
