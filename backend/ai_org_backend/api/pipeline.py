@@ -1,6 +1,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -21,6 +22,286 @@ from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_ar
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+
+
+def _latest_artifact_for_task(task_id: str | None) -> Artifact | None:
+    if not task_id:
+        return None
+    with Session(engine) as session:
+        return session.exec(
+            select(Artifact)
+            .where(Artifact.task_id == task_id)
+            .order_by(desc(Artifact.created_at))
+        ).first()
+
+
+def _read_artifact_text(artifact: Artifact | None) -> str:
+    if not artifact:
+        return ""
+    try:
+        file_path = resolve_for_read(artifact.repo_path)
+        return file_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Failed to read artefact %s: %s", artifact.id, exc)
+        return ""
+
+
+def _generate_vision_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | None]:
+    from ai_org_backend.agents.vision import run_vision
+
+    tenant_id = purpose.tenant_id
+    logger.info(
+        "Starting vision artefact generation for purpose %s (mode=%s)",
+        purpose.id,
+        purpose.mode,
+    )
+
+    with Session(engine) as session:
+        vision_task = Task(
+            tenant_id=tenant_id,
+            purpose_id=purpose.id,
+            description="Vision Document",
+            business_value=0.0,
+            tokens_plan=0,
+            purpose_relevance=1.0,
+        )
+        session.add(vision_task)
+        session.commit()
+        session.refresh(vision_task)
+
+    repo = Repo(tenant_id)
+    vision_content = ""
+    try:
+        vision_content = run_vision(purpose)
+    except Exception as exc:
+        logger.error(
+            "Vision agent failed for purpose %s: %s", purpose.id, exc
+        )
+        try:
+            repo.update(
+                vision_task.id,
+                status="failed",
+                owner="VisionAgent",
+                notes=f"Vision agent error: {exc}",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record vision task failure for task %s", vision_task.id
+            )
+        raise
+
+    artifact: Artifact | None = None
+    repo_rel = "vision/vision_statement.md"
+    try:
+        artifact = save_artefact(
+            vision_task.id,
+            vision_content.encode("utf-8"),
+            filename=repo_rel,
+            media_type="text/markdown",
+        )
+        logger.info(
+            "Vision artefact %s stored for purpose %s (path=%s)",
+            artifact.id,
+            purpose.id,
+            artifact.repo_path,
+        )
+    except Exception as exc:
+        logger.exception(
+            "failed to persist vision artefact to workspace (%s): %s",
+            repo_rel,
+            exc,
+        )
+        try:
+            repo.update(
+                vision_task.id,
+                status="failed",
+                owner="VisionAgent",
+                notes=f"Vision save failed: {exc}",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record vision save error for task %s", vision_task.id
+            )
+        raise
+
+    try:
+        token_guess = max(1, len(vision_content) // 4)
+        budget_svc.debit(
+            purpose_id=purpose.id,
+            amount=token_guess,
+            reason="artifact:vision",
+        )
+    except Exception as exc:
+        logger.warning("budget debit for vision failed (non-fatal): %s", exc)
+
+    try:
+        repo.update(
+            vision_task.id,
+            status="done",
+            owner="VisionAgent",
+            notes="Vision completed",
+        )
+    except Exception:
+        logger.exception(
+            "Failed to update vision task %s to done", vision_task.id
+        )
+
+    if purpose.mode == "auto" and artifact:
+        released = False
+        release_error = False
+        try:
+            with Session(engine) as session:
+                art = session.get(Artifact, artifact.id)
+                if art:
+                    art.released = True
+                    session.add(art)
+                    session.commit()
+                    released = True
+                    artifact.released = True
+        except Exception:
+            release_error = True
+            logger.exception(
+                "Auto-release of vision artefact %s failed for purpose %s",
+                artifact.id,
+                purpose.id,
+            )
+        if released:
+            logger.info(
+                "Auto-released vision artefact %s for purpose %s", artifact.id, purpose.id
+            )
+        elif not release_error:
+            logger.warning(
+                "Vision artefact %s for purpose %s not auto-released", artifact.id, purpose.id
+            )
+
+    return vision_task, vision_content, artifact
+
+
+def _generate_prd_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | None]:
+    from ai_org_backend.agents.product_owner import run_requirements
+
+    tenant_id = purpose.tenant_id
+    logger.info(
+        "Starting PRD artefact generation for purpose %s (mode=%s)",
+        purpose.id,
+        purpose.mode,
+    )
+
+    with Session(engine) as session:
+        prd_task = Task(
+            tenant_id=tenant_id,
+            purpose_id=purpose.id,
+            description="Product Requirements Document",
+            business_value=0.0,
+            tokens_plan=0,
+            purpose_relevance=1.0,
+        )
+        session.add(prd_task)
+        session.commit()
+        session.refresh(prd_task)
+
+    repo = Repo(tenant_id)
+    prd_content = ""
+    try:
+        prd_content = run_requirements(purpose)
+    except Exception as exc:
+        logger.error("PRD agent failed for purpose %s: %s", purpose.id, exc)
+        try:
+            repo.update(
+                prd_task.id,
+                status="failed",
+                owner="ProductOwner",
+                notes=f"PRD agent error: {exc}",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record PRD task failure for task %s", prd_task.id
+            )
+        raise
+
+    artifact: Artifact | None = None
+    repo_rel = "requirements/product_requirements.md"
+    try:
+        artifact = save_artefact(
+            prd_task.id,
+            prd_content.encode("utf-8"),
+            filename=repo_rel,
+            media_type="text/markdown",
+        )
+        logger.info(
+            "PRD artefact %s stored for purpose %s (path=%s)",
+            artifact.id,
+            purpose.id,
+            artifact.repo_path,
+        )
+    except Exception as exc:
+        logger.exception(
+            "failed to persist artefact to workspace (%s): %s",
+            repo_rel,
+            exc,
+        )
+        try:
+            repo.update(
+                prd_task.id,
+                status="failed",
+                owner="ProductOwner",
+                notes=f"PRD save failed: {exc}",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record PRD save error for task %s", prd_task.id
+            )
+        raise
+
+    try:
+        token_guess = max(1, len(prd_content) // 4)
+        budget_svc.debit(
+            purpose_id=purpose.id,
+            amount=token_guess,
+            reason="artifact:requirements",
+        )
+    except Exception as exc:
+        logger.warning("budget debit failed (non-fatal): %s", exc)
+
+    try:
+        repo.update(
+            prd_task.id,
+            status="done",
+            owner="ProductOwner",
+            notes="PRD completed",
+        )
+    except Exception:
+        logger.exception("Failed to update PRD task %s to done", prd_task.id)
+
+    if purpose.mode == "auto" and artifact:
+        released = False
+        release_error = False
+        try:
+            with Session(engine) as session:
+                art = session.get(Artifact, artifact.id)
+                if art:
+                    art.released = True
+                    session.add(art)
+                    session.commit()
+                    released = True
+                    artifact.released = True
+        except Exception:
+            release_error = True
+            logger.exception(
+                "Auto-release of PRD artefact %s failed for purpose %s",
+                artifact.id,
+                purpose.id,
+            )
+        if released:
+            logger.info(
+                "Auto-released PRD artefact %s for purpose %s", artifact.id, purpose.id
+            )
+        elif not release_error:
+            logger.warning(
+                "PRD artefact %s for purpose %s not auto-released", artifact.id, purpose.id
+            )
+
+    return prd_task, prd_content, artifact
 
 
 @router.post("/pause")
@@ -178,6 +459,14 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         existing_tasks = session.exec(
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
         ).all()
+        existing_vision = next(
+            (
+                t
+                for t in existing_tasks
+                if (t.description or "").lower().startswith("vision document")
+            ),
+            None,
+        )
         existing_prd = next(
             (
                 t
@@ -187,87 +476,33 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             None,
         )
 
-    prd_task_obj = existing_prd
+    vision_content = ""
+    if existing_vision:
+        logger.info("Purpose %s already has a Vision, skipping generation", purpose.id)
+        vision_art = _latest_artifact_for_task(existing_vision.id)
+        vision_content = _read_artifact_text(vision_art)
+    else:
+        try:
+            _, vision_content, _ = _generate_vision_artifact(purpose)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Vision generation failed: {exc}")
+
     prd_content = ""
     if existing_prd:
         logger.info("Purpose %s already has a PRD, skipping creation", purpose.id)
-        with Session(engine) as session:
-            art = session.exec(
-                select(Artifact)
-                .where(Artifact.task_id == existing_prd.id)
-                .order_by(desc(Artifact.created_at))
-            ).first()
-        if art:
-            try:
-                file_path = resolve_for_read(art.repo_path)
-                prd_content = file_path.read_text(encoding="utf-8")
-            except Exception as e:
-                logger.warning(
-                    "Failed to load existing PRD artefact for task %s: %s",
-                    existing_prd.id,
-                    e,
-                )
-    else:
-        # 1) Generate requirements via Product Owner agent
+        prd_art = _latest_artifact_for_task(existing_prd.id)
+        prd_content = _read_artifact_text(prd_art)
+    elif purpose.mode == "auto":
         try:
-            from ai_org_backend.agents.product_owner import run_requirements
+            _, prd_content, _ = _generate_prd_artifact(purpose)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {exc}")
 
-            prd_content = run_requirements(purpose)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {e}")
-
-        # Persist PRD task and artefact
-        with Session(engine) as session:
-            prd_task_obj = Task(
-                tenant_id=tenant_id,
-                purpose_id=purpose.id,
-                description="Product Requirements Document",
-                business_value=0.0,
-                tokens_plan=0,
-                purpose_relevance=1.0,
-            )
-            session.add(prd_task_obj)
-            session.commit()
-            session.refresh(prd_task_obj)
-
-        repo_rel = "requirements/product_requirements.md"
-        try:
-            save_artefact(
-                prd_task_obj.id,
-                prd_content.encode("utf-8"),
-                filename=repo_rel,
-                media_type="text/markdown",
-            )
-        except Exception as e:
-            logger.exception("failed to persist artefact to workspace (%s): %s", repo_rel, e)
-        try:
-            token_guess = max(1, len(prd_content) // 4)
-            budget_svc.debit(
-                purpose_id=purpose.id,
-                amount=token_guess,
-                reason="artifact:requirements",
-            )
-        except Exception as e:
-            logger.warning("budget debit failed (non-fatal): %s", e)
-        Repo(tenant_id).update(
-            prd_task_obj.id,
-            status="done",
-            owner="ProductOwner",
-            notes="PRD completed",
-        )
-        # If the purpose is in auto mode, mark the PRD artifact as released
-        # so the orchestrator can continue with blueprint generation.
-        if purpose.mode == "auto":
-            with Session(engine) as session:
-                prd_art = session.exec(
-                    select(Artifact).where(Artifact.task_id == prd_task_obj.id)
-                ).first()
-                if prd_art:
-                    prd_art.released = True
-                    session.add(prd_art)
-                    session.commit()
-
-    return {"purpose_id": purpose.id, "requirements": prd_content}
+    return {
+        "purpose_id": purpose.id,
+        "vision": vision_content,
+        "requirements": prd_content,
+    }
 
 
 @router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
@@ -524,15 +759,35 @@ def approve_artifact(
     purpose_id = task.purpose_id
     if artifact.released:
         raise HTTPException(status_code=409, detail="Artifact already released")
+    task_desc = (task.description or "").lower()
+    repo_path = (artifact.repo_path or "").lower()
+    is_vision_artifact = "vision" in task_desc or "vision" in repo_path
+    response_payload: dict[str, Any] = {"status": "approved"}
     # Mark artifact as released to signal the Orchestrator to continue planning
     artifact.released = True
     session.add(artifact)
     session.commit()
+    if is_vision_artifact:
+        purpose = session.get(Purpose, purpose_id)
+        if purpose:
+            existing_prd = session.exec(
+                select(Task)
+                .where(Task.purpose_id == purpose_id)
+                .where(Task.description.ilike("%Product Requirements Document%"))
+            ).first()
+            if not existing_prd:
+                try:
+                    _, _, prd_artifact = _generate_prd_artifact(purpose)
+                    if prd_artifact:
+                        response_payload["artifact_redirect_id"] = prd_artifact.id
+                        response_payload["artifact_redirect_url"] = f"/api/artifact/{prd_artifact.id}"
+                except Exception as exc:
+                    logger.error("PRD generation after vision approval failed: %s", exc)
     try:
         pool.delete(f"pause:{tenant_id}:{purpose_id}")
     except Exception:
         logger.error("Redis delete failed: could not resume purpose %s", purpose_id)
-    return {"status": "approved"}
+    return response_payload
 
 
 @router.get("/artifact/{artifact_id}", tags=["artifacts"])

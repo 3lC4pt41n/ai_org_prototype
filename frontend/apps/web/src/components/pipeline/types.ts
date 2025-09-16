@@ -58,6 +58,14 @@ export interface PhaseViewContext {
   selectedPurpose: PurposeSummary | null;
   selectedPurposeId: string | null;
   renderChatPanel: ChatPanelRenderer;
+  onCreatePurpose?: (name: string) => Promise<boolean>;
+  creatingPurpose?: boolean;
+  visionArtifact?: ArtifactItem;
+  visionAwaitingApproval: boolean;
+  visionStatusIcon: ReactNode;
+  onVisionApproved: (
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => void;
   prdArtifact?: ArtifactItem;
   prdAwaitingApproval: boolean;
   prdStatusIcon: ReactNode;
