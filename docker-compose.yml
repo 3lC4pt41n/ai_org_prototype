@@ -76,6 +76,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
       - TENANT_NAME="Tim Mergenthaler"
+      - WORKSPACE_DIR=/app/workspace
     ports:
       - "8000:8000"
     depends_on:
@@ -93,6 +94,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - ../workspace:/app/workspace
 
   orchestrator:
     build:

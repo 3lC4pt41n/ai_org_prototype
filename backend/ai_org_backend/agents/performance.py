@@ -16,6 +16,7 @@ from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.test_exec import run_locust
 from ai_org_backend.tasks.celery_app import celery
+from ai_org_backend.settings import settings
 
 RUNS = prom_counter("ai_performance_runs_total", "Performance agent executions")
 LAT = prom_hist("ai_performance_latency_seconds", "Performance agent latency")
@@ -46,8 +47,9 @@ def performance_task(tenant_id: str, task_id: str) -> None:
     locust_rel = f"tests/perf/locustfile_{task_id}.py"
     save_artefact(task_id, LOCUST_TMPL.encode("utf-8"), filename=locust_rel, allow_overwrite=True)
 
+    locust_path = settings.workspace_dir / tenant_id / locust_rel
     rc, out, err = run_locust(
-        locustfile=f"workspace/{tenant_id}/{locust_rel}",
+        locustfile=str(locust_path),
         host=host,
         users=users,
         spawn_rate=spawn,
