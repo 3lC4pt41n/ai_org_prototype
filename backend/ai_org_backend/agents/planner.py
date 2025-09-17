@@ -48,7 +48,7 @@ TASKS_SCHEMA = {
 MD_JSON_RX = re.compile(r"```json([\s\S]+?)```", re.IGNORECASE)
 
 
-def run_planner(blueprint: str) -> list[dict]:
+def run_planner(blueprint: str, tenant_id: str | None = None) -> list[dict]:
     """Generate a structured task plan (list of tasks with dependencies) from the blueprint."""
     ctx = {"task": blueprint}
     prompt = PROMPT_TMPL.render(**ctx)
@@ -57,7 +57,11 @@ def run_planner(blueprint: str) -> list[dict]:
     for attempt in range(MAX_AGENT_RETRIES + 1):
         start = time.time()
         try:
-            resp = chat(model=model, messages=[{"role": ChatRole.USER.value, "content": prompt}])
+            resp = chat(
+                model=model,
+                messages=[{"role": ChatRole.USER.value, "content": prompt}],
+                tenant_id=tenant_id,
+            )
             PLANNER_RUNS.inc()
         finally:
             PLANNER_LATENCY.observe(time.time() - start)
