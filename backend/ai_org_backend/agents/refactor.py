@@ -16,6 +16,7 @@ from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
 from ai_org_backend.services.storage import save_artefact  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
+from ai_org_backend.settings import settings  # noqa: E402
 
 from .utils import load_template  # noqa: E402
 
@@ -43,7 +44,7 @@ def refactor_task(tenant_id: str, task_id: str) -> None:
             continue
         if not re.search(r"\.(py|js|jsx|ts|tsx|java|html|css)$", path, re.IGNORECASE):
             continue
-        file_path = Path("workspace") / tenant_id / path
+        file_path = settings.workspace_dir / tenant_id / path
         try:
             code = file_path.read_text(encoding="utf-8")
         except (FileNotFoundError, PermissionError, UnicodeDecodeError):

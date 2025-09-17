@@ -4,10 +4,10 @@ import shutil
 import subprocess  # nosec B404
 import tempfile
 import uuid
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ai_org_backend.config import TEST_CPU_LIMIT, TEST_MEMORY_LIMIT, TEST_TIMEOUT_SECONDS
+from ai_org_backend.settings import settings
 
 DOCKER_IMAGE = "ai_org_test:latest"
 
@@ -19,7 +19,7 @@ def run_tests(tenant_id: str, test_files: List[str]) -> Tuple[bool, str, Optiona
     a human readable failure reason (e.g. timeout) to be surfaced in task notes.
     """
     temp_dir = tempfile.mkdtemp(prefix="qa_test_")
-    src_dir = Path("workspace") / tenant_id
+    src_dir = settings.workspace_dir / tenant_id
     shutil.copytree(src_dir, temp_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
     container_name = f"qa_{uuid.uuid4().hex[:8]}"
     note: Optional[str] = None
