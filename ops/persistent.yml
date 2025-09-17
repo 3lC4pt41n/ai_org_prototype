@@ -202,7 +202,7 @@ services:
     image: local/ai_backend_orchestrator:latest
     env_file:
       - ../.env
-    working_dir: /app/backend/ai_org_backend  # Im Arbeitsverzeichnis mit alembic.ini
+    working_dir: /app  # Im Arbeitsverzeichnis mit alembic.ini
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
