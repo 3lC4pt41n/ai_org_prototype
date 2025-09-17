@@ -14,6 +14,7 @@ from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.deep_research import run_deep_research
 from ai_org_backend.services.llm_client import MODEL_DEFAULT, MODEL_THINKING, chat_with_tools
 from ai_org_backend.services.storage import driver, save_artefact
+from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
 
@@ -195,7 +196,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                 fname = f"{base}/{fname}"
             file_path = Path(fname)
             if file_path.parent and str(file_path.parent) != ".":
-                target_dir = Path("workspace") / tid / file_path.parent
+                target_dir = settings.workspace_dir / tid / file_path.parent
                 target_dir.mkdir(parents=True, exist_ok=True)
             logging.info(f"[DevAgent] Saving generated code to '{fname}' for task {task_id}")
             save_artefact(

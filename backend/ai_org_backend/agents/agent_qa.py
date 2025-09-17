@@ -15,6 +15,7 @@ from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.testing import run_tests
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
+from ai_org_backend.settings import settings
 
 from .utils import load_template
 
@@ -90,7 +91,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     return
                 snippets = []
                 for artefact in artifacts:
-                    file_path = Path("workspace") / tid / artefact.repo_path
+                    file_path = settings.workspace_dir / tid / artefact.repo_path
                     try:
                         code_content = file_path.read_text(encoding="utf-8")
                     except Exception as e:

@@ -2,11 +2,12 @@ import hashlib
 import uuid
 from datetime import datetime as dt
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
 from .chat import ChatMessage, ChatMessageArtifact
+from ai_org_backend.settings import settings
 
 if TYPE_CHECKING:
     from .artifact_feedback import ArtifactFeedback
@@ -38,8 +39,9 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
         cls,
         task_id: str,
         abs_path: Path,
-        repo_root: Path = Path.cwd() / "workspace",
+        repo_root: Optional[Path] = None,
     ) -> "Artifact":
+        repo_root = (repo_root or settings.workspace_dir).resolve()
         if not abs_path.exists():
             raise FileNotFoundError(f"Source file not found: {abs_path}")
 
