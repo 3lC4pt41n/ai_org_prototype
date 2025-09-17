@@ -123,13 +123,19 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             try:
                 tasks_plan = run_planner(blueprint_md, tenant_id=tenant_id)
             except Exception as e:
-                alert(f"Orchestrator: Planner failed for purpose {purpose_id}: {e}", "error")
+                msg = f"Orchestrator: Planner failed for purpose {purpose_id}: {e}"
+                alert(msg, "error")
+                logging.error(msg)
                 return
             if not isinstance(tasks_plan, list):
-                alert("Planner returned no task list", "warn")
+                msg = f"Planner returned invalid result for purpose {purpose_id}"
+                alert(msg, "warn")
+                logging.warning(msg)
                 return
             if not tasks_plan:
-                alert("Planner returned no task list", "warn")
+                msg = f"Planner returned empty task list for purpose {purpose_id}"
+                alert(msg, "warn")
+                logging.warning(msg)
                 return
 
             # Ensure a repository initialization task exists
@@ -244,20 +250,38 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
     try:
         blueprint_md = run_architect(purpose)
     except Exception as e:
-        alert(f"Orchestrator: Architect failed for purpose {purpose_id}: {e}", "error")
+        msg = f"Orchestrator: Architect failed for purpose {purpose_id}: {e}"
+        alert(msg, "error")
+        logging.error(msg)
         return
     blueprint_task_id = ""
     with Session(engine) as db_session:
-        blueprint_task = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose_id,
-            description="Architecture Blueprint",
-            status="done",
-        )
-        db_session.add(blueprint_task)
-        db_session.commit()
-        db_session.refresh(blueprint_task)
-        blueprint_task_id = blueprint_task.id
+        existing_bp = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "architecture blueprint",
+            )
+        ).first()
+        if existing_bp:
+            blueprint_task = existing_bp
+            blueprint_task.status = "done"
+            db_session.add(blueprint_task)
+            db_session.commit()
+            db_session.refresh(blueprint_task)
+            blueprint_task_id = blueprint_task.id
+            logging.info("[Orchestrator] Re-using existing Architecture Blueprint task %s", blueprint_task_id)
+        else:
+            blueprint_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose_id,
+                description="Architecture Blueprint",
+                status="done",
+            )
+            db_session.add(blueprint_task)
+            db_session.commit()
+            db_session.refresh(blueprint_task)
+            blueprint_task_id = blueprint_task.id
+            logging.info("[Orchestrator] Created new Architecture Blueprint task %s", blueprint_task_id)
         save_artefact(
             blueprint_task_id,
             blueprint_md.encode("utf-8"),
