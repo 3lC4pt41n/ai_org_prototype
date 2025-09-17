@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # -------- workdir --------------
 WORKDIR /app
 
+# -------- workspace -----------
+ENV WORKSPACE_DIR=/app/workspace
+RUN mkdir -p "$WORKSPACE_DIR"
+
 # -------- python deps ----------
 COPY backend/ai_org_backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

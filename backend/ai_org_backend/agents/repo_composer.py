@@ -13,6 +13,7 @@ from ai_org_backend.models import Artifact, Task
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
 
@@ -48,7 +49,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
                 )
                 if artefact:
                     # Read blueprint content from workspace file
-                    artefact_path = Path("workspace") / task_obj.tenant_id / artefact.repo_path
+                    artefact_path = settings.workspace_dir / task_obj.tenant_id / artefact.repo_path
                     try:
                         architecture_plan = artefact_path.read_text(encoding="utf-8")
                         logging.info(
@@ -101,7 +102,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             # Ensure subdirectories exist
             file_path = Path(path)
             if file_path.parent and str(file_path.parent) != ".":
-                target_dir = Path("workspace") / tenant_id / file_path.parent
+                target_dir = settings.workspace_dir / tenant_id / file_path.parent
                 target_dir.mkdir(parents=True, exist_ok=True)
             save_artefact(task_id, file_content.encode("utf-8"), filename=path)
             files_created += 1
