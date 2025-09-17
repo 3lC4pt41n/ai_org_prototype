@@ -9,12 +9,15 @@ from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Task
 from ai_org_backend.services.storage import vector_store
+from ai_org_backend.settings import settings
 
 RETRIEVED_SNIPPETS = prom_counter(
     "ai_retrieved_snippets_total",
     "Count of artefacts snippets retrieved for context (by source)",
     ("source",),
 )
+
+WORKSPACE_ROOT = settings.workspace_dir
 
 
 def get_relevant_snippets(
@@ -90,7 +93,7 @@ def get_relevant_snippets(
     seen_shas = set()
     seen_previews = set()
     for res in deduplicated_results:
-        file_path = Path("workspace") / res.payload.get("file", "")
+        file_path = WORKSPACE_ROOT / res.payload.get("file", "")
         content = ""
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore")

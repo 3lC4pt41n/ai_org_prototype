@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     )
     redis_url: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
     default_budget: float = float(os.getenv("DEFAULT_BUDGET", "500.0"))
-    workspace_dir: Path = Path(
-        os.getenv("WORKSPACE_DIR", "/app/ai_org_backend/workspace")
-    ).expanduser().resolve()
+    workspace_dir: Path = Path(os.getenv("WORKSPACE_DIR", "/app/workspace")).resolve()
 
 
 @lru_cache()

@@ -70,6 +70,7 @@ services:
       - TENANT_NAME=Tim Mergenthaler
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +78,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-insight:
     build:
@@ -103,6 +106,7 @@ services:
       - TENANT_NAME=Tim Mergenthaler
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +114,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   celery-dev:
     build:
@@ -138,6 +144,7 @@ services:
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,6 +152,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - ../workspace:/app/workspace
 
   # ───────────── Application ───────────
   ai-app:
@@ -228,7 +237,7 @@ services:
       qdrant:
         condition: service_started
     volumes:
-       - ../workspace:/app/workspace
+      - ../workspace:/app/workspace
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
