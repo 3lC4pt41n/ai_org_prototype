@@ -15,6 +15,7 @@ from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Task, TaskDependency
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.services.test_exec import run_locust
+from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 
 RUNS = prom_counter("ai_performance_runs_total", "Performance agent executions")
@@ -29,6 +30,8 @@ class SmokeUser(HttpUser):
     def ping(self):
         self.client.get("/health")  # adjust to your health endpoint
 """
+
+WORKSPACE_ROOT = settings.workspace_dir
 
 
 @celery.task(name="agent.performance")
@@ -47,7 +50,7 @@ def performance_task(tenant_id: str, task_id: str) -> None:
     save_artefact(task_id, LOCUST_TMPL.encode("utf-8"), filename=locust_rel, allow_overwrite=True)
 
     rc, out, err = run_locust(
-        locustfile=f"workspace/{tenant_id}/{locust_rel}",
+        locustfile=str(WORKSPACE_ROOT / tenant_id / locust_rel),
         host=host,
         users=users,
         spawn_rate=spawn,

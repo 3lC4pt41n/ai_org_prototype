@@ -8,6 +8,8 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from .chat import ChatMessage, ChatMessageArtifact
 
+from ai_org_backend.settings import settings
+
 if TYPE_CHECKING:
     from .artifact_feedback import ArtifactFeedback
     from .task import Task
@@ -38,20 +40,22 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
         cls,
         task_id: str,
         abs_path: Path,
-        repo_root: Path = Path.cwd() / "workspace",
+        repo_root: Path | None = None,
     ) -> "Artifact":
         if not abs_path.exists():
             raise FileNotFoundError(f"Source file not found: {abs_path}")
 
-        repo_root.mkdir(exist_ok=True, parents=True)
-        tgt = repo_root / abs_path.name
+        repo_root_path = Path(repo_root) if repo_root is not None else settings.workspace_dir
+
+        repo_root_path.mkdir(exist_ok=True, parents=True)
+        tgt = repo_root_path / abs_path.name
 
         counter = 1
         original_tgt = tgt
         while tgt.exists():
             stem = original_tgt.stem
             suffix = original_tgt.suffix
-            tgt = repo_root / f"{stem}_{counter}{suffix}"
+            tgt = repo_root_path / f"{stem}_{counter}{suffix}"
             counter += 1
 
         tgt.write_bytes(abs_path.read_bytes())
@@ -59,7 +63,7 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
 
         return cls(
             task_id=task_id,
-            repo_path=str(tgt.relative_to(repo_root)),
+            repo_path=str(tgt.relative_to(repo_root_path)),
             media_type=_guess_media_type(tgt),
             size=tgt.stat().st_size,
             sha256=sha,

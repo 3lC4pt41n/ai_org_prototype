@@ -15,6 +15,7 @@ from ai_org_backend.models import Artifact, Purpose, Task  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
 from ai_org_backend.services.storage import save_artefact  # noqa: E402
+from ai_org_backend.settings import settings  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
 
 from .utils import load_template  # noqa: E402
@@ -23,6 +24,8 @@ REFACTOR_RUNS = prom_counter("ai_refactor_runs_total", "Refactor agent execution
 REFACTOR_LAT = prom_hist("ai_refactor_latency_seconds", "Refactor agent latency")
 
 REFACTOR_PROMPT_TMPL = load_template("refactor.j2")
+
+WORKSPACE_ROOT = settings.workspace_dir
 
 
 @celery.task(name="agent.refactor")
@@ -43,7 +46,7 @@ def refactor_task(tenant_id: str, task_id: str) -> None:
             continue
         if not re.search(r"\.(py|js|jsx|ts|tsx|java|html|css)$", path, re.IGNORECASE):
             continue
-        file_path = Path("workspace") / tenant_id / path
+        file_path = WORKSPACE_ROOT / tenant_id / path
         try:
             code = file_path.read_text(encoding="utf-8")
         except (FileNotFoundError, PermissionError, UnicodeDecodeError):
