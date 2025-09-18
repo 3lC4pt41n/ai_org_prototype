@@ -26,6 +26,8 @@ import type {
   ChatPanelRenderer,
   PhaseNavItem,
   PhaseViewContext,
+  PipelinePhaseDefaults,
+  PipelineTemplateSummary,
 } from '../components/pipeline/types';
 
 interface PhaseMeta {
@@ -39,6 +41,29 @@ interface PhaseMeta {
 }
 
 const PHASE_ORDER: PhaseId[] = PIPELINE_PHASES.map((phase) => phase.id);
+
+const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
+  vision: 'vision',
+  prd: 'prd',
+  architecture: 'architecture',
+  architecture_review: 'architecture_review',
+  implementation: 'implementation',
+};
+
+const MODEL_OPTIONS = [
+  { value: '', label: 'Standard übernehmen' },
+  { value: 'gpt-4', label: 'GPT-4' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  { value: 'claude-3-opus', label: 'Claude 3 Opus' },
+];
+
+const SCOPE_OPTIONS: { value: 'purpose' | 'tenant_default' | 'template'; label: string }[] = [
+  { value: 'purpose', label: 'Nur dieses Projekt' },
+  { value: 'tenant_default', label: 'Als Mandanten-Standard speichern' },
+  { value: 'template', label: 'Vorlage aktualisieren' },
+];
 
 export default function PipelineView() {
   const artifacts = usePipelineStore((s) => s.artifacts) as ArtifactItem[];
@@ -62,6 +87,24 @@ export default function PipelineView() {
   const [allowResearch, setAllowResearch] = useState<boolean | null>(null);
   const [updatingResearch, setUpdatingResearch] = useState(false);
   const [creatingPurpose, setCreatingPurpose] = useState(false);
+  const [templates, setTemplates] = useState<PipelineTemplateSummary[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [currentTemplate, setCurrentTemplate] = useState<PipelineTemplateSummary | null>(null);
+  const [loadingPipeline, setLoadingPipeline] = useState(false);
+  const [phaseScope, setPhaseScope] = useState<'purpose' | 'tenant_default' | 'template'>('purpose');
+  const [phaseModel, setPhaseModel] = useState('');
+  const [phaseTokens, setPhaseTokens] = useState('');
+  const [phasePrompt, setPhasePrompt] = useState('');
+  const [phaseSaving, setPhaseSaving] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+
+  const defaultTemplateId = useMemo(() => {
+    if (!templates.length) return null;
+    const tenantDefault = templates.find((tpl) => tpl.is_default && tpl.tenant_id);
+    if (tenantDefault) return tenantDefault.id;
+    const globalDefault = templates.find((tpl) => tpl.is_default);
+    return (globalDefault ?? templates[0]).id;
+  }, [templates]);
 
   useEffect(() => {
     fetchPurposes();
@@ -85,6 +128,28 @@ export default function PipelineView() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    setTemplatesLoading(true);
+    getJson<PipelineTemplateSummary[]>('/pipeline/templates')
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data) ? data : [];
+        setTemplates(list);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTemplates([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setTemplatesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedPurposeId && purposes.length > 0) {
       setSelectedPurpose(purposes[0].id);
     }
@@ -99,6 +164,33 @@ export default function PipelineView() {
     fetchGraphAndStatus(selectedPurposeId, signal);
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
+
+  useEffect(() => {
+    if (!selectedPurposeId) {
+      setCurrentTemplate(null);
+      return;
+    }
+    let active = true;
+    setLoadingPipeline(true);
+    getJson<{ template: PipelineTemplateSummary }>(
+      `/purposes/${selectedPurposeId}/pipeline`,
+    )
+      .then((data) => {
+        if (!active) return;
+        setCurrentTemplate(data?.template ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCurrentTemplate(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoadingPipeline(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedPurposeId]);
 
   const toggleResearch = useCallback(async () => {
     if (allowResearch == null || updatingResearch) return;
@@ -118,13 +210,17 @@ export default function PipelineView() {
   }, [allowResearch, updatingResearch]);
 
   const handleCreatePurpose = useCallback(
-    async (purposeName: string) => {
+    async (purposeName: string, templateId?: string) => {
       const trimmed = purposeName.trim();
       if (!trimmed) return false;
       setCreatingPurpose(true);
       const toastId = toast.loading('Projektziel wird angelegt …');
       try {
-        const res = await postJson<{ purpose_id: string }>('/purposes', { purpose: trimmed });
+        const payload: Record<string, unknown> = { purpose: trimmed };
+        if (templateId) {
+          payload.pipeline_template_id = templateId;
+        }
+        const res = await postJson<{ purpose_id: string }>('/purposes', payload);
         const newPurposeId = res?.purpose_id;
         if (newPurposeId) {
           setSelectedPurpose(newPurposeId);
@@ -135,6 +231,14 @@ export default function PipelineView() {
         }
         await fetchArtifacts();
         await fetchBacklog();
+        if (!templatesLoading) {
+          getJson<PipelineTemplateSummary[]>('/pipeline/templates')
+            .then((data) => {
+              const list = Array.isArray(data) ? data : [];
+              setTemplates(list);
+            })
+            .catch(() => setTemplates([]));
+        }
         toast.success('Projektziel erstellt.', { id: toastId });
         return true;
       } catch {
@@ -144,8 +248,66 @@ export default function PipelineView() {
         setCreatingPurpose(false);
       }
     },
-    [fetchArtifacts, fetchBacklog, fetchGraphAndStatus, fetchPurposes, setSelectedPurpose],
+    [
+      fetchArtifacts,
+      fetchBacklog,
+      fetchGraphAndStatus,
+      fetchPurposes,
+      setSelectedPurpose,
+      templatesLoading,
+    ],
   );
+
+  const handlePhaseSettingsSave = useCallback(async () => {
+    if (!selectedPurposeId || !currentPhaseDefaults) return;
+    const baseTokens = currentPhaseDefaults.tokens_plan_default ?? 0;
+    const parsedTokens = phaseTokens.trim() === '' ? baseTokens : Number(phaseTokens);
+    const tokensValue = Number.isFinite(parsedTokens)
+      ? Math.max(0, Math.trunc(parsedTokens))
+      : baseTokens;
+
+    const payload: Record<string, unknown> = {
+      purpose_id: selectedPurposeId,
+      scope: phaseScope,
+      tokens_plan_default: tokensValue,
+      model_name: phaseModel || null,
+      prompt_template: phasePrompt?.trim() ? phasePrompt : null,
+    };
+
+    setPhaseSaving(true);
+    const toastId = toast.loading('Phase wird aktualisiert …');
+    try {
+      const res = await postJson<{ template: PipelineTemplateSummary }>(
+        `/pipeline/phases/${currentPhaseDefaults.id}`,
+        payload,
+      );
+      if (res?.template) {
+        setCurrentTemplate(res.template);
+      }
+      await fetchGraphAndStatus(selectedPurposeId);
+      await fetchBacklog();
+      getJson<PipelineTemplateSummary[]>('/pipeline/templates')
+        .then((data) => {
+          const list = Array.isArray(data) ? data : [];
+          setTemplates(list);
+        })
+        .catch(() => setTemplates([]));
+      toast.success('Phase aktualisiert.', { id: toastId });
+    } catch {
+      toast.error('Phase konnte nicht aktualisiert werden.', { id: toastId });
+    } finally {
+      setPhaseSaving(false);
+    }
+  }, [
+    currentPhaseDefaults,
+    fetchBacklog,
+    fetchGraphAndStatus,
+    phaseModel,
+    phasePrompt,
+    phaseScope,
+    phaseTokens,
+    selectedPurposeId,
+  ]);
 
   const visionArtifacts = artifacts.filter((a) =>
     a.repo_path?.toLowerCase().includes('vision/'),
@@ -417,6 +579,49 @@ export default function PipelineView() {
 
   const currentPhaseMeta = phases.find((phase) => phase.id === currentPhase) ?? phases[0];
 
+  const currentPhaseSlug = currentPhase ? PHASE_TO_TEMPLATE_SLUG[currentPhase] ?? null : null;
+  const currentPhaseDefaults = useMemo<PipelinePhaseDefaults | null>(() => {
+    if (!currentTemplate || !currentPhaseSlug) return null;
+    return (
+      currentTemplate.phases.find((phase) => phase.slug === currentPhaseSlug) ?? null
+    );
+  }, [currentTemplate, currentPhaseSlug]);
+
+  useEffect(() => {
+    if (!currentPhaseDefaults) {
+      setPhaseModel('');
+      setPhaseTokens('');
+      setPhasePrompt('');
+      return;
+    }
+    setPhaseModel(currentPhaseDefaults.model_name ?? '');
+    setPhaseTokens(
+      currentPhaseDefaults.tokens_plan_default != null
+        ? String(currentPhaseDefaults.tokens_plan_default)
+        : '',
+    );
+    setPhasePrompt(currentPhaseDefaults.prompt_template ?? '');
+    setPhaseScope('purpose');
+    setPromptExpanded(false);
+  }, [currentPhaseDefaults]);
+
+  const baseTokens = currentPhaseDefaults?.tokens_plan_default ?? 0;
+  const parsedTokens = phaseTokens.trim() === '' ? baseTokens : Number(phaseTokens);
+  const normalizedTokens = Number.isFinite(parsedTokens)
+    ? Math.max(0, Math.trunc(parsedTokens))
+    : baseTokens;
+  const hasPhaseChanges = Boolean(
+    currentPhaseDefaults &&
+      ((phaseModel || '') !== (currentPhaseDefaults.model_name ?? '') ||
+        normalizedTokens !== baseTokens ||
+        (phasePrompt || '').trim() !== (currentPhaseDefaults.prompt_template ?? '').trim()),
+  );
+  const canSavePhase = Boolean(
+    currentPhaseDefaults &&
+      !phaseSaving &&
+      (hasPhaseChanges || phaseScope !== 'purpose'),
+  );
+
   const getPhaseStatusLabel = (phase: PhaseMeta) => {
     if (phase.completed) return 'Abgeschlossen';
     if (phase.isCurrent) return 'Aktive Phase';
@@ -524,6 +729,8 @@ export default function PipelineView() {
     renderChatPanel,
     onCreatePurpose: handleCreatePurpose,
     creatingPurpose,
+    templates,
+    defaultTemplateId,
     visionArtifact,
     visionAwaitingApproval,
     visionStatusIcon,
@@ -687,6 +894,110 @@ export default function PipelineView() {
         </div>
 
         <aside className="w-80 flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 overflow-y-auto">
+          <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Phase-Einstellungen
+              </h2>
+              {currentTemplate && (
+                <span className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  {currentTemplate.name}
+                </span>
+              )}
+            </div>
+            {!selectedPurposeId ? (
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                Wähle ein Projektziel aus, um Einstellungen anzupassen.
+              </p>
+            ) : loadingPipeline ? (
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Lade Phase …</p>
+            ) : !currentPhaseDefaults ? (
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                Für diese Phase stehen derzeit keine konfigurierbaren Einstellungen zur Verfügung.
+              </p>
+            ) : (
+              <form className="mt-3 space-y-3" onSubmit={(event) => event.preventDefault()}>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500" htmlFor="phase-model-select">
+                    Modell
+                  </label>
+                  <select
+                    id="phase-model-select"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    value={phaseModel}
+                    onChange={(event) => setPhaseModel(event.target.value)}
+                    disabled={phaseSaving}
+                  >
+                    {MODEL_OPTIONS.map((option) => (
+                      <option key={option.value || 'default'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500" htmlFor="phase-token-input">
+                    Token-Limit
+                  </label>
+                  <input
+                    id="phase-token-input"
+                    type="number"
+                    min={0}
+                    step={100}
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    value={phaseTokens}
+                    onChange={(event) => setPhaseTokens(event.target.value)}
+                    disabled={phaseSaving}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setPromptExpanded((prev) => !prev)}
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-500"
+                  >
+                    {promptExpanded ? 'Prompt verbergen' : 'Prompt anzeigen & bearbeiten'}
+                  </button>
+                  {promptExpanded && (
+                    <textarea
+                      className="h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-mono shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      value={phasePrompt}
+                      onChange={(event) => setPhasePrompt(event.target.value)}
+                      placeholder="Jinja-Template einfügen oder anpassen"
+                      disabled={phaseSaving}
+                    />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500" htmlFor="phase-scope-select">
+                    Änderungen anwenden auf
+                  </label>
+                  <select
+                    id="phase-scope-select"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    value={phaseScope}
+                    onChange={(event) => setPhaseScope(event.target.value as typeof phaseScope)}
+                    disabled={phaseSaving}
+                  >
+                    {SCOPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePhaseSettingsSave}
+                  disabled={!canSavePhase}
+                  className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:text-slate-200"
+                >
+                  {phaseSaving ? 'Speichere …' : 'Einstellungen speichern'}
+                </button>
+              </form>
+            )}
+          </section>
+
           {phaseSidebarContent && <div className="mb-6">{phaseSidebarContent}</div>}
 
           <h2 className="flex items-center gap-2 text-lg mb-2 text-slate-700 dark:text-slate-200">

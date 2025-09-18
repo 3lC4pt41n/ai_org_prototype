@@ -1,5 +1,5 @@
-import { FormEvent, useState } from 'react';
-import type { PhaseViewContext } from '../types';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { PhaseViewContext, PipelineTemplateSummary } from '../types';
 
 export function PurposePhaseContent({
   purposes,
@@ -7,9 +7,34 @@ export function PurposePhaseContent({
   selectedPurposeId,
   onCreatePurpose,
   creatingPurpose,
+  templates = [],
+  defaultTemplateId,
 }: PhaseViewContext) {
   const [newPurposeName, setNewPurposeName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
+  const templateOptions = useMemo(() => {
+    const list = Array.isArray(templates) ? templates : [];
+    return [...list].sort((a, b) => a.name.localeCompare(b.name));
+  }, [templates]);
+
+  useEffect(() => {
+    if (!templateOptions.length) {
+      setSelectedTemplateId('');
+      return;
+    }
+    const preferred =
+      defaultTemplateId && templateOptions.some((tpl) => tpl.id === defaultTemplateId)
+        ? defaultTemplateId
+        : templateOptions[0].id;
+    setSelectedTemplateId(preferred);
+  }, [defaultTemplateId, templateOptions]);
+
+  const selectedTemplate: PipelineTemplateSummary | undefined = useMemo(
+    () => templateOptions.find((tpl) => tpl.id === selectedTemplateId),
+    [selectedTemplateId, templateOptions],
+  );
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -19,7 +44,7 @@ export function PurposePhaseContent({
     }
     setSubmitting(true);
     try {
-      const ok = await onCreatePurpose(value);
+      const ok = await onCreatePurpose(value, selectedTemplateId || undefined);
       if (ok) {
         setNewPurposeName('');
       }
@@ -78,7 +103,7 @@ export function PurposePhaseContent({
         )}
         <form
           onSubmit={handleCreate}
-          className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/40"
+          className="mt-4 flex flex-col gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/40"
         >
           <label
             htmlFor="pipeline-new-purpose"
@@ -86,6 +111,33 @@ export function PurposePhaseContent({
           >
             Neues Projektziel anlegen
           </label>
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="pipeline-template-select"
+              className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
+            >
+              Pipeline-Vorlage
+            </label>
+            <select
+              id="pipeline-template-select"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              value={selectedTemplateId}
+              onChange={(event) => setSelectedTemplateId(event.target.value)}
+              disabled={isBusy || templateOptions.length === 0}
+            >
+              {templateOptions.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name}
+                  {tpl.is_default ? ' • Standard' : ''}
+                </option>
+              ))}
+            </select>
+            {selectedTemplate?.description && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {selectedTemplate.description}
+              </p>
+            )}
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               id="pipeline-new-purpose"
@@ -105,7 +157,7 @@ export function PurposePhaseContent({
             </button>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Das neue Projektziel startet automatisch mit der Vision-Phase.
+            Das neue Projektziel startet automatisch mit der Vision-Phase der gewählten Vorlage.
           </p>
         </form>
       </section>
