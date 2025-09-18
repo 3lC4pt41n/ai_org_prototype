@@ -179,67 +179,6 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         )
         Repo(tenant_id).update(blueprint_task_id, owner="Architect", notes="Blueprint completed")
 
-    with Session(engine) as db_session:
-        review_task = db_session.exec(
-            select(Task).where(
-                Task.purpose_id == purpose_id,
-                func.lower(Task.description) == "architecture & domain review",
-            )
-        ).first()
-        if not review_task:
-            review_task = Task(
-                tenant_id=tenant_id,
-                purpose_id=purpose_id,
-                description="Architecture & Domain Review",
-                business_value=0.0,
-                tokens_plan=0,
-                purpose_relevance=1.0,
-                status="todo",
-                owner="Review",
-                notes="awaiting_approval",
-            )
-            db_session.add(review_task)
-            db_session.commit()
-            db_session.refresh(review_task)
-        edge_exists = db_session.exec(
-            select(TaskDependency).where(
-                TaskDependency.from_id == blueprint_task_id,
-                TaskDependency.to_id == review_task.id,
-            )
-        ).first()
-        if not edge_exists:
-            db_session.add(
-                TaskDependency(
-                    from_id=blueprint_task_id,
-                    to_id=review_task.id,
-                    dependency_type="FINISH_START",
-                )
-            )
-        tasks = db_session.exec(select(Task).where(Task.purpose_id == purpose_id)).all()
-        for t in tasks:
-            desc_val = (t.description or "").strip().lower()
-            if t.id in (blueprint_task_id, review_task.id) or desc_val in [
-                "product requirements document",
-                "architecture blueprint",
-                "architecture & domain review",
-            ]:
-                continue
-            exists = db_session.exec(
-                select(TaskDependency).where(
-                    TaskDependency.from_id == review_task.id,
-                    TaskDependency.to_id == t.id,
-                )
-            ).first()
-            if not exists:
-                db_session.add(
-                    TaskDependency(
-                        from_id=review_task.id,
-                        to_id=t.id,
-                        dependency_type="FINISH_START",
-                    )
-                )
-        db_session.commit()
-
     # Mark PRD artifact as released (safety check)
     with Session(engine) as db_session:
         prd_task = db_session.exec(
