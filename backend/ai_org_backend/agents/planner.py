@@ -65,6 +65,11 @@ def run_planner(blueprint: str, tenant_id: str | None = None) -> list[dict]:
     tasks: list[dict] = []
     model = "o3"
     for attempt in range(MAX_AGENT_RETRIES + 1):
+        logging.info(
+            "[Planner] Generating plan (attempt %d) for tenant=%s",
+            attempt + 1,
+            tenant_id,
+        )
         start = time.time()
         try:
             resp = chat(
@@ -76,6 +81,7 @@ def run_planner(blueprint: str, tenant_id: str | None = None) -> list[dict]:
         finally:
             PLANNER_LATENCY.observe(time.time() - start)
         plan_text = resp.choices[0].message.content
+        logging.debug("[Planner] Raw plan text:\n%s", plan_text[:500])
 
         data = None
         try:
