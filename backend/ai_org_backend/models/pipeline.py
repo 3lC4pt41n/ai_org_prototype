@@ -42,6 +42,7 @@ class PipelinePhase(SQLModel, table=True):  # type: ignore[call-arg]
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
     pipeline_template_id: str = Field(foreign_key="pipeline_template.id", nullable=False)
     name: str = Field(nullable=False, max_length=255)
+    slug: str = Field(nullable=False, max_length=64, index=True)
     position: int = Field(default=0, ge=0)
     predecessor_id: Optional[str] = Field(
         default=None, foreign_key="pipeline_phase.id", nullable=True

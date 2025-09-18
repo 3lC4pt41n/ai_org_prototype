@@ -13,6 +13,30 @@ export interface ArtifactItem {
   task_desc?: string;
 }
 
+export interface PipelinePhaseDefaults {
+  id: string;
+  slug: string;
+  name: string;
+  position: number;
+  predecessor_id?: string | null;
+  agent_role?: string | null;
+  prompt_template?: string | null;
+  model_name?: string | null;
+  tokens_plan_default?: number;
+  business_value_default?: number;
+  purpose_relevance_default?: number;
+  requires_approval?: boolean;
+}
+
+export interface PipelineTemplateSummary {
+  id: string;
+  name: string;
+  description?: string | null;
+  tenant_id?: string | null;
+  is_default?: boolean;
+  phases: PipelinePhaseDefaults[];
+}
+
 export interface PurposeSummary {
   id: string;
   name: string;
@@ -58,8 +82,10 @@ export interface PhaseViewContext {
   selectedPurpose: PurposeSummary | null;
   selectedPurposeId: string | null;
   renderChatPanel: ChatPanelRenderer;
-  onCreatePurpose?: (name: string) => Promise<boolean>;
+  onCreatePurpose?: (name: string, templateId?: string) => Promise<boolean>;
   creatingPurpose?: boolean;
+  templates?: PipelineTemplateSummary[];
+  defaultTemplateId?: string | null;
   visionArtifact?: ArtifactItem;
   visionAwaitingApproval: boolean;
   visionStatusIcon: ReactNode;
