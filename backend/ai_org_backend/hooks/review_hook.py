@@ -25,6 +25,13 @@ from ai_org_backend.services import storage as _storage
 _orig_save_artefact = _storage.save_artefact
 
 
+_SKIP_REVIEW_DEPENDENCY = {
+    "product requirements document",
+    "architecture blueprint",
+    "architecture & domain review",
+}
+
+
 def _ensure_review_task(tenant_id: str, purpose_id: str) -> Task:
     """
     Return existing or create a new "Architecture & Domain Review" task.
@@ -76,7 +83,13 @@ def _wire_dependencies_after_blueprint(
             )
         ).first()
         if edge is None:
-            s.add(TaskDependency(from_id=blueprint_task_id, to_id=review_task_id))
+            s.add(
+                TaskDependency(
+                    from_id=blueprint_task_id,
+                    to_id=review_task_id,
+                    dependency_type="FINISH_START",
+                )
+            )
             s.commit()
 
         # Edge(s): review -> all other tasks (repo init + dev + anything else)
@@ -86,6 +99,9 @@ def _wire_dependencies_after_blueprint(
         for t in other_tasks:
             if t.id in (blueprint_task_id, review_task_id):
                 continue
+            desc = (t.description or "").strip().lower()
+            if desc in _SKIP_REVIEW_DEPENDENCY:
+                continue
             # Skip if edge already exists
             exists = s.exec(
                 select(TaskDependency.id).where(
@@ -94,7 +110,13 @@ def _wire_dependencies_after_blueprint(
                 )
             ).first()
             if exists is None:
-                s.add(TaskDependency(from_id=review_task_id, to_id=t.id))
+                s.add(
+                    TaskDependency(
+                        from_id=review_task_id,
+                        to_id=t.id,
+                        dependency_type="FINISH_START",
+                    )
+                )
         s.commit()
 
 
