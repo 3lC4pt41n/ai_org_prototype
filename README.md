@@ -22,7 +22,7 @@ Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware
 ## 📁 1 | Architektur & Code-Struktur
 
 - **Backend API (FastAPI)** – Kernanwendung auf Port 8000, bietet REST-Endpunkte (z. B. Tasks anlegen, Backlog einsehen) und orchestriert die LLM-Agenten. In Docker-Umgebungen läuft Uvicorn standardmäßig auf Port 8000.
-- **Celery Workers** – Asynchrone Worker-Prozesse (Queues für verschiedene Rollen wie *dev*, *qa*, *ux_ui* etc.), die Aufgaben aus Redis-Queues ziehen und z. B. LLM-APIs aufrufen. (Optional Celery Beat für periodische Aufgaben.)
+- **Celery Workers** – Asynchrone Worker-Prozesse (eigene Queues für verschiedene Agenten-Rollen wie *dev*, *qa*, *ux_ui*, *planner* etc.), die Aufgaben aus Redis-Queues ziehen und z. B. LLM-APIs aufrufen. (Optional Celery Beat für periodische Aufgaben.)
 - **Orchestrator (Scheduler)** – Separater Prozess für Ablaufsteuerung. Überwacht den Task-Graphen (Neo4j) und startet neue Tasks, sobald deren Abhängigkeiten erfüllt sind. Führt beim Start einmalig ausstehende DB-Migrationen aus und plant Aufgaben kontinuierlich im Hintergrund.
 - **PostgreSQL (Datenbank)** – Speichert persistente Daten (Tenants, Purposes, Tasks, Artifacts, Feedback). Läuft im Container auf Port 5432 (Default-Creds: *postgres/ai*, DB *ai_org*).
 - **Neo4j (Graph-DB)** – Speichert den Pipeline-Graphen (Tasks und Abhängigkeiten) und Artefakt-Beziehungen. Läuft auf *bolt://localhost:7687* (Browser-UI auf Port 7474, Default-Login *neo4j/s3cr3tP@ss*).
@@ -68,7 +68,7 @@ API["Backend API (FastAPI)"]
 
 ORCH["Orchestrator\nScheduler"]
 
-CELERY["Celery Workers\n(Queues: dev/qa/ux_ui/telemetry/architect)"]
+CELERY["Celery Workers\n(Queues: dev/qa/ux_ui/telemetry/architect/planner)"]
 
 end
 
@@ -163,7 +163,7 @@ Das Compose-Setup nutzt folgende benannte Volumes und Verzeichnisse für persist
   - `.env` prüfen (insb. Datenbank-, Redis-, Neo4j-, Qdrant-URLs und Credentials)
 - **Celery verarbeitet keine Tasks:**
   - Läuft Redis? (`docker compose ps` bzw. `docker compose -f ops/persistent.yml ps` prüfen)
-  - Worker-Logs ansehen: `docker compose -f ops/persistent.yml logs -f celery-dev`
+  - Worker-Logs ansehen: `docker compose -f ops/persistent.yml logs -f celery-dev` (bzw. `-f celery-planner` für den Planner-Worker)
 - **Neo4j Login fehlgeschlagen:**
   - Verwende Benutzer/Passwort aus `.env` (Default: neo4j / s3cr3tP@ss)
   - Ggf. Neo4j-Container neu starten, falls das Default-Passwort nicht übernommen wurde
