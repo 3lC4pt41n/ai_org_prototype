@@ -24,6 +24,8 @@ export default function AdminDashboard() {
   const [requirements, setRequirements] = useState("");
   const [blueprint, setBlueprint] = useState("");
   const [counts, setCounts] = useState({ planned: 0, running: 0, done: 0 });
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const navigate = useNavigate();
   const [lastCount, setLastCount] = useState(0);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
@@ -61,6 +63,24 @@ export default function AdminDashboard() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getJson("/pipeline/templates")
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setTemplates(data);
+          const defaultTemplate = data.find((tpl: any) => tpl.is_default) || data[0];
+          setSelectedTemplateId(defaultTemplate?.id ?? "");
+        } else {
+          setTemplates([]);
+          setSelectedTemplateId("");
+        }
+      })
+      .catch(() => {
+        setTemplates([]);
+        setSelectedTemplateId("");
+      });
   }, []);
 
   // Polling data for selected purpose
@@ -216,7 +236,11 @@ export default function AdminDashboard() {
 
   async function handleCreatePurpose() {
     try {
-      const res = await postJson("/purposes", { purpose: purposeName });
+      const payload: Record<string, unknown> = { purpose: purposeName };
+      if (selectedTemplateId) {
+        payload.pipeline_template_id = selectedTemplateId;
+      }
+      const res = await postJson("/purposes", payload);
       setCurrentPurposeId(res.purpose_id);
       setRequirements(res.requirements);
       setBlueprint(res.blueprint);
@@ -273,6 +297,18 @@ export default function AdminDashboard() {
           placeholder="Neues Projektziel"
           className="border p-2 rounded"
         />
+        <select
+          value={selectedTemplateId}
+          onChange={(e) => setSelectedTemplateId(e.target.value)}
+          className="border p-2 rounded"
+        >
+          {templates.length === 0 && <option value="">Standard</option>}
+          {templates.map((tpl) => (
+            <option key={tpl.id} value={tpl.id}>
+              {tpl.name}
+            </option>
+          ))}
+        </select>
         <button
           onClick={handleCreatePurpose}
           className="px-3 py-2 bg-emerald-600 text-white rounded"

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Dict, Iterable, Mapping, MutableMapping, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import or_, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.exc import DetachedInstanceError
 from sqlmodel import Session, select
@@ -22,6 +23,7 @@ DEFAULT_TEMPLATE_DESCRIPTION = (
 )
 DEFAULT_PHASES: list[dict[str, object]] = [
     {
+        "slug": "vision",
         "name": "Vision Document",
         "prompt_template": "vision.j2",
         "model_name": "gpt-4",
@@ -30,22 +32,27 @@ DEFAULT_PHASES: list[dict[str, object]] = [
         "purpose_relevance_default": 1.0,
     },
     {
+        "slug": "prd",
         "name": "Product Requirements Document",
         "prompt_template": "requirements.j2",
         "model_name": "gpt-4",
         "tokens_plan_default": 3500,
         "business_value_default": 1.0,
         "purpose_relevance_default": 1.0,
+        "depends_on": "vision",
     },
     {
+        "slug": "architecture",
         "name": "Architecture Blueprint",
         "prompt_template": "architect.j2",
         "model_name": "gpt-4",
         "tokens_plan_default": 4000,
         "business_value_default": 1.0,
         "purpose_relevance_default": 1.0,
+        "depends_on": "prd",
     },
     {
+        "slug": "architecture_review",
         "name": "Architecture & Domain Review",
         "agent_role": "reviewer",
         "prompt_template": "review.j2",
@@ -54,8 +61,10 @@ DEFAULT_PHASES: list[dict[str, object]] = [
         "business_value_default": 1.0,
         "purpose_relevance_default": 1.0,
         "requires_approval": True,
+        "depends_on": "architecture",
     },
     {
+        "slug": "implementation",
         "name": "Implementation Plan",
         "agent_role": "planner",
         "prompt_template": "planner.j2",
@@ -63,8 +72,61 @@ DEFAULT_PHASES: list[dict[str, object]] = [
         "tokens_plan_default": 3000,
         "business_value_default": 1.0,
         "purpose_relevance_default": 1.0,
+        "depends_on": "architecture_review",
     },
 ]
+
+
+def _slugify(value: str) -> str:
+    """Convert a human readable phase name into a slug identifier."""
+
+    value = value.lower().replace("&", " and ")
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value or "phase"
+
+
+def _phase_to_dict(phase: PipelinePhase) -> dict[str, object]:
+    return {
+        "id": phase.id,
+        "name": phase.name,
+        "slug": getattr(phase, "slug", None),
+        "position": phase.position,
+        "predecessor_id": phase.predecessor_id,
+        "agent_role": phase.agent_role,
+        "prompt_template": phase.prompt_template,
+        "model_name": phase.model_name,
+        "tokens_plan_default": phase.tokens_plan_default,
+        "business_value_default": phase.business_value_default,
+        "purpose_relevance_default": phase.purpose_relevance_default,
+        "requires_approval": phase.requires_approval,
+        "created_at": phase.created_at.isoformat() if phase.created_at else None,
+        "updated_at": phase.updated_at.isoformat() if phase.updated_at else None,
+    }
+
+
+def template_to_dict(template: PipelineTemplate) -> dict[str, object]:
+    """Serialize a template with its phases into primitive types for JSON."""
+
+    try:
+        phases = list(template.phases)  # type: ignore[attr-defined]
+    except DetachedInstanceError:
+        phases = []
+
+    phases_sorted = sorted(
+        phases,
+        key=lambda phase: (phase.position, phase.created_at or datetime.min),
+    )
+    return {
+        "id": template.id,
+        "name": template.name,
+        "description": template.description,
+        "tenant_id": template.tenant_id,
+        "is_default": template.is_default,
+        "created_at": template.created_at.isoformat() if template.created_at else None,
+        "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+        "phases": [_phase_to_dict(phase) for phase in phases_sorted],
+    }
 
 
 def _safe_task_id(task: Optional[Task]) -> Optional[str]:
@@ -94,6 +156,15 @@ def _ensure_default_template(session: Session) -> PipelineTemplate:
     ).first()
 
     if template and template.phases:
+        needs_slug_update = False
+        for phase in template.phases:
+            if not getattr(phase, "slug", None):
+                phase.slug = _slugify(phase.name)
+                needs_slug_update = True
+        if needs_slug_update:
+            session.add(template)
+            session.commit()
+            session.refresh(template)
         template.phases  # ensure relationship is loaded
         return template
 
@@ -108,11 +179,17 @@ def _ensure_default_template(session: Session) -> PipelineTemplate:
         session.flush()
 
     if not template.phases:
-        predecessor_id: Optional[str] = None
+        created: Dict[str, PipelinePhase] = {}
         for position, phase_def in enumerate(DEFAULT_PHASES, start=1):
+            slug = str(phase_def.get("slug") or _slugify(str(phase_def["name"])))
+            depends_on = str(phase_def.get("depends_on") or "") or None
+            predecessor_id = (
+                created[depends_on].id if depends_on and depends_on in created else None
+            )
             phase = PipelinePhase(
                 pipeline_template_id=template.id,
                 name=str(phase_def["name"]),
+                slug=slug,
                 position=position,
                 predecessor_id=predecessor_id,
                 agent_role=str(phase_def.get("agent_role", "") or "") or None,
@@ -130,12 +207,213 @@ def _ensure_default_template(session: Session) -> PipelineTemplate:
             )
             session.add(phase)
             session.flush()
-            predecessor_id = phase.id
+            created[slug] = phase
 
     session.commit()
     session.refresh(template)
     template.phases  # trigger load before leaving session scope
     return template
+
+
+def list_templates_for_tenant(session: Session, tenant_id: str) -> list[PipelineTemplate]:
+    """Return all templates visible for a tenant including the global default."""
+
+    _ensure_default_template(session)
+
+    templates = session.exec(
+        select(PipelineTemplate)
+        .options(selectinload(PipelineTemplate.phases))
+        .where(
+            or_(
+                PipelineTemplate.tenant_id == tenant_id,
+                PipelineTemplate.tenant_id.is_(None),
+            )
+        )
+        .order_by(
+            PipelineTemplate.tenant_id.is_(None).desc(),
+            PipelineTemplate.is_default.desc(),
+            PipelineTemplate.created_at,
+        )
+    ).all()
+    for template in templates:
+        template.phases  # eagerly load for callers outside of session scope
+    return templates
+
+
+def _load_template(session: Session, template_id: str) -> Optional[PipelineTemplate]:
+    if not template_id:
+        return None
+    template = session.exec(
+        select(PipelineTemplate)
+        .options(selectinload(PipelineTemplate.phases))
+        .where(PipelineTemplate.id == template_id)
+    ).first()
+    if template:
+        template.phases
+    return template
+
+
+def clone_template(
+    session: Session,
+    template: PipelineTemplate,
+    *,
+    tenant_id: Optional[str],
+    is_default: bool = False,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> PipelineTemplate:
+    """Duplicate a template including its phases."""
+
+    new_template = PipelineTemplate(
+        name=name or template.name,
+        description=description or template.description,
+        tenant_id=tenant_id,
+        is_default=is_default,
+    )
+    session.add(new_template)
+    session.flush()
+
+    try:
+        phases = list(template.phases)  # type: ignore[attr-defined]
+    except DetachedInstanceError:
+        phases = []
+
+    old_to_new: Dict[str, PipelinePhase] = {}
+    for position, old_phase in enumerate(
+        sorted(phases, key=lambda ph: (ph.position, ph.created_at or datetime.min)),
+        start=1,
+    ):
+        slug = getattr(old_phase, "slug", None) or _slugify(old_phase.name)
+        new_phase = PipelinePhase(
+            pipeline_template_id=new_template.id,
+            name=old_phase.name,
+            slug=slug,
+            position=position,
+            agent_role=old_phase.agent_role,
+            prompt_template=old_phase.prompt_template,
+            model_name=old_phase.model_name,
+            tokens_plan_default=old_phase.tokens_plan_default,
+            business_value_default=old_phase.business_value_default,
+            purpose_relevance_default=old_phase.purpose_relevance_default,
+            requires_approval=old_phase.requires_approval,
+        )
+        session.add(new_phase)
+        session.flush()
+        old_to_new[old_phase.id] = new_phase
+
+    for old_phase in phases:
+        if old_phase.predecessor_id and old_phase.predecessor_id in old_to_new:
+            cloned = old_to_new[old_phase.id]
+            cloned.predecessor_id = old_to_new[old_phase.predecessor_id].id
+            session.add(cloned)
+
+    session.flush()
+    return _load_template(session, new_template.id) or new_template
+
+
+def ensure_template_for_purpose(session: Session, purpose: Purpose) -> PipelineTemplate:
+    """Resolve and attach a template for the purpose if missing."""
+
+    template = _load_template(session, purpose.pipeline_template_id or "")
+    if template:
+        return template
+
+    template = resolve_pipeline_template(session, purpose.tenant_id, purpose.pipeline_template_id)
+    if not template:
+        template = _ensure_default_template(session)
+    if purpose.pipeline_template_id != template.id:
+        purpose.pipeline_template_id = template.id
+        session.add(purpose)
+        session.commit()
+        session.refresh(purpose)
+    return template
+
+
+def update_phase_configuration(
+    session: Session,
+    *,
+    purpose: Purpose,
+    phase_identifier: str,
+    updates: Mapping[str, object],
+    scope: str = "purpose",
+) -> PipelineTemplate:
+    """Apply configuration changes to a pipeline phase and return resulting template."""
+
+    template = ensure_template_for_purpose(session, purpose)
+    if not template:
+        raise ValueError("No pipeline template available")
+
+    try:
+        source_phase = next(
+            phase
+            for phase in template.phases  # type: ignore[attr-defined]
+            if phase.id == phase_identifier or getattr(phase, "slug", None) == phase_identifier
+        )
+    except (StopIteration, DetachedInstanceError):
+        raise ValueError("Requested pipeline phase not found")
+
+    phase_slug = getattr(source_phase, "slug", None) or _slugify(source_phase.name)
+
+    target_template = template
+    scope_normalized = (scope or "purpose").lower()
+
+    def _needs_clone(current_template: PipelineTemplate) -> bool:
+        if current_template.tenant_id is None:
+            return True
+        if scope_normalized == "purpose":
+            return True
+        if scope_normalized == "tenant_default" and not current_template.is_default:
+            return True
+        return False
+
+    if _needs_clone(template):
+        target_template = clone_template(
+            session,
+            template,
+            tenant_id=purpose.tenant_id,
+            is_default=scope_normalized == "tenant_default",
+        )
+        purpose.pipeline_template_id = target_template.id
+        session.add(purpose)
+        session.flush()
+    elif scope_normalized == "tenant_default":
+        # Ensure flag is set when updating an existing tenant template.
+        target_template.is_default = True
+        session.add(target_template)
+
+    if scope_normalized == "tenant_default":
+        session.execute(
+            update(PipelineTemplate)
+            .where(
+                PipelineTemplate.tenant_id == purpose.tenant_id,
+                PipelineTemplate.id != target_template.id,
+            )
+            .values(is_default=False)
+        )
+
+    target_phase = next(
+        phase
+        for phase in target_template.phases  # type: ignore[attr-defined]
+        if phase.id == phase_identifier or getattr(phase, "slug", None) == phase_slug
+    )
+
+    if "model_name" in updates:
+        target_phase.model_name = str(updates["model_name"] or "") or None
+    if "tokens_plan_default" in updates:
+        target_phase.tokens_plan_default = int(updates["tokens_plan_default"] or 0)
+    if "prompt_template" in updates:
+        target_phase.prompt_template = str(updates["prompt_template"] or "") or None
+    if "agent_role" in updates:
+        target_phase.agent_role = str(updates["agent_role"] or "") or None
+    if "requires_approval" in updates:
+        target_phase.requires_approval = bool(updates["requires_approval"])
+
+    target_phase.updated_at = datetime.utcnow()
+    session.add(target_phase)
+    session.commit()
+
+    refreshed = _load_template(session, target_template.id)
+    return refreshed or target_template
 
 
 def resolve_pipeline_template(
@@ -215,6 +493,10 @@ def instantiate_pipeline_for_purpose(
     desc_lookup: Dict[str, Task] = {
         (t.description or "").lower(): t for t in existing_tasks
     }
+    slug_lookup: Dict[str, Task] = {}
+    for task in existing_tasks:
+        if task.description:
+            slug_lookup[_slugify(task.description)] = task
 
     created: list[Task] = []
     template_id: Optional[str] = None
@@ -252,8 +534,17 @@ def instantiate_pipeline_for_purpose(
     )
 
     for phase in sorted_phases:
-        task = tasks_by_phase.get(phase.id) or desc_lookup.get(phase.name.lower())
-        override = overrides.get(phase.id) or overrides.get(phase.name)
+        phase_slug = getattr(phase, "slug", None) or _slugify(phase.name)
+        task = (
+            tasks_by_phase.get(phase.id)
+            or desc_lookup.get(phase.name.lower())
+            or slug_lookup.get(phase_slug)
+        )
+        override = (
+            overrides.get(phase.id)
+            or overrides.get(phase_slug)
+            or overrides.get(phase.name)
+        )
 
         desired_tokens = int(
             override.get("tokens_plan", phase.tokens_plan_default)
@@ -310,6 +601,8 @@ def instantiate_pipeline_for_purpose(
                 if task_id:
                     task = repo.update(task_id, **update_fields)
             tasks_by_phase[phase.id] = task
+            if phase_slug and task:
+                slug_lookup[phase_slug] = task
             continue
 
         depends: Iterable[str] | None = None
@@ -333,6 +626,8 @@ def instantiate_pipeline_for_purpose(
             requires_approval=desired_requires_approval,
         )
         tasks_by_phase[phase.id] = task
+        if phase_slug:
+            slug_lookup[phase_slug] = task
         created.append(task)
 
     return created
