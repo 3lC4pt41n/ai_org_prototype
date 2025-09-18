@@ -93,36 +93,46 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             )
         ).first()
 
-    # Decide whether to run Architect or Planner
-    if blueprint_task and blueprint_task.status == TaskStatus.DONE:
-        if review_task and review_task.status == TaskStatus.DONE:
-            # Dispatch Planner agent asynchronously to generate follow-up tasks
-            if pool.get(f"plan_pending:{tenant_id}:{purpose_id}"):
-                logging.info(
-                    "[Orchestrator] Planner already triggered for purpose %s – skipping duplicate",
-                    purpose_id,
-                )
-                return
-
-            pool.set(f"plan_pending:{tenant_id}:{purpose_id}", "1", ex=300)
-            try:
-                celery.send_task(
-                    "agent.planner",
-                    args=[tenant_id, purpose_id],
-                    queue=f"{tenant_id}:planner",
-                )
-                logging.info("[Orchestrator] Planner agent dispatched for purpose %s", purpose_id)
-            except Exception as e:
-                msg = f"Orchestrator: Failed to dispatch planner for purpose {purpose_id}: {e}"
-                alert(msg, "error")
-                logging.error(msg)
-            return
-        else:
+    # Decide whether to run Planner (nur wenn Review freigegeben ist)
+    if (
+        blueprint_task
+        and blueprint_task.status == TaskStatus.DONE
+        and review_task
+        and review_task.status == TaskStatus.DONE
+    ):
+        logging.info(
+            "[Orchestrator] Review approved for purpose %s – triggering Planner...",
+            purpose_id,
+        )
+        # Dispatch Planner agent asynchronously to generate follow-up tasks
+        if pool.get(f"plan_pending:{tenant_id}:{purpose_id}"):
             logging.info(
-                "[Orchestrator] Review not yet approved for purpose %s – planning deferred",
+                "[Orchestrator] Planner already triggered for purpose %s – skipping duplicate",
                 purpose_id,
             )
             return
+
+        pool.set(f"plan_pending:{tenant_id}:{purpose_id}", "1", ex=300)
+        try:
+            celery.send_task(
+                "agent.planner",
+                args=[tenant_id, purpose_id],
+                queue=f"{tenant_id}:planner",
+            )
+            logging.info("[Orchestrator] Planner agent dispatched for purpose %s", purpose_id)
+        except Exception as e:
+            msg = f"Orchestrator: Failed to dispatch planner for purpose {purpose_id}: {e}"
+            alert(msg, "error")
+            logging.error(msg)
+        return
+    if blueprint_task and blueprint_task.status == TaskStatus.DONE:
+        logging.debug(
+            "[Orchestrator] Waiting: blueprint=%s review=%s for purpose %s",
+            blueprint_task.status if blueprint_task else None,
+            review_task.status if review_task else None,
+            purpose_id,
+        )
+        return
 
     # Run Architect to generate architecture blueprint and initial tasks
     try:
