@@ -55,6 +55,11 @@ class Repo:
                 tokens_plan=obj.tokens_plan,
                 tokens_actual=obj.tokens_actual,
                 purpose_relevance=obj.purpose_relevance,
+                agent_role=obj.agent_role,
+                model_name=obj.model_name,
+                prompt_template=obj.prompt_template,
+                requires_approval=obj.requires_approval,
+                pipeline_phase_id=obj.pipeline_phase_id,
             )
         except Exception as e:
             logging.error("Graph upsert failed during Task update: %s", e)
@@ -71,6 +76,11 @@ class Repo:
         purpose_relevance: float = 1.0,
         notes: str = "",
         depends_on: Optional[Iterable[str]] = None,
+        pipeline_phase_id: Optional[str] = None,
+        agent_role: Optional[str] = None,
+        model_name: Optional[str] = None,
+        prompt_template: Optional[str] = None,
+        requires_approval: Optional[bool] = None,
     ) -> Task:
         """
         Create a new Task and (optionally) dependencies to parent tasks.
@@ -85,6 +95,13 @@ class Repo:
                 tokens_plan=tokens_plan,
                 purpose_relevance=purpose_relevance,
                 notes=notes or "",
+                pipeline_phase_id=pipeline_phase_id,
+                agent_role=agent_role,
+                model_name=model_name,
+                prompt_template=prompt_template,
+                requires_approval=bool(requires_approval)
+                if requires_approval is not None
+                else False,
             )
             s.add(t)
             s.commit()
@@ -106,6 +123,11 @@ class Repo:
                 tokens_plan=t.tokens_plan,
                 tokens_actual=t.tokens_actual,
                 purpose_relevance=t.purpose_relevance,
+                agent_role=t.agent_role,
+                model_name=t.model_name,
+                prompt_template=t.prompt_template,
+                requires_approval=t.requires_approval,
+                pipeline_phase_id=t.pipeline_phase_id,
             )
             if depends_on:
                 for pid in depends_on:

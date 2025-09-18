@@ -17,6 +17,10 @@ from ai_org_backend.models.chat import ChatMessage, ChatRole
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
+from ai_org_backend.services.pipeline_templates import (
+    instantiate_pipeline_for_purpose,
+    resolve_pipeline_template,
+)
 from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_artefact, vector_store
 
 logger = logging.getLogger(__name__)
@@ -46,7 +50,9 @@ def _read_artifact_text(artifact: Artifact | None) -> str:
         return ""
 
 
-def _generate_vision_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | None]:
+def _generate_vision_artifact(
+    purpose: Purpose, existing_task: Task | None = None
+) -> tuple[Task, str, Artifact | None]:
     from ai_org_backend.agents.vision import run_vision
 
     tenant_id = purpose.tenant_id
@@ -57,19 +63,31 @@ def _generate_vision_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | N
     )
 
     with Session(engine) as session:
-        vision_task = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose.id,
-            description="Vision Document",
-            business_value=0.0,
-            tokens_plan=0,
-            purpose_relevance=1.0,
-        )
-        session.add(vision_task)
-        session.commit()
-        session.refresh(vision_task)
+        if existing_task:
+            vision_task = session.get(Task, existing_task.id) or existing_task
+        else:
+            vision_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose.id,
+                description="Vision Document",
+                business_value=0.0,
+                tokens_plan=0,
+                purpose_relevance=1.0,
+            )
+            session.add(vision_task)
+            session.commit()
+            session.refresh(vision_task)
 
     repo = Repo(tenant_id)
+    try:
+        vision_task = repo.update(
+            vision_task.id,
+            status="doing",
+            owner="VisionAgent",
+            notes="Vision in progress",
+        )
+    except Exception:
+        logger.exception("Failed to mark vision task %s as in progress", vision_task.id)
     vision_content = ""
     try:
         vision_content = run_vision(purpose)
@@ -177,7 +195,9 @@ def _generate_vision_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | N
     return vision_task, vision_content, artifact
 
 
-def _generate_prd_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | None]:
+def _generate_prd_artifact(
+    purpose: Purpose, existing_task: Task | None = None
+) -> tuple[Task, str, Artifact | None]:
     from ai_org_backend.agents.product_owner import run_requirements
 
     tenant_id = purpose.tenant_id
@@ -188,19 +208,31 @@ def _generate_prd_artifact(purpose: Purpose) -> tuple[Task, str, Artifact | None
     )
 
     with Session(engine) as session:
-        prd_task = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose.id,
-            description="Product Requirements Document",
-            business_value=0.0,
-            tokens_plan=0,
-            purpose_relevance=1.0,
-        )
-        session.add(prd_task)
-        session.commit()
-        session.refresh(prd_task)
+        if existing_task:
+            prd_task = session.get(Task, existing_task.id) or existing_task
+        else:
+            prd_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose.id,
+                description="Product Requirements Document",
+                business_value=0.0,
+                tokens_plan=0,
+                purpose_relevance=1.0,
+            )
+            session.add(prd_task)
+            session.commit()
+            session.refresh(prd_task)
 
     repo = Repo(tenant_id)
+    try:
+        prd_task = repo.update(
+            prd_task.id,
+            status="doing",
+            owner="ProductOwner",
+            notes="PRD in progress",
+        )
+    except Exception:
+        logger.exception("Failed to mark PRD task %s as in progress", prd_task.id)
     prd_content = ""
     try:
         prd_content = run_requirements(purpose)
@@ -439,14 +471,23 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     """Create a new purpose and seed initial tasks via LLM agents."""
     name = payload.get("purpose") or "Untitled"
     tenant_id = current_tenant.id
+    requested_template_id = payload.get("pipeline_template_id")
+    template = None
     with Session(engine) as session:
         purpose = session.exec(
             select(Purpose).where(Purpose.name == name, Purpose.tenant_id == tenant_id)
         ).first()
+        template_lookup = requested_template_id or (
+            purpose.pipeline_template_id if purpose else None
+        )
+        template = resolve_pipeline_template(session, tenant_id, template_lookup)
         if not purpose:
             purpose = Purpose(
-                name=name, tenant_id=tenant_id, mode=payload.get("mode", "manual")
-            )  # Set mode (default "manual")
+                name=name,
+                tenant_id=tenant_id,
+                mode=payload.get("mode", "manual"),
+                pipeline_template_id=template.id if template else None,
+            )
             session.add(purpose)
             session.commit()
             session.refresh(purpose)
@@ -455,6 +496,18 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             except Exception as e:
                 logger.error("Redis set failed: %s", e)
                 raise HTTPException(status_code=503, detail="Cache unavailable")
+        else:
+            updated = False
+            if template and purpose.pipeline_template_id != template.id:
+                purpose.pipeline_template_id = template.id
+                updated = True
+            if updated:
+                session.add(purpose)
+                session.commit()
+                session.refresh(purpose)
+
+    instantiate_pipeline_for_purpose(purpose, template)
+
     with Session(engine) as session:
         existing_tasks = session.exec(
             select(Task).where(Task.tenant_id == tenant_id, Task.purpose_id == purpose.id)
@@ -478,9 +531,15 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
 
     vision_content = ""
     if existing_vision:
-        logger.info("Purpose %s already has a Vision, skipping generation", purpose.id)
         vision_art = _latest_artifact_for_task(existing_vision.id)
-        vision_content = _read_artifact_text(vision_art)
+        if vision_art:
+            logger.info("Purpose %s already has a Vision artefact", purpose.id)
+            vision_content = _read_artifact_text(vision_art)
+        else:
+            try:
+                _, vision_content, _ = _generate_vision_artifact(purpose, existing_vision)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Vision generation failed: {exc}")
     else:
         try:
             _, vision_content, _ = _generate_vision_artifact(purpose)
@@ -489,14 +548,24 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
 
     prd_content = ""
     if existing_prd:
-        logger.info("Purpose %s already has a PRD, skipping creation", purpose.id)
         prd_art = _latest_artifact_for_task(existing_prd.id)
-        prd_content = _read_artifact_text(prd_art)
+        if prd_art:
+            logger.info("Purpose %s already has a PRD artefact", purpose.id)
+            prd_content = _read_artifact_text(prd_art)
+        elif purpose.mode == "auto":
+            try:
+                _, prd_content, _ = _generate_prd_artifact(purpose, existing_prd)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500, detail=f"Requirements gathering failed: {exc}"
+                )
     elif purpose.mode == "auto":
         try:
             _, prd_content, _ = _generate_prd_artifact(purpose)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Requirements gathering failed: {exc}")
+            raise HTTPException(
+                status_code=500, detail=f"Requirements gathering failed: {exc}"
+            )
 
     return {
         "purpose_id": purpose.id,

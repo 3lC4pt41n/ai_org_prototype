@@ -4,6 +4,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, create_engine
 
 load_dotenv()
@@ -24,7 +25,12 @@ try:
 except Exception as e:
     # Fallback to lightweight SQLite if the configured database is unreachable
     logging.error("Database unreachable, using in-memory SQLite: %s", e)
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    engine = create_engine(
+        "sqlite://",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
 
 def SessionLocal() -> Session:
