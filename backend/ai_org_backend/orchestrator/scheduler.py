@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 
-from sqlalchemy import desc, not_
+from sqlalchemy import not_
 from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
@@ -71,9 +71,8 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
 
 def _generate_plan_for_purpose(purpose_id: str) -> None:
     from ai_org_backend.agents.architect import run_architect
-    from ai_org_backend.agents.planner import run_planner
     from ai_org_backend.scripts.seed_graph import ingest
-    from ai_org_backend.services.storage import resolve_for_read, save_artefact
+    from ai_org_backend.services.storage import save_artefact
 
     with Session(engine) as db_session:
         purpose = db_session.get(Purpose, purpose_id)
@@ -97,153 +96,32 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
     # Decide whether to run Architect or Planner
     if blueprint_task and blueprint_task.status == TaskStatus.DONE:
         if review_task and review_task.status == TaskStatus.DONE:
-            # Run Planner to generate follow-up tasks
-            blueprint_md = ""
-            with Session(engine) as db_session:
-                blueprint_artifact = db_session.exec(
-                    select(Artifact)
-                    .where(Artifact.task_id == blueprint_task.id)
-                    .order_by(desc(Artifact.created_at))
-                ).first()
-            if blueprint_artifact:
-                try:
-                    blueprint_path = resolve_for_read(blueprint_artifact.repo_path)
-                    blueprint_md = blueprint_path.read_text(encoding="utf-8", errors="ignore")
-                except Exception as e:
-                    alert(
-                        f"Orchestrator: Failed to read blueprint artifact for purpose {purpose_id}: {e}",
-                        "warn",
-                    )
-                    blueprint_md = ""
-            else:
-                logging.warning(
-                    "[Orchestrator] No blueprint artifact found for purpose %s",
+            # Dispatch Planner agent asynchronously to generate follow-up tasks
+            if pool.get(f"plan_pending:{tenant_id}:{purpose_id}"):
+                logging.info(
+                    "[Orchestrator] Planner already triggered for purpose %s – skipping duplicate",
                     purpose_id,
                 )
+                return
+
+            pool.set(f"plan_pending:{tenant_id}:{purpose_id}", "1", ex=300)
             try:
-                tasks_plan = run_planner(blueprint_md, tenant_id=tenant_id)
+                celery.send_task(
+                    "agent.planner",
+                    args=[tenant_id, purpose_id],
+                    queue=f"{tenant_id}:planner",
+                )
+                logging.info("[Orchestrator] Planner agent dispatched for purpose %s", purpose_id)
             except Exception as e:
-                msg = f"Orchestrator: Planner failed for purpose {purpose_id}: {e}"
+                msg = f"Orchestrator: Failed to dispatch planner for purpose {purpose_id}: {e}"
                 alert(msg, "error")
                 logging.error(msg)
-                return
-            if not isinstance(tasks_plan, list):
-                msg = f"Planner returned invalid result for purpose {purpose_id}"
-                alert(msg, "warn")
-                logging.warning(msg)
-                return
-            if not tasks_plan:
-                msg = f"Planner returned empty task list for purpose {purpose_id}"
-                alert(msg, "warn")
-                logging.warning(msg)
-                return
-
-            # Ensure a repository initialization task exists
-            if not any(
-                str(t.get("description", "")).lower().startswith("initialize repository")
-                for t in tasks_plan
-            ):
-                tasks_plan.insert(
-                    0,
-                    {
-                        "id": "repo_init",
-                        "description": "Initialize repository scaffolding",
-                        "business_value": 1.0,
-                        "tokens_plan": 0,
-                        "purpose_relevance": 0.0,
-                    },
-                )
-
-            # Save generated tasks to DB
-            id_map: dict[str, str] = {}
-            with Session(engine) as db_session:
-                for t in tasks_plan:
-                    task_obj = Task(
-                        tenant_id=tenant_id,
-                        purpose_id=purpose_id,
-                        description=t.get("description", ""),
-                        business_value=float(t.get("business_value", 1.0)),
-                        tokens_plan=int(t.get("tokens_plan", 0)),
-                        purpose_relevance=float(t.get("purpose_relevance", 0.0)),
-                        status="todo",
-                    )
-                    db_session.add(task_obj)
-                    db_session.flush()
-                    db_session.refresh(task_obj)
-                    plan_id = t.get("id")
-                    if plan_id is not None:
-                        id_map[str(plan_id)] = task_obj.id
-                db_session.commit()
-
-            # Wire dependencies: plan-defined and review gating
-            with Session(engine) as db_session:
-                review_task_db = db_session.exec(
-                    select(Task).where(
-                        Task.purpose_id == purpose_id,
-                        func.lower(Task.description) == "architecture & domain review",
-                    )
-                ).first()
-                if not review_task_db:
-                    # Fallback: create review task if missing (should not happen here)
-                    review_task_db = Task(
-                        tenant_id=tenant_id,
-                        purpose_id=purpose_id,
-                        description="Architecture & Domain Review",
-                        business_value=0.0,
-                        tokens_plan=0,
-                        purpose_relevance=1.0,
-                        status="todo",
-                        owner="Review",
-                        notes="awaiting_approval",
-                    )
-                    db_session.add(review_task_db)
-                    db_session.commit()
-                    db_session.refresh(review_task_db)
-                # Task plan internal dependencies
-                for t in tasks_plan:
-                    plan_id = t.get("id")
-                    if plan_id is None:
-                        continue
-                    plan_id_str = str(plan_id)
-                    dep = t.get("depends_on")
-                    dep_str = str(dep) if dep is not None else None
-                    if (
-                        dep_str
-                        and dep_str in id_map
-                        and plan_id_str in id_map
-                        and id_map[dep_str] != id_map[plan_id_str]
-                    ):
-                        db_session.add(
-                            TaskDependency(
-                                from_id=id_map[dep_str],
-                                to_id=id_map[plan_id_str],
-                                dependency_type="FINISH_START",
-                            )
-                        )
-                # Ensure all new tasks depend on the review task
-                for tid in id_map.values():
-                    exists = db_session.exec(
-                        select(TaskDependency).where(
-                            TaskDependency.from_id == review_task_db.id,
-                            TaskDependency.to_id == tid,
-                        )
-                    ).first()
-                    if not exists:
-                        db_session.add(
-                            TaskDependency(
-                                from_id=review_task_db.id,
-                                to_id=tid,
-                                dependency_type="FINISH_START",
-                            )
-                        )
-                db_session.commit()
-            try:
-                ingest(tenant_id)
-            except Exception as e:
-                alert(f"Orchestrator: ingest failed for purpose {purpose_id}: {e}", "warn")
             return
         else:
-            # Review not yet approved; wait before planning
+            logging.info(
+                "[Orchestrator] Review not yet approved for purpose %s – planning deferred",
+                purpose_id,
+            )
             return
 
     # Run Architect to generate architecture blueprint and initial tasks
@@ -387,7 +265,7 @@ async def orchestrator() -> None:
             continue
 
         # 2️⃣ Check purposes
-        purpose_to_process: tuple[Purpose, bool] | None = None
+        purpose_to_process: tuple[Purpose, str] | None = None
         try:
             with Session(engine) as session:
                 purposes = session.exec(
@@ -438,19 +316,44 @@ async def orchestrator() -> None:
                         f"released={getattr(prd_art,'released',None)} "
                         f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
                     )
-                    if prd_task and (prd_art and prd_art.released) and not blueprint_task:
-                        purpose_to_process = (p, bool(impl_todo))
+                    if prd_task and prd_art and prd_art.released and not blueprint_task:
+                        purpose_to_process = (p, "architect")
+                        break
+
+                    review_task = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.description
+                            and t.description.lower() == "architecture & domain review"
+                        ),
+                        None,
+                    )
+
+                    if (
+                        blueprint_task
+                        and blueprint_task.status == TaskStatus.DONE
+                        and review_task
+                        and review_task.status == TaskStatus.DONE
+                        and impl_todo is None
+                    ):
+                        purpose_to_process = (p, "planner")
                         break
         except Exception as e:
             logging.error("[Orchestrator] Failed to poll purposes: %s", e)
 
         if purpose_to_process:
-            p, has_impl_todo = purpose_to_process
-            logging.info(
-                "[Orchestrator] Approved PRD for purpose %s -> start Architect (impl_todo=%s)",
-                p.id,
-                has_impl_todo,
-            )
+            p, action = purpose_to_process
+            if action == "architect":
+                logging.info(
+                    "[Orchestrator] Approved PRD for purpose %s -> start Architect",
+                    p.id,
+                )
+            else:
+                logging.info(
+                    "[Orchestrator] Blueprint review approved for purpose %s -> trigger Planner",
+                    p.id,
+                )
             try:
                 await asyncio.to_thread(_generate_plan_for_purpose, p.id)
             except Exception as e:
