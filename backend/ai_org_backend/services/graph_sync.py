@@ -27,6 +27,11 @@ def upsert_task(
     tokens_plan: Optional[int] = None,
     tokens_actual: Optional[int] = None,
     purpose_relevance: Optional[float] = None,
+    agent_role: Optional[str] = None,
+    model_name: Optional[str] = None,
+    prompt_template: Optional[str] = None,
+    requires_approval: Optional[bool] = None,
+    pipeline_phase_id: Optional[str] = None,
 ) -> None:
     """
     MERGE Task node and SET provided properties (only those not None).
@@ -39,6 +44,11 @@ def upsert_task(
         "tokens_plan": tokens_plan,
         "tokens_actual": tokens_actual,
         "purpose_relevance": purpose_relevance,
+        "agent_role": agent_role,
+        "model_name": model_name,
+        "prompt_template": prompt_template,
+        "requires_approval": requires_approval,
+        "pipeline_phase_id": pipeline_phase_id,
     }
     # Build SET fragment dynamically (only provided props).
     set_lines = []

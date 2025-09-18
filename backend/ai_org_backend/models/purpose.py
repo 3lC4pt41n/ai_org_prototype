@@ -6,6 +6,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from .feedback import Feedback
+    from .pipeline import PipelineTemplate
     from .task import Task
     from .tenant import Tenant
 
@@ -23,8 +24,13 @@ class Purpose(SQLModel, table=True):  # type: ignore[call-arg]
     mode: str = Field(default="manual", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
+    pipeline_template_id: Optional[str] = Field(
+        default=None, foreign_key="pipeline_template.id"
+    )
 
-    # Use List from typing explicitly
     tenant: "Tenant" = Relationship(back_populates="purposes")
     tasks: List["Task"] = Relationship(back_populates="purpose")
     feedback: List["Feedback"] = Relationship(back_populates="purpose")
+    pipeline_template: Optional["PipelineTemplate"] = Relationship(
+        back_populates="purposes"
+    )

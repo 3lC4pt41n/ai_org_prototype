@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .purpose import Purpose
     from .task_dependency import TaskDependency
     from .artifact import Artifact
+    from .pipeline import PipelinePhase
 
 
 class TaskStatus(str, Enum):
@@ -36,6 +37,9 @@ class Task(SQLModel, table=True):  # type: ignore[call-arg]
     # Foreign Keys
     tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
     purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
+    pipeline_phase_id: Optional[str] = Field(
+        default=None, foreign_key="pipeline_phase.id"
+    )
 
     # Core fields
     description: str = Field(nullable=False, min_length=1, max_length=2000)
@@ -43,6 +47,10 @@ class Task(SQLModel, table=True):  # type: ignore[call-arg]
     tokens_plan: int = Field(default=0, ge=0)
     tokens_actual: int = Field(default=0, ge=0)
     purpose_relevance: float = Field(default=0.0, ge=0.0, le=1.0)
+    agent_role: Optional[str] = Field(default=None, max_length=100)
+    model_name: Optional[str] = Field(default=None, max_length=255)
+    prompt_template: Optional[str] = Field(default=None, max_length=255)
+    requires_approval: bool = Field(default=False, nullable=False)
     
     # Status and workflow
     status: str = Field(default="todo")
@@ -60,6 +68,9 @@ class Task(SQLModel, table=True):  # type: ignore[call-arg]
     # Relationships
     tenant: "Tenant" = Relationship(back_populates="tasks")
     purpose: Optional["Purpose"] = Relationship(back_populates="tasks")
+    pipeline_phase: Optional["PipelinePhase"] = Relationship(
+        back_populates="tasks"
+    )
 
     # CORRECTED: Use the correct field names that match TaskDependency
     outgoing_dependencies: List["TaskDependency"] = Relationship(
