@@ -18,14 +18,27 @@ from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
 from ai_org_backend.services.pipeline_templates import (
+    ensure_template_for_purpose,
     instantiate_pipeline_for_purpose,
+    list_templates_for_tenant,
     resolve_pipeline_template,
+    template_to_dict,
+    update_phase_configuration,
 )
 from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_artefact, vector_store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+
+
+@router.get("/pipeline/templates", tags=["pipeline"])
+def list_pipeline_templates_endpoint(
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    with Session(engine) as session:
+        templates = list_templates_for_tenant(session, current_tenant.id)
+        return [template_to_dict(template) for template in templates]
 
 
 def _latest_artifact_for_task(task_id: str | None) -> Artifact | None:
@@ -466,12 +479,31 @@ def list_purposes(current_tenant: Tenant = Depends(get_current_tenant)):
     return [p.model_dump() for p in purposes]
 
 
+@router.get("/purposes/{purpose_id}/pipeline", tags=["purposes"])
+def get_purpose_pipeline(
+    purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    with Session(engine) as session:
+        purpose = session.exec(
+            select(Purpose).where(
+                Purpose.id == purpose_id, Purpose.tenant_id == current_tenant.id
+            )
+        ).first()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+        template = ensure_template_for_purpose(session, purpose)
+        return {"template": template_to_dict(template)}
+
+
 @router.post("/purposes", tags=["purposes"])
 def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_tenant)):
     """Create a new purpose and seed initial tasks via LLM agents."""
     name = payload.get("purpose") or "Untitled"
     tenant_id = current_tenant.id
-    requested_template_id = payload.get("pipeline_template_id")
+    requested_template_id = (
+        payload.get("pipeline_template_id")
+        or payload.get("template_id")
+    )
     template = None
     with Session(engine) as session:
         purpose = session.exec(
@@ -572,6 +604,50 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         "vision": vision_content,
         "requirements": prd_content,
     }
+
+
+@router.put("/pipeline/phases/{phase_id}", tags=["pipeline"])
+def update_pipeline_phase_endpoint(
+    phase_id: str, payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    purpose_id = payload.get("purpose_id")
+    if not purpose_id:
+        raise HTTPException(status_code=400, detail="purpose_id is required")
+
+    scope = payload.get("scope", "purpose")
+    allowed_fields = {
+        "model_name",
+        "tokens_plan_default",
+        "prompt_template",
+        "agent_role",
+        "requires_approval",
+    }
+    updates = {key: payload[key] for key in allowed_fields if key in payload}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    with Session(engine) as session:
+        purpose = session.exec(
+            select(Purpose).where(
+                Purpose.id == purpose_id,
+                Purpose.tenant_id == current_tenant.id,
+            )
+        ).first()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        template = update_phase_configuration(
+            session,
+            purpose=purpose,
+            phase_identifier=phase_id,
+            updates=updates,
+            scope=str(scope),
+        )
+        session.refresh(purpose)
+        instantiate_pipeline_for_purpose(purpose, template)
+        template_payload = template_to_dict(template)
+
+    return {"template": template_payload}
 
 
 @router.get("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
