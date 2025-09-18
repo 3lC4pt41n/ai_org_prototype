@@ -30,6 +30,39 @@ PROMPT_TMPL = load_template("planner.j2")
 # Maximum allowed retries for invalid LLM output (total 3 attempts)
 MAX_AGENT_RETRIES = 2
 
+CODE_FILE_SUFFIXES = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".java",
+    ".go",
+    ".rb",
+    ".rs",
+    ".php",
+    ".swift",
+    ".cs",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+}
+
+QA_DELAYED_DESCRIPTIONS = {
+    "code review",
+    "refactor codebase",
+}
+
+
+def _looks_like_code_artifact(artifact: Artifact) -> bool:
+    repo_path = (artifact.repo_path or "").lower()
+    media_type = (artifact.media_type or "").lower()
+    if media_type.startswith("text/x-"):
+        return True
+    return any(repo_path.endswith(suffix) for suffix in CODE_FILE_SUFFIXES)
+
+
 # Expected schema for a task list
 TASKS_SCHEMA = {
     "type": "array",
@@ -153,8 +186,9 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
     plan_key = f"plan_pending:{tenant_id}:{purpose_id}"
     try:
         blueprint_md = ""
+        code_artifact_exists = False
 
-        # Fetch the latest architecture blueprint artifact content
+        # Fetch the latest architecture blueprint artifact content and detect existing code outputs
         with Session(engine) as session:
             blueprint_task = session.exec(
                 select(Task).where(
@@ -169,6 +203,15 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
                     .where(Artifact.task_id == blueprint_task.id)
                     .order_by(desc(Artifact.created_at))
                 ).first()
+
+            code_artifact_exists = any(
+                _looks_like_code_artifact(artifact)
+                for artifact in session.exec(
+                    select(Artifact)
+                    .join(Task, Task.id == Artifact.task_id)
+                    .where(Task.purpose_id == purpose_id)
+                )
+            )
 
         if blueprint_artifact:
             try:
@@ -203,7 +246,7 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
             logging.warning("[Planner] %s", msg)
             return
 
-        # Remove any blueprint/review or code review/refactor tasks from initial plan
+        # Remove any blueprint/review or premature QA tasks from the initial plan
         filtered_plan: list[dict] = []
         for t in tasks_plan:
             desc_text = str(t.get("description", "")).strip().lower()
@@ -214,7 +257,14 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
             ]:
                 continue
             role = heuristic_role(t.get("description", ""))
-            if role in ("qa_review", "qa_refactor"):
+            if (not code_artifact_exists) and (
+                role in ("qa_review", "qa_refactor")
+                or desc_text in QA_DELAYED_DESCRIPTIONS
+            ):
+                logging.debug(
+                    "[Planner] Skip early QA task '%s' until code artifacts exist",
+                    t.get("description", ""),
+                )
                 continue
             filtered_plan.append(t)
 
