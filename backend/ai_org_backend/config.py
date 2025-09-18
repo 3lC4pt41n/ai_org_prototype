@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 class Config(BaseSettings):
     """Application environment configuration."""
 
-    redis_url: str
+    redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str | None = None
     qdrant_api_key: str | None = None
     # OpenAI API configuration

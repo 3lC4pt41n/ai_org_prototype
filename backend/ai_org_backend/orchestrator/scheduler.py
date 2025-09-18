@@ -323,7 +323,7 @@ async def orchestrator() -> None:
                 Repo(TENANT).update(task_obj.id, status="budget_exceeded", notes="budget skip")
                 alert(f"Task {task_obj.id} skipped due to insufficient budget", "budget")
                 continue
-            role = classify_role(rec["d"])
+            role = task_obj.agent_role or classify_role(rec["d"])
             Repo(TENANT).update(task_obj.id, status="doing")
             debit(TENANT, cost_est, task_obj.purpose_id)
             celery.send_task(f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}")

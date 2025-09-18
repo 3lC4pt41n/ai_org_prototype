@@ -29,6 +29,11 @@ SET   t.status            = $status,
       t.tokens_plan       = $tok_plan,
       t.tokens_actual     = $tok_act,
       t.purpose_relevance = $purp_rel,
+      t.agent_role        = $agent_role,
+      t.model_name        = $model_name,
+      t.prompt_template   = $prompt_tmpl,
+      t.requires_approval = $requires_approval,
+      t.pipeline_phase_id = $pipeline_phase_id,
       t.purpose_id        = $purpose_id,
       t.tenant_id         = $tenant_id
 """
@@ -78,6 +83,11 @@ def ingest(tenant: str) -> Dict[str, int]:
                     tok_plan=t.tokens_plan,
                     tok_act=t.tokens_actual,
                     purp_rel=t.purpose_relevance,
+                    agent_role=getattr(t, "agent_role", None),
+                    model_name=getattr(t, "model_name", None),
+                    prompt_tmpl=getattr(t, "prompt_template", None),
+                    requires_approval=getattr(t, "requires_approval", False),
+                    pipeline_phase_id=getattr(t, "pipeline_phase_id", None),
                     purpose_id=t.purpose_id,
                     tenant_id=t.tenant_id,
                 )
