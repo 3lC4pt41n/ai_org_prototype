@@ -82,6 +82,43 @@ services:
     volumes:
       - ../workspace:/app/workspace
 
+  celery-planner:
+    build:
+      context: ..
+      dockerfile: backend/ai_org_backend/Dockerfile
+      target: prod
+    image: local/ai_backend_planner:latest
+    env_file:
+      - ../.env
+    command: >
+      sh -c "celery -A ai_org_backend.tasks.celery_app worker \
+             -Q ${TENANT}:planner \
+             -l INFO -P solo"
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_APP=ai_org_backend.tasks.celery_app
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
+      - TENANT_NAME=Tim Mergenthaler
+      - CELERY_WORKER_SEND_TASK_EVENTS=true
+      - CELERY_TASK_SEND_SENT_EVENT=true
+      - WORKSPACE_DIR=/app/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+    volumes:
+      - ../workspace:/app/workspace
+
   celery-insight:
     build:
       context: ..
