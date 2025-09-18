@@ -84,7 +84,11 @@ class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
     content: str = Field(nullable=False, max_length=5000)
     metadata_: dict | None = Field(
         default=None,
-        sa_column=sa.Column("metadata", JSONB, nullable=True),
+        sa_column=sa.Column(
+            "metadata",
+            sa.JSON().with_variant(JSONB(), "postgresql"),
+            nullable=True,
+        ),
         alias="metadata",
     )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
