@@ -8,7 +8,7 @@ from sqlmodel import select
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Artifact, Purpose
+from ai_org_backend.models import Artifact, Purpose, Task
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
@@ -33,6 +33,7 @@ def run_requirements(purpose: Purpose) -> str:
     """Generate a detailed Product Requirements Document (PRD) for the given project purpose."""
 
     vision_md = ""
+    template_key: str | None = None
     with SessionLocal() as db:
         fresh_purpose = db.get(Purpose, purpose.id)
         if not fresh_purpose:
@@ -40,6 +41,14 @@ def run_requirements(purpose: Purpose) -> str:
             return "⚠️ Purpose not found; cannot gather requirements."
         purpose_name = fresh_purpose.name
         tenant_id = fresh_purpose.tenant_id
+
+        prd_task = db.exec(
+            select(Task)
+            .where(Task.purpose_id == fresh_purpose.id)
+            .where(Task.description.ilike("product requirements document%"))
+        ).first()
+        if prd_task and prd_task.prompt_template:
+            template_key = prd_task.prompt_template
 
         try:
             vision_art = db.exec(
@@ -73,7 +82,17 @@ def run_requirements(purpose: Purpose) -> str:
         logger.info("PRD agent starting without vision context for purpose %s", purpose.id)
 
     ctx = {"purpose": purpose_name, "vision": vision_md}
-    prompt = PROMPT_TMPL.render(**ctx)
+    prompt_template = PROMPT_TMPL
+    if template_key:
+        try:
+            prompt_template = load_template(template_key)
+        except FileNotFoundError:
+            logger.warning(
+                "Custom PRD prompt %s not found; using default", template_key
+            )
+        except Exception:
+            logger.exception("Failed to load custom PRD prompt %s", template_key)
+    prompt = prompt_template.render(**ctx)
     start_time = time.time()
     try:
         resp = chat_with_tools(

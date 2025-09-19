@@ -170,7 +170,7 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     # Generate architecture blueprint and task plan
     try:
         blueprint = run_architect(purpose)
-        plan = run_planner(blueprint)
+        plan = run_planner(blueprint, tenant_id=TENANT, purpose_id=purpose.id)
     except Exception as e:
         alert(f"Seed run failed (architecture): {e}", "seed")
         return
