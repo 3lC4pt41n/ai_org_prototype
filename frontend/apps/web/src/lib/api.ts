@@ -61,6 +61,22 @@ export async function postJson<T = any>(
   return resp.data as T;
 }
 
+export async function putJson<T = any>(
+  url: string,
+  body?: any,
+  opts?: { signal?: AbortSignal; headers?: Record<string, string> },
+): Promise<T> {
+  const resp = await api.put<T>(url, body ?? {}, {
+    signal: opts?.signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(opts?.headers ?? {}),
+    },
+  });
+  return resp.data as T;
+}
+
 export function approveArtifact(
   id: string,
   opts?: { signal?: AbortSignal },

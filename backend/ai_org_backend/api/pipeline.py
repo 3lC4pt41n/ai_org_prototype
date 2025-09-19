@@ -1,18 +1,28 @@
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func
 from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, ArtifactFeedback, Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.models import (
+    Artifact,
+    ArtifactFeedback,
+    PromptTemplate,
+    Purpose,
+    Task,
+    TaskDependency,
+    Tenant,
+    TenantPromptAssignment,
+)
 from ai_org_backend.models.chat import ChatMessage, ChatRole
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
@@ -39,6 +49,230 @@ def list_pipeline_templates_endpoint(
     with Session(engine) as session:
         templates = list_templates_for_tenant(session, current_tenant.id)
         return [template_to_dict(template) for template in templates]
+
+
+@router.get("/pipeline/prompts", tags=["pipeline"])
+def list_prompt_templates_endpoint(
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    with Session(engine) as session:
+        templates = session.exec(
+            select(PromptTemplate)
+            .where(
+                or_(
+                    PromptTemplate.tenant_id == current_tenant.id,
+                    PromptTemplate.tenant_id.is_(None),
+                )
+            )
+            .order_by(PromptTemplate.phase_slug, PromptTemplate.created_at)
+        ).all()
+        assignments = session.exec(
+            select(TenantPromptAssignment).where(
+                TenantPromptAssignment.tenant_id == current_tenant.id
+            )
+        ).all()
+
+    assignment_by_phase = {
+        assignment.phase_slug: assignment for assignment in assignments
+    }
+
+    template_payload = []
+    for template in templates:
+        assignment = assignment_by_phase.get(template.phase_slug)
+        is_default = bool(
+            assignment and assignment.prompt_template_id == template.id
+        )
+        template_payload.append(
+            {
+                "id": template.id,
+                "phase_slug": template.phase_slug,
+                "agent": template.agent,
+                "default_path": template.default_path,
+                "content": template.content,
+                "tenant_id": template.tenant_id,
+                "created_by": template.created_by,
+                "created_at": template.created_at.isoformat()
+                if template.created_at
+                else None,
+                "updated_at": template.updated_at.isoformat()
+                if template.updated_at
+                else None,
+                "is_tenant_default": is_default,
+                "assignment_id": assignment.id if is_default else None,
+            }
+        )
+
+    assignments_payload = [
+        {
+            "id": assignment.id,
+            "phase_slug": assignment.phase_slug,
+            "prompt_template_id": assignment.prompt_template_id,
+            "created_at": assignment.created_at.isoformat()
+            if assignment.created_at
+            else None,
+        }
+        for assignment in assignments
+    ]
+
+    return {"templates": template_payload, "assignments": assignments_payload}
+
+
+@router.post("/pipeline/prompts/create", tags=["pipeline"])
+def create_prompt_template(
+    payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    phase_slug = (payload.get("phase_slug") or "").strip()
+    if not phase_slug:
+        raise HTTPException(status_code=400, detail="phase_slug is required")
+
+    content = str(payload.get("content") or "")
+    agent_value = payload.get("agent")
+    agent = str(agent_value).strip() if agent_value else None
+    set_default = bool(payload.get("set_default"))
+    purpose_id = payload.get("purpose_id")
+
+    with Session(engine) as session:
+        template = PromptTemplate(
+            phase_slug=phase_slug,
+            agent=agent,
+            default_path=payload.get("default_path"),
+            created_by=payload.get("created_by"),
+            content=content,
+            tenant_id=current_tenant.id,
+        )
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+
+        assignment_record: TenantPromptAssignment | None = None
+        if set_default:
+            assignment_record = session.exec(
+                select(TenantPromptAssignment).where(
+                    TenantPromptAssignment.tenant_id == current_tenant.id,
+                    TenantPromptAssignment.phase_slug == phase_slug,
+                )
+            ).first()
+            if assignment_record:
+                assignment_record.prompt_template_id = template.id
+            else:
+                assignment_record = TenantPromptAssignment(
+                    tenant_id=current_tenant.id,
+                    phase_slug=phase_slug,
+                    prompt_template_id=template.id,
+                )
+            session.add(assignment_record)
+            session.commit()
+            session.refresh(assignment_record)
+
+        purpose: Purpose | None = None
+        if purpose_id:
+            purpose = session.exec(
+                select(Purpose).where(
+                    Purpose.id == purpose_id,
+                    Purpose.tenant_id == current_tenant.id,
+                )
+            ).first()
+        if purpose and set_default:
+            template_for_purpose = ensure_template_for_purpose(session, purpose)
+            instantiate_pipeline_for_purpose(purpose, template_for_purpose)
+
+        response = {
+            "id": template.id,
+            "prompt_template": {
+                "id": template.id,
+                "phase_slug": template.phase_slug,
+                "agent": template.agent,
+                "default_path": template.default_path,
+                "content": template.content,
+                "tenant_id": template.tenant_id,
+                "created_by": template.created_by,
+                "created_at": template.created_at.isoformat()
+                if template.created_at
+                else None,
+                "updated_at": template.updated_at.isoformat()
+                if template.updated_at
+                else None,
+            },
+        }
+        if assignment_record:
+            response["assignment"] = {
+                "id": assignment_record.id,
+                "phase_slug": assignment_record.phase_slug,
+                "prompt_template_id": assignment_record.prompt_template_id,
+                "created_at": assignment_record.created_at.isoformat()
+                if assignment_record.created_at
+                else None,
+            }
+        return response
+
+
+@router.put("/pipeline/prompts/update/{template_id}", tags=["pipeline"])
+def update_prompt_template(
+    template_id: str, payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    content = str(payload.get("content") or "")
+    with Session(engine) as session:
+        template = session.get(PromptTemplate, template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Prompt template not found")
+        if template.tenant_id and template.tenant_id != current_tenant.id:
+            raise HTTPException(status_code=403, detail="Forbidden for this template")
+
+        template.content = content
+        template.updated_at = datetime.utcnow()
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        return {"id": template.id}
+
+
+@router.post("/pipeline/prompts/assign", tags=["pipeline"])
+def assign_prompt_template(
+    payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
+):
+    phase_slug = (payload.get("phase_slug") or "").strip()
+    template_id = payload.get("prompt_template_id")
+    purpose_id = payload.get("purpose_id")
+    if not phase_slug or not template_id:
+        raise HTTPException(status_code=400, detail="phase_slug and prompt_template_id are required")
+
+    with Session(engine) as session:
+        template = session.get(PromptTemplate, template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Prompt template not found")
+        if template.tenant_id and template.tenant_id != current_tenant.id:
+            raise HTTPException(status_code=403, detail="Forbidden for this template")
+
+        assignment = session.exec(
+            select(TenantPromptAssignment).where(
+                TenantPromptAssignment.tenant_id == current_tenant.id,
+                TenantPromptAssignment.phase_slug == phase_slug,
+            )
+        ).first()
+        if assignment:
+            assignment.prompt_template_id = template.id
+        else:
+            assignment = TenantPromptAssignment(
+                tenant_id=current_tenant.id,
+                phase_slug=phase_slug,
+                prompt_template_id=template.id,
+            )
+        session.add(assignment)
+        session.commit()
+
+        purpose: Purpose | None = None
+        if purpose_id:
+            purpose = session.exec(
+                select(Purpose).where(
+                    Purpose.id == purpose_id,
+                    Purpose.tenant_id == current_tenant.id,
+                )
+            ).first()
+        if purpose:
+            template_for_purpose = ensure_template_for_purpose(session, purpose)
+            instantiate_pipeline_for_purpose(purpose, template_for_purpose)
+
+    return {"assigned": True}
 
 
 def _latest_artifact_for_task(task_id: str | None) -> Artifact | None:

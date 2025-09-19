@@ -91,10 +91,38 @@ TASKS_SCHEMA = {
 MD_JSON_RX = re.compile(r"```json([\s\S]+?)```", re.IGNORECASE)
 
 
-def run_planner(blueprint: str, tenant_id: str | None = None) -> list[dict]:
+def run_planner(
+    blueprint: str, tenant_id: str | None = None, purpose_id: str | None = None
+) -> list[dict]:
     """Generate a structured task plan (list of tasks with dependencies) from the blueprint."""
     ctx = {"task": blueprint}
-    prompt = PROMPT_TMPL.render(**ctx)
+    prompt_template = PROMPT_TMPL
+    template_key: str | None = None
+    if purpose_id:
+        try:
+            with Session(engine) as session:
+                plan_task = session.exec(
+                    select(Task)
+                    .where(Task.purpose_id == purpose_id)
+                    .where(func.lower(Task.description) == "implementation plan")
+                ).first()
+                if plan_task and plan_task.prompt_template:
+                    template_key = plan_task.prompt_template
+        except Exception:
+            logging.exception(
+                "[Planner] Failed to resolve custom prompt for purpose %s", purpose_id
+            )
+    if template_key:
+        try:
+            prompt_template = load_template(template_key)
+        except FileNotFoundError:
+            logging.warning(
+                "[Planner] Prompt %s not found; using default", template_key
+            )
+        except Exception:
+            logging.exception("[Planner] Failed to load prompt %s", template_key)
+
+    prompt = prompt_template.render(**ctx)
     tasks: list[dict] = []
     model = "o3"
     for attempt in range(MAX_AGENT_RETRIES + 1):
@@ -233,7 +261,9 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
 
         # Run LLM-based planner to generate task plan
         try:
-            tasks_plan = run_planner(blueprint_md, tenant_id=tenant_id)
+            tasks_plan = run_planner(
+                blueprint_md, tenant_id=tenant_id, purpose_id=purpose_id
+            )
         except Exception as e:  # pragma: no cover - LLM/runtime failure
             msg = f"Planner agent failed for purpose {purpose_id}: {e}"
             alert(msg, "error")

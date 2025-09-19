@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Editor from '@monaco-editor/react';
 import {
   CheckCircle2,
   CircleDashed,
@@ -13,7 +14,7 @@ import usePipelineStore from '../store/pipelineStore';
 import PurposeSelector from '../components/PurposeSelector';
 import ArtifactSection from '../components/ArtifactSection';
 import GraphSection from '../components/GraphSection';
-import { API_BASE, getJson, postJson } from '../lib/api';
+import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import AImarChatPanel from '../components/AImarChatPanel';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
@@ -28,6 +29,9 @@ import type {
   PhaseViewContext,
   PipelinePhaseDefaults,
   PipelineTemplateSummary,
+  PromptAssignmentSummary,
+  PromptTemplateListResponse,
+  PromptTemplateRecord,
 } from '../components/pipeline/types';
 
 interface PhaseMeta {
@@ -97,6 +101,9 @@ export default function PipelineView() {
   const [phasePrompt, setPhasePrompt] = useState('');
   const [phaseSaving, setPhaseSaving] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>([]);
+  const [promptAssignments, setPromptAssignments] = useState<PromptAssignmentSummary[]>([]);
+  const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
 
   const defaultTemplateId = useMemo(() => {
     if (!templates.length) return null;
@@ -143,6 +150,31 @@ export default function PipelineView() {
       .finally(() => {
         if (!active) return;
         setTemplatesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setPromptTemplatesLoading(true);
+    getJson<PromptTemplateListResponse>('/pipeline/prompts')
+      .then((data) => {
+        if (!active) return;
+        const templateList = Array.isArray(data?.templates) ? data.templates : [];
+        const assignmentList = Array.isArray(data?.assignments) ? data.assignments : [];
+        setPromptTemplates(templateList);
+        setPromptAssignments(assignmentList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPromptTemplates([]);
+        setPromptAssignments([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setPromptTemplatesLoading(false);
       });
     return () => {
       active = false;
@@ -271,42 +303,143 @@ export default function PipelineView() {
       scope: phaseScope,
       tokens_plan_default: tokensValue,
       model_name: phaseModel || null,
-      prompt_template: phasePrompt?.trim() ? phasePrompt : null,
     };
 
     setPhaseSaving(true);
     const toastId = toast.loading('Phase wird aktualisiert …');
+    let successMessage = 'Phase aktualisiert.';
+
     try {
-      const res = await postJson<{ template: PipelineTemplateSummary }>(
+      let promptTemplateId: string | null | undefined =
+        currentPhaseDefaults.prompt_template ?? null;
+
+      if (phaseScope === 'tenant_default') {
+        if (!phasePrompt.trim()) {
+          throw new Error('Prompt darf nicht leer sein.');
+        }
+
+        if (tenantDefaultTemplate && tenantDefaultTemplate.tenant_id) {
+          if (
+            (phasePrompt || '').trim() !==
+            (tenantDefaultTemplate.content || '').trim()
+          ) {
+            await putJson(`/pipeline/prompts/update/${tenantDefaultTemplate.id}`, {
+              content: phasePrompt,
+            });
+          }
+          promptTemplateId = tenantDefaultTemplate.id;
+          successMessage = 'Mandanten-Prompt aktualisiert.';
+        } else if (
+          (phasePrompt || '').trim() !== (basePromptContent || '').trim()
+        ) {
+          const created = await postJson<{ id: string }>(
+            '/pipeline/prompts/create',
+            {
+              phase_slug: currentPhaseDefaults.slug,
+              content: phasePrompt,
+              agent: currentPhaseDefaults.agent_role ?? null,
+              set_default: true,
+              purpose_id: selectedPurposeId,
+            },
+          );
+          promptTemplateId = created?.id ?? null;
+          successMessage = 'Prompt-Vorlage als Mandanten-Standard gespeichert.';
+        } else {
+          promptTemplateId = currentPromptRecord?.id ?? promptTemplateId ?? null;
+        }
+      } else if (phaseScope === 'template') {
+        const globalTemplate =
+          (currentPromptRecord && !currentPromptRecord.tenant_id
+            ? currentPromptRecord
+            : null) ??
+          promptTemplates.find(
+            (template) =>
+              template.phase_slug === currentPhaseDefaults.slug && !template.tenant_id,
+          );
+        if (!globalTemplate) {
+          throw new Error('Globales Template nicht gefunden.');
+        }
+        if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
+          await putJson(`/pipeline/prompts/update/${globalTemplate.id}`, {
+            content: phasePrompt,
+          });
+        }
+        promptTemplateId = globalTemplate.id;
+        successMessage = 'Globale Prompt-Vorlage aktualisiert.';
+      } else {
+        if (!(phasePrompt || '').trim()) {
+          promptTemplateId = null;
+        } else if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
+          if (
+            currentPromptRecord &&
+            currentPromptRecord.tenant_id &&
+            !currentPromptRecord.is_tenant_default
+          ) {
+            await putJson(`/pipeline/prompts/update/${currentPromptRecord.id}`, {
+              content: phasePrompt,
+            });
+            promptTemplateId = currentPromptRecord.id;
+          } else {
+            const created = await postJson<{ id: string }>(
+              '/pipeline/prompts/create',
+              {
+                phase_slug: currentPhaseDefaults.slug,
+                content: phasePrompt,
+                agent: currentPhaseDefaults.agent_role ?? null,
+              },
+            );
+            promptTemplateId = created?.id ?? null;
+          }
+        } else if (currentPromptRecord) {
+          promptTemplateId = currentPromptRecord.id;
+        }
+      }
+
+      if (promptTemplateId !== undefined) {
+        payload.prompt_template = promptTemplateId;
+      }
+
+      const response = await putJson<{ template: PipelineTemplateSummary }>(
         `/pipeline/phases/${currentPhaseDefaults.id}`,
         payload,
       );
-      if (res?.template) {
-        setCurrentTemplate(res.template);
+      if (response?.template) {
+        setCurrentTemplate(response.template);
       }
+
       await fetchGraphAndStatus(selectedPurposeId);
       await fetchBacklog();
-      getJson<PipelineTemplateSummary[]>('/pipeline/templates')
-        .then((data) => {
-          const list = Array.isArray(data) ? data : [];
-          setTemplates(list);
-        })
-        .catch(() => setTemplates([]));
-      toast.success('Phase aktualisiert.', { id: toastId });
-    } catch {
-      toast.error('Phase konnte nicht aktualisiert werden.', { id: toastId });
+
+      const [templateList, promptList] = await Promise.all([
+        getJson<PipelineTemplateSummary[]>('/pipeline/templates'),
+        getJson<PromptTemplateListResponse>('/pipeline/prompts'),
+      ]);
+      setTemplates(Array.isArray(templateList) ? templateList : []);
+      setPromptTemplates(Array.isArray(promptList?.templates) ? promptList.templates : []);
+      setPromptAssignments(
+        Array.isArray(promptList?.assignments) ? promptList.assignments : [],
+      );
+
+      toast.success(successMessage, { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error('Einstellungen konnten nicht gespeichert werden.', { id: toastId });
     } finally {
       setPhaseSaving(false);
     }
   }, [
+    basePromptContent,
     currentPhaseDefaults,
+    currentPromptRecord,
     fetchBacklog,
     fetchGraphAndStatus,
     phaseModel,
     phasePrompt,
     phaseScope,
     phaseTokens,
+    promptTemplates,
     selectedPurposeId,
+    tenantDefaultTemplate,
   ]);
 
   const visionArtifacts = artifacts.filter((a) =>
@@ -587,6 +720,56 @@ export default function PipelineView() {
     );
   }, [currentTemplate, currentPhaseSlug]);
 
+  const tenantDefaultTemplate = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const slug = currentPhaseDefaults.slug;
+    return (
+      promptTemplates.find(
+        (template) => template.phase_slug === slug && template.is_tenant_default,
+      ) ?? null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const currentPromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const key = currentPhaseDefaults.prompt_template;
+    if (!key) return null;
+    return (
+      promptTemplates.find((template) => template.id === key) ??
+      promptTemplates.find(
+        (template) => template.default_path === key && !template.tenant_id,
+      ) ??
+      null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const effectivePromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (currentPromptRecord && currentPromptRecord.tenant_id) {
+      return currentPromptRecord;
+    }
+    if (tenantDefaultTemplate) {
+      return tenantDefaultTemplate;
+    }
+    return currentPromptRecord;
+  }, [currentPromptRecord, tenantDefaultTemplate]);
+
+  const basePromptContent = useMemo(
+    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
+    [effectivePromptRecord, currentPhaseDefaults],
+  );
+
+  const isTenantDefaultActive = Boolean(
+    tenantDefaultTemplate && tenantDefaultTemplate.tenant_id,
+  );
+  const isPurposeSpecificPrompt = Boolean(
+    currentPromptRecord?.tenant_id && !currentPromptRecord?.is_tenant_default,
+  );
+  const editorTheme =
+    typeof document !== 'undefined' &&
+    document.documentElement.classList.contains('dark')
+      ? 'vs-dark'
+      : 'vs-light';
+
   useEffect(() => {
     if (!currentPhaseDefaults) {
       setPhaseModel('');
@@ -600,10 +783,10 @@ export default function PipelineView() {
         ? String(currentPhaseDefaults.tokens_plan_default)
         : '',
     );
-    setPhasePrompt(currentPhaseDefaults.prompt_template ?? '');
+    setPhasePrompt(basePromptContent ?? '');
     setPhaseScope('purpose');
     setPromptExpanded(false);
-  }, [currentPhaseDefaults]);
+  }, [currentPhaseDefaults, basePromptContent]);
 
   const baseTokens = currentPhaseDefaults?.tokens_plan_default ?? 0;
   const parsedTokens = phaseTokens.trim() === '' ? baseTokens : Number(phaseTokens);
@@ -614,7 +797,7 @@ export default function PipelineView() {
     currentPhaseDefaults &&
       ((phaseModel || '') !== (currentPhaseDefaults.model_name ?? '') ||
         normalizedTokens !== baseTokens ||
-        (phasePrompt || '').trim() !== (currentPhaseDefaults.prompt_template ?? '').trim()),
+        (phasePrompt || '').trim() !== (basePromptContent || '').trim()),
   );
   const canSavePhase = Boolean(
     currentPhaseDefaults &&
@@ -959,13 +1142,40 @@ export default function PipelineView() {
                     {promptExpanded ? 'Prompt verbergen' : 'Prompt anzeigen & bearbeiten'}
                   </button>
                   {promptExpanded && (
-                    <textarea
-                      className="h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-mono shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      value={phasePrompt}
-                      onChange={(event) => setPhasePrompt(event.target.value)}
-                      placeholder="Jinja-Template einfügen oder anpassen"
-                      disabled={phaseSaving}
-                    />
+                    <div className="space-y-1">
+                      {promptTemplatesLoading ? (
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          Prompt-Vorlagen werden geladen …
+                        </p>
+                      ) : isTenantDefaultActive ? (
+                        <p className="text-xs text-blue-600 dark:text-blue-300">
+                          Hinweis: Für diese Phase ist ein mandantenspezifisches Prompt aktiv.
+                        </p>
+                      ) : isPurposeSpecificPrompt ? (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-300">
+                          Hinweis: Dieses Projekt verwendet ein eigenes Prompt-Template.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          Verwendung des globalen Standard-Templates.
+                        </p>
+                      )}
+                      <div className="overflow-hidden rounded-md border border-slate-300 dark:border-slate-600">
+                        <Editor
+                          height="200px"
+                          defaultLanguage="jinja"
+                          value={phasePrompt}
+                          onChange={(value) => setPhasePrompt(value ?? '')}
+                          theme={editorTheme}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 12,
+                            readOnly: phaseSaving,
+                            wordWrap: 'on',
+                          }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="space-y-1">
