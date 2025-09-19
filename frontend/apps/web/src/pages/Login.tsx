@@ -6,6 +6,8 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const genericErrorMessage =
+    "Login fehlgeschlagen – bitte E‑Mail/Passwort prüfen oder später erneut versuchen.";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,12 +18,38 @@ export default function Login() {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ username: email, password }),
       });
+      if (!res.ok) {
+        if (import.meta.env.DEV) {
+          const contentType = res.headers.get("content-type") ?? "";
+          try {
+            if (contentType.includes("application/json")) {
+              const errorJson = await res.json();
+              console.error(
+                "Login-Fehlerantwort:",
+                JSON.stringify(errorJson) || `${res.status} ${res.statusText}`,
+              );
+            } else {
+              const errorText = await res.text();
+              console.error(
+                "Login-Fehlerantwort:",
+                errorText || `${res.status} ${res.statusText}`,
+              );
+            }
+          } catch (parseError) {
+            console.error("Login-Fehlerantwort konnte nicht gelesen werden:", parseError);
+          }
+        }
+        setError(genericErrorMessage);
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Login fehlgeschlagen");
       localStorage.setItem("token", data.access_token);
       navigate("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error("Login-Request fehlgeschlagen:", err);
+      }
+      setError(genericErrorMessage);
     }
   };
 
