@@ -13,10 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install requirements (directly from the app folder)
-COPY ai_org_backend/requirements.txt /app/requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip
 # install project deps (ensure wheels for bcrypt/passlib)
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 # Runtime environment / Alembic
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
