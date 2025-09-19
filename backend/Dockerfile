@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+RUN pip install --upgrade "pydantic[email]>=2.0"
 
 # Install requirements (directly from the app folder)
 COPY requirements.txt .
