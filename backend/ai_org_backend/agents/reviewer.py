@@ -47,7 +47,9 @@ def _call_llm(messages, tenant_id: Optional[str]) -> Optional[dict]:
         return chat_with_tools(messages=messages, model=MODEL_PRO, temperature=0)
 
 
-def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
+def run_reviewer(
+    purpose_id: str, blueprint_md: str, prompt_override: str | None = None
+) -> str:
     """
     Run the reviewer synchronously and return Markdown content.
     """
@@ -62,7 +64,19 @@ def run_reviewer(purpose_id: str, blueprint_md: str) -> str:
             "tenant_id": purpose.tenant_id,
             "blueprint": blueprint_md,
         }
-        prompt = PROMPT_TMPL.render(**ctx)
+        template = PROMPT_TMPL
+        if prompt_override:
+            try:
+                template = load_template(prompt_override)
+            except FileNotFoundError:
+                logging.warning(
+                    "[Reviewer] Custom prompt %s not found; using default", prompt_override
+                )
+            except Exception:
+                logging.exception(
+                    "[Reviewer] Failed to load custom prompt %s", prompt_override
+                )
+        prompt = template.render(**ctx)
         start = time.time()
         try:
             resp = _call_llm(
@@ -152,7 +166,11 @@ def reviewer_task(
         resolved_purpose_id,
         tenant_id,
     )
-    review_md = run_reviewer(resolved_purpose_id, blueprint_text)
+    review_md = run_reviewer(
+        resolved_purpose_id,
+        blueprint_text,
+        prompt_override=review_task.prompt_template if review_task else None,
+    )
 
     # Persist the review artefact (keep task status todo; user will approve)
     try:

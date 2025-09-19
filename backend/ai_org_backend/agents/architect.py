@@ -4,6 +4,7 @@ import time
 
 import logging
 from celery import shared_task
+from sqlmodel import select
 
 from .utils import load_template
 
@@ -30,6 +31,7 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
     """Render template prompt and call OpenAI to produce an architecture blueprint."""
 
     allow_research = False
+    template_key: str | None = None
     with SessionLocal() as db:
         fresh_purpose = db.get(Purpose, purpose.id)
         if not fresh_purpose:
@@ -39,6 +41,13 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         allow_research = bool(tenant and tenant.allow_web_research)
         purpose_name = fresh_purpose.name
         tenant_id = fresh_purpose.tenant_id
+        arch_task = db.exec(
+            select(Task)
+            .where(Task.purpose_id == fresh_purpose.id)
+            .where(Task.description.ilike("architecture blueprint%"))
+        ).first()
+        if arch_task and arch_task.prompt_template:
+            template_key = arch_task.prompt_template
 
     ctx = {"purpose": purpose_name, "task": task or "n/a", "external_references": ""}
 
@@ -51,7 +60,17 @@ def run_architect(purpose: Purpose, task: str | None = None) -> str:
         refs_lines = [f"- {s['title']} ({s['url']})" for s in research["sources"]][:5]
         ctx["external_references"] = "\n".join(refs_lines)
 
-    prompt = PROMPT_TMPL.render(**ctx)
+    prompt_template = PROMPT_TMPL
+    if template_key:
+        try:
+            prompt_template = load_template(template_key)
+        except FileNotFoundError:
+            logger.warning(
+                "Custom architecture prompt %s not found; using default", template_key
+            )
+        except Exception:
+            logger.exception("Failed to load custom architecture prompt %s", template_key)
+    prompt = prompt_template.render(**ctx)
     start = time.time()
     try:
         resp = chat_with_tools(
@@ -113,7 +132,7 @@ def seed_graph(tenant_id: str, purpose_id: str) -> None:
         blueprint = run_architect(purpose)
         # Generate structured task list using planner
         from ai_org_backend.agents.planner import run_planner
-        tasks = run_planner(blueprint)
+        tasks = run_planner(blueprint, tenant_id=tenant_id, purpose_id=purpose_id)
         # Persist tasks in the database
         id_map = {}
         for t in tasks:

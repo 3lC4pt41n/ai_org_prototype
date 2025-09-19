@@ -37,6 +37,32 @@ export interface PipelineTemplateSummary {
   phases: PipelinePhaseDefaults[];
 }
 
+export interface PromptTemplateRecord {
+  id: string;
+  phase_slug: string;
+  agent?: string | null;
+  default_path?: string | null;
+  content: string;
+  tenant_id?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  is_tenant_default?: boolean;
+  assignment_id?: string | null;
+}
+
+export interface PromptAssignmentSummary {
+  id: string;
+  phase_slug: string;
+  prompt_template_id: string;
+  created_at?: string | null;
+}
+
+export interface PromptTemplateListResponse {
+  templates: PromptTemplateRecord[];
+  assignments: PromptAssignmentSummary[];
+}
+
 export interface PurposeSummary {
   id: string;
   name: string;

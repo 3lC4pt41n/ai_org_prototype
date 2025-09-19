@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from jinja2 import Template
+from sqlmodel import select
+
+from ai_org_backend.db import SessionLocal
+from ai_org_backend.models import PromptTemplate
 
 
 _PROMPTS_DIR: Path | None = None
@@ -32,6 +37,25 @@ def load_template(name: str) -> Template:
     global _PROMPTS_DIR
     if _PROMPTS_DIR is None:
         _PROMPTS_DIR = _find_prompts_dir()
+
+    try:
+        with SessionLocal() as session:
+            template = session.get(PromptTemplate, name)
+            if template and template.content:
+                return Template(template.content)
+
+            if name.endswith(".j2"):
+                template = session.exec(
+                    select(PromptTemplate)
+                    .where(PromptTemplate.default_path == name)
+                    .order_by(PromptTemplate.created_at.desc())
+                ).first()
+                if template and template.content:
+                    return Template(template.content)
+    except Exception:
+        # DB lookup is best-effort; fall back to filesystem prompts
+        pass
+
     tmpl_file = _PROMPTS_DIR / name
     if not tmpl_file.exists():
         raise FileNotFoundError(f"Template '{name}' not found in '{_PROMPTS_DIR}'")

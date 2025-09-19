@@ -64,7 +64,21 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
         snippets.append({"filename": path, "content": snippet, "language": lang})
 
     context = {"purpose_name": purpose_name, "snippets": snippets}
-    prompt = PROMPT_TMPL.render(**context)
+    prompt_template = PROMPT_TMPL
+    if task and task.prompt_template:
+        try:
+            prompt_template = load_template(task.prompt_template)
+        except FileNotFoundError:
+            logging.warning(
+                "[CodeReviewAgent] Prompt %s not found; using default",
+                task.prompt_template,
+            )
+        except Exception:
+            logging.exception(
+                "[CodeReviewAgent] Failed to load prompt %s",
+                task.prompt_template,
+            )
+    prompt = prompt_template.render(**context)
     try:
         resp = chat_with_tools(
             messages=[{"role": ChatRole.USER.value, "content": prompt}],
