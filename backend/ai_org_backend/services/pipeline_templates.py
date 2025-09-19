@@ -12,7 +12,13 @@ from sqlalchemy.orm.exc import DetachedInstanceError
 from sqlmodel import Session, select
 
 from ai_org_backend.db import engine
-from ai_org_backend.models import PipelinePhase, PipelineTemplate, Purpose, Task
+from ai_org_backend.models import (
+    PipelinePhase,
+    PipelineTemplate,
+    Purpose,
+    Task,
+    TenantPromptAssignment,
+)
 from ai_org_backend.repo import Repo
 
 
@@ -482,10 +488,23 @@ def instantiate_pipeline_for_purpose(
     overrides = overrides or {}
     repo = Repo(purpose.tenant_id)
 
+    assignment_prompts: Dict[str, str] = {}
+
     with Session(engine) as session:
         existing_tasks = session.exec(
             select(Task).where(Task.purpose_id == purpose.id)
         ).all()
+        if purpose.tenant_id:
+            assignments = session.exec(
+                select(TenantPromptAssignment).where(
+                    TenantPromptAssignment.tenant_id == purpose.tenant_id
+                )
+            ).all()
+            assignment_prompts = {
+                assignment.phase_slug: assignment.prompt_template_id
+                for assignment in assignments
+                if assignment.prompt_template_id
+            }
 
     tasks_by_phase: MutableMapping[str, Task] = {
         t.pipeline_phase_id: t for t in existing_tasks if t.pipeline_phase_id
@@ -564,11 +583,12 @@ def instantiate_pipeline_for_purpose(
         desired_model = (
             override.get("model_name", phase.model_name) if override else phase.model_name
         )
-        desired_prompt = (
-            override.get("prompt_template", phase.prompt_template)
-            if override
-            else phase.prompt_template
-        )
+        assignment_prompt = assignment_prompts.get(phase_slug)
+        desired_prompt = phase.prompt_template
+        if override and "prompt_template" in override:
+            desired_prompt = str(override.get("prompt_template") or "") or None
+        elif assignment_prompt is not None:
+            desired_prompt = assignment_prompt or None
         desired_role = (
             override.get("agent_role", phase.agent_role) if override else phase.agent_role
         )

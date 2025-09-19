@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import time
 
+from sqlmodel import select
+
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Purpose
+from ai_org_backend.models import Purpose, Task
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
@@ -23,6 +25,7 @@ logger = logging.getLogger(__name__)
 def run_vision(purpose: Purpose) -> str:
     """Generate a high-level project vision for the given purpose."""
 
+    template_key: str | None = None
     with SessionLocal() as db:
         fresh_purpose = db.get(Purpose, purpose.id)
         if not fresh_purpose:
@@ -30,11 +33,28 @@ def run_vision(purpose: Purpose) -> str:
             return "⚠️ Purpose not found; cannot craft project vision."
         purpose_name = fresh_purpose.name
         tenant_id = fresh_purpose.tenant_id
+        vision_task = db.exec(
+            select(Task)
+            .where(Task.purpose_id == purpose.id)
+            .where(Task.description.ilike("vision document%"))
+        ).first()
+        if vision_task and vision_task.prompt_template:
+            template_key = vision_task.prompt_template
 
     logger.info(
         "Vision agent starting for purpose %s (tenant=%s)", purpose.id, tenant_id
     )
-    prompt = PROMPT_TMPL.render(purpose=purpose_name)
+    prompt_template = PROMPT_TMPL
+    if template_key:
+        try:
+            prompt_template = load_template(template_key)
+        except FileNotFoundError:
+            logger.warning(
+                "Custom vision prompt %s not found; falling back to default", template_key
+            )
+        except Exception:
+            logger.exception("Failed to load custom vision prompt %s", template_key)
+    prompt = prompt_template.render(purpose=purpose_name)
     start_time = time.time()
     try:
         resp = chat_with_tools(
