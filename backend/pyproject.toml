@@ -32,6 +32,8 @@ dependencies = [
   "lxml_html_clean>=0.2.0,<0.3",
   "passlib[bcrypt]==1.7.4",
   "bcrypt<4.0.0",
+  "pydantic[email]>=2.0",
+  "email-validator>=2.0",
   "websockets"
 ]
 
