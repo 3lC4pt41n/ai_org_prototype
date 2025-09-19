@@ -24,3 +24,4 @@ PyJWT = "^2.8.0"
 # stellt das Modulpfad-Target "lxml.html.clean" für readability bereit
 lxml_html_clean = "^0.2.0"
 passlib = {version = "^1.7.4", extras = ["bcrypt"]}
+email-validator = "^2.0.0"
