@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20251011_pipeline_templates"
-down_revision = "20250910_add_chat_tables"
+down_revision = "20250912_user_theme"
 branch_labels = None
 depends_on = None
 
