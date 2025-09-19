@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List
@@ -123,7 +124,18 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             )
         ).all()
         if not purposes:
-            print(f"[SEED] No active purpose found for tenant '{TENANT}' – seeding aborted.")
+            # No active purpose found; check if tenant has any tasks
+            task_exists = session.exec(select(Task).where(Task.tenant_id == TENANT)).first()
+            if not task_exists:
+                logging.info(
+                    "No active purposes or tasks found for tenant %s – idle until activity detected.",
+                    TENANT,
+                )
+            else:
+                logging.info(
+                    "No active purpose found for tenant %s – initial seeding skipped (tasks present).",
+                    TENANT,
+                )
             return
         # Find first purpose without associated tasks
         purpose = None
