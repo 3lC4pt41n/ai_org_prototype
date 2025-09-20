@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 import sqlalchemy as sa
 from sqlmodel import Field, SQLModel
@@ -51,8 +51,10 @@ class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
     # Relationship collections using SQLAlchemy 2.x style (Mapped).
-    tasks: Mapped[list["Task"]] = relationship(back_populates="tenant")
-    purposes: Mapped[list["Purpose"]] = relationship(back_populates="tenant")
-    assignments: Mapped[list["TenantPromptAssignment"]] = relationship(
-        back_populates="tenant", cascade="all, delete-orphan"
+    tasks: ClassVar[Mapped[list["Task"]]] = relationship("Task", back_populates="tenant")
+    purposes: ClassVar[Mapped[list["Purpose"]]] = relationship(
+        "Purpose", back_populates="tenant"
+    )
+    assignments: ClassVar[Mapped[list["TenantPromptAssignment"]]] = relationship(
+        "TenantPromptAssignment", back_populates="tenant", cascade="all, delete-orphan"
     )
