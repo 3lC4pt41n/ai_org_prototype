@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from sqlmodel import Field, SQLModel
 from sqlalchemy.orm import Mapped, relationship
@@ -27,8 +27,10 @@ class PromptTemplate(SQLModel, table=True):  # type: ignore[call-arg]
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    assignments: Mapped[list["TenantPromptAssignment"]] = relationship(
-        back_populates="prompt_template", cascade="all, delete-orphan"
+    assignments: ClassVar[Mapped[list["TenantPromptAssignment"]]] = relationship(
+        "TenantPromptAssignment",
+        back_populates="prompt_template",
+        cascade="all, delete-orphan",
     )
 
 
@@ -43,5 +45,7 @@ class TenantPromptAssignment(SQLModel, table=True):  # type: ignore[call-arg]
     prompt_template_id: str = Field(foreign_key="prompt_template.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-    prompt_template: Mapped["PromptTemplate"] = relationship(back_populates="assignments")
-    tenant: Mapped["Tenant"] = relationship(back_populates="assignments")
+    prompt_template: ClassVar[Mapped["PromptTemplate"]] = relationship(
+        "PromptTemplate", back_populates="assignments"
+    )
+    tenant: ClassVar[Mapped["Tenant"]] = relationship("Tenant", back_populates="assignments")
