@@ -1,5 +1,6 @@
-import React from 'react';
-import AImarChatPanel from '../AImarChatPanel';
+import React, { Suspense, lazy } from 'react';
+
+const AImarChatPanel = lazy(() => import('../AImarChatPanel'));
 
 interface ChatPanelContainerProps {
   title: string;
@@ -51,12 +52,20 @@ export default function ChatPanelContainer({
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>
           )}
         </div>
-        <AImarChatPanel
-          purposeId={purposeId}
-          paused={paused}
-          filterValue={filterValue}
-          onFilterValueChange={onFilterValueChange}
-        />
+        <Suspense
+          fallback={
+            <div className="flex min-h-[200px] items-center justify-center text-sm text-slate-500">
+              Lade Chat …
+            </div>
+          }
+        >
+          <AImarChatPanel
+            purposeId={purposeId}
+            paused={paused}
+            filterValue={filterValue}
+            onFilterValueChange={onFilterValueChange}
+          />
+        </Suspense>
       </div>
     </section>
   );
