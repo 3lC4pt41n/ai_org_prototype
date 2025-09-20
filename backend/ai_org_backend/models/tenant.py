@@ -4,6 +4,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
 
 from ..settings import settings
@@ -11,6 +12,7 @@ from ..settings import settings
 if TYPE_CHECKING:
     from .purpose import Purpose
     from .task import Task
+    from .prompt_template import TenantPromptAssignment
 
 
 class UserTheme(str, Enum):
@@ -49,5 +51,9 @@ class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
     # FIXED: Import List from typing explicitly, no __future__ annotations
-    tasks: List["Task"] = Relationship(back_populates="tenant")
-    purposes: List["Purpose"] = Relationship(back_populates="tenant")
+    tasks: Mapped[List["Task"]] = Relationship(back_populates="tenant")
+    purposes: Mapped[List["Purpose"]] = Relationship(back_populates="tenant")
+    assignments: Mapped[List["TenantPromptAssignment"]] = Relationship(
+        back_populates="tenant",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
