@@ -4,7 +4,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
 import sqlalchemy as sa
-from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
 
 from ..settings import settings
@@ -50,10 +49,10 @@ class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
         ),
     )
 
-    # FIXED: Import List from typing explicitly, no __future__ annotations
-    tasks: Mapped[List["Task"]] = Relationship(back_populates="tenant")
-    purposes: Mapped[List["Purpose"]] = Relationship(back_populates="tenant")
-    assignments: Mapped[List["TenantPromptAssignment"]] = Relationship(
+    # Relationship collections using plain SQLModel style (list + Relationship).
+    tasks: List["Task"] = Relationship(back_populates="tenant")
+    purposes: List["Purpose"] = Relationship(back_populates="tenant")
+    assignments: List["TenantPromptAssignment"] = Relationship(
         back_populates="tenant",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
