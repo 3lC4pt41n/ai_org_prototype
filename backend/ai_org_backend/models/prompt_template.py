@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
+from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:  # pragma: no cover - used for typing only
+    from .tenant import Tenant
+
 
 class PromptTemplate(SQLModel, table=True):  # type: ignore[call-arg]
     """A prompt template that can be customised per tenant or globally."""
@@ -19,11 +24,10 @@ class PromptTemplate(SQLModel, table=True):  # type: ignore[call-arg]
     default_path: Optional[str] = Field(default=None, max_length=255)
     created_by: Optional[str] = Field(default=None, max_length=255)
     content: str = Field(nullable=False)
-    tenant_id: Optional[str] = Field(default=None, foreign_key="tenant.id")
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    assignments: List["TenantPromptAssignment"] = Relationship(
+    assignments: Mapped[List["TenantPromptAssignment"]] = Relationship(
         back_populates="prompt_template",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -40,4 +44,7 @@ class TenantPromptAssignment(SQLModel, table=True):  # type: ignore[call-arg]
     prompt_template_id: str = Field(foreign_key="prompt_template.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-    prompt_template: PromptTemplate = Relationship(back_populates="assignments")
+    prompt_template: Mapped[PromptTemplate] = Relationship(back_populates="assignments")
+    tenant: Mapped["Tenant"] = Relationship(
+        back_populates="assignments",
+    )
