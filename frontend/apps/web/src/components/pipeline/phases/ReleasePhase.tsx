@@ -1,3 +1,4 @@
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function ReleasePhaseContent({
@@ -5,7 +6,10 @@ export function ReleasePhaseContent({
   backlogEmpty,
   allArtifactsReleased,
   releaseCompleted,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   const checklist = [
     { label: 'Aufgaben abgeschlossen', done: implementationCompleted },
@@ -46,11 +50,14 @@ export function ReleasePhaseContent({
           </p>
         )}
       </section>
-      {renderChatPanel({
-        title: 'Release-Kommunikation',
-        description:
-          'Nutze den Chat für Abstimmungen zum Go-Live, zur Dokumentation oder für Lessons Learned nach Abschluss.',
-      })}
+      <ChatPanelContainer
+        title="Release-Kommunikation"
+        description="Nutze den Chat für Abstimmungen zum Go-Live, zur Dokumentation oder für Lessons Learned nach Abschluss."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }
