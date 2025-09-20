@@ -1,13 +1,4 @@
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Editor from '@monaco-editor/react';
 import {
   CheckCircle2,
@@ -32,7 +23,6 @@ import {
 } from '../components/pipeline/phases';
 import type {
   ArtifactItem,
-  ChatPanelRenderer,
   PhaseNavItem,
   PhaseViewContext,
   PipelinePhaseDefaults,
@@ -61,8 +51,6 @@ const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
   architecture_review: 'architecture_review',
   implementation: 'implementation',
 };
-
-const LazyChatPanel = lazy(() => import('../components/AImarChatPanel'));
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Standard übernehmen' },
@@ -831,57 +819,6 @@ export default function PipelineView() {
     [phases],
   );
 
-  const renderChatPanel: ChatPanelRenderer = ({
-    title,
-    description,
-    placeholderTitle,
-    placeholderDescription,
-    className = '',
-  }) => {
-    if (!selectedPurposeId) {
-      return (
-        <section
-          className={`rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300 ${className}`.trim()}
-        >
-          <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
-            {placeholderTitle ?? 'Kein Purpose ausgewählt'}
-          </h3>
-          <p className="mt-2">
-            {placeholderDescription ??
-              'Wähle im Kopfbereich einen Purpose aus, um Artefakte zu erstellen und mit dem KI-Produkt Owner zu interagieren.'}
-          </p>
-        </section>
-      );
-    }
-
-    return (
-      <section
-        className={`rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm ${className}`.trim()}
-      >
-        <div className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">{title}</h3>
-            {description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>}
-          </div>
-          <Suspense
-            fallback={
-              <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
-                Lade Chat …
-              </div>
-            }
-          >
-            <LazyChatPanel
-              purposeId={selectedPurposeId}
-              paused={paused}
-              filterValue={chatFilterValue}
-              onFilterValueChange={setChatFilterValue}
-            />
-          </Suspense>
-        </div>
-      </section>
-    );
-  };
-
   const renderBacklogSection = () => (
     <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -927,7 +864,9 @@ export default function PipelineView() {
     purposes,
     selectedPurpose,
     selectedPurposeId,
-    renderChatPanel,
+    paused,
+    chatFilterValue,
+    setChatFilterValue,
     onCreatePurpose: handleCreatePurpose,
     creatingPurpose,
     templates,

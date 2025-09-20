@@ -1,9 +1,13 @@
 import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function VisionPhaseContent({
   selectedPurpose,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
   visionArtifact,
   visionStatusIcon,
   visionAwaitingApproval,
@@ -26,15 +30,17 @@ export function VisionPhaseContent({
         )}
       </section>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        {renderChatPanel({
-          title: 'Vision mit AImar ausarbeiten',
-          description:
-            'Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen.',
-          placeholderTitle: 'Vision noch nicht verfügbar',
-          placeholderDescription:
-            'Lege zunächst ein Projektziel an, um die Vision zu starten. Sobald ein Artefakt erstellt wurde, erscheint es hier zur Freigabe.',
-          className: 'h-full',
-        })}
+        <ChatPanelContainer
+          title="Vision mit AImar ausarbeiten"
+          description="Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen."
+          placeholderTitle="Vision noch nicht verfügbar"
+          placeholderDescription="Lege zunächst ein Projektziel an, um die Vision zu starten. Sobald ein Artefakt erstellt wurde, erscheint es hier zur Freigabe."
+          className="h-full"
+          purposeId={selectedPurposeId}
+          paused={paused}
+          filterValue={chatFilterValue}
+          onFilterValueChange={setChatFilterValue}
+        />
         {visionArtifact ? (
           <ArtifactSection
             title="Vision"

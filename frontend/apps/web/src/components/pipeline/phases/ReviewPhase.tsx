@@ -1,6 +1,13 @@
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
-export function ReviewPhaseContent({ artifacts, renderChatPanel }: PhaseViewContext) {
+export function ReviewPhaseContent({
+  artifacts,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
+}: PhaseViewContext) {
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
@@ -32,10 +39,14 @@ export function ReviewPhaseContent({ artifacts, renderChatPanel }: PhaseViewCont
           )}
         </ul>
       </section>
-      {renderChatPanel({
-        title: 'Abschluss & Feedback',
-        description: 'Halte finale Entscheidungen fest oder melde letzte Änderungswünsche an das Team zurück.',
-      })}
+      <ChatPanelContainer
+        title="Abschluss & Feedback"
+        description="Halte finale Entscheidungen fest oder melde letzte Änderungswünsche an das Team zurück."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }
