@@ -4,7 +4,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20251204_task_dependency_updates"
-down_revision = "20251203_prompt_template_m2m"
+down_revision = "20251204_fix_taskdependency_name"
 branch_labels = None
 depends_on = None
 
