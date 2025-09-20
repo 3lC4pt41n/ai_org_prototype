@@ -1,4 +1,5 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
+import AImarChatPanel from '../AImarChatPanel';
 
 interface ChatPanelContainerProps {
   title: string;
@@ -11,8 +12,6 @@ interface ChatPanelContainerProps {
   filterValue: string;
   onFilterValueChange: (value: string) => void;
 }
-
-const LazyAImarChatPanel = lazy(() => import('../AImarChatPanel'));
 
 export default function ChatPanelContainer({
   title,
@@ -52,20 +51,12 @@ export default function ChatPanelContainer({
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>
           )}
         </div>
-        <Suspense
-          fallback={
-            <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
-              Lade Chat …
-            </div>
-          }
-        >
-          <LazyAImarChatPanel
-            purposeId={purposeId}
-            paused={paused}
-            filterValue={filterValue}
-            onFilterValueChange={onFilterValueChange}
-          />
-        </Suspense>
+        <AImarChatPanel
+          purposeId={purposeId}
+          paused={paused}
+          filterValue={filterValue}
+          onFilterValueChange={onFilterValueChange}
+        />
       </div>
     </section>
   );
