@@ -6,12 +6,10 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from .tenant import Tenant
-
 
 class PromptTemplate(SQLModel, table=True):  # type: ignore[call-arg]
     """A prompt template that can be customised per tenant or globally."""
@@ -27,7 +25,7 @@ class PromptTemplate(SQLModel, table=True):  # type: ignore[call-arg]
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: Optional[datetime] = Field(default=None)
 
-    assignments: Mapped[List["TenantPromptAssignment"]] = Relationship(
+    assignments: List["TenantPromptAssignment"] = Relationship(
         back_populates="prompt_template",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -44,7 +42,7 @@ class TenantPromptAssignment(SQLModel, table=True):  # type: ignore[call-arg]
     prompt_template_id: str = Field(foreign_key="prompt_template.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-    prompt_template: Mapped[PromptTemplate] = Relationship(back_populates="assignments")
-    tenant: Mapped["Tenant"] = Relationship(
+    prompt_template: "PromptTemplate" = Relationship(back_populates="assignments")
+    tenant: "Tenant" = Relationship(
         back_populates="assignments",
     )
