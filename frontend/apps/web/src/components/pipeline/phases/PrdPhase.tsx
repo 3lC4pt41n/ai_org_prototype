@@ -1,4 +1,5 @@
 import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function PrdPhaseContent({
@@ -6,20 +7,25 @@ export function PrdPhaseContent({
   prdStatusIcon,
   prdAwaitingApproval,
   onPrdApproved,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        {renderChatPanel({
-          title: 'Produkt-Owner-Dialog',
-          description:
-            'Verfeinere Anforderungen, beantworte Rückfragen und gib zusätzliche Kontexte, damit die Produktanforderung vollständig wird.',
-          placeholderTitle: 'AImar-Dialog noch nicht verfügbar',
-          placeholderDescription:
-            'Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und die Produktanforderung vorzubereiten.',
-          className: 'h-full',
-        })}
+        <ChatPanelContainer
+          title="Produkt-Owner-Dialog"
+          description="Verfeinere Anforderungen, beantworte Rückfragen und gib zusätzliche Kontexte, damit die Produktanforderung vollständig wird."
+          placeholderTitle="AImar-Dialog noch nicht verfügbar"
+          placeholderDescription="Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und die Produktanforderung vorzubereiten."
+          className="h-full"
+          purposeId={selectedPurposeId}
+          paused={paused}
+          filterValue={chatFilterValue}
+          onFilterValueChange={setChatFilterValue}
+        />
         {prdArtifact ? (
           <ArtifactSection
             title="Produktanforderung"
@@ -39,11 +45,14 @@ export function PrdPhaseContent({
           </section>
         )}
       </div>
-      {renderChatPanel({
-        title: 'Abstimmung für Folgephasen',
-        description:
-          'Halte zusätzliche Annahmen oder Änderungswünsche fest. Sie fließen unmittelbar in die weiteren Phasen ein.',
-      })}
+      <ChatPanelContainer
+        title="Abstimmung für Folgephasen"
+        description="Halte zusätzliche Annahmen oder Änderungswünsche fest. Sie fließen unmittelbar in die weiteren Phasen ein."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }

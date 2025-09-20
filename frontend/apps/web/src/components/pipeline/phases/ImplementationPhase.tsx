@@ -1,4 +1,5 @@
 import GraphSection from '../../GraphSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 const STATUS_ORDER = [
@@ -16,7 +17,10 @@ export function ImplementationPhaseContent({
   graphEdges,
   graphStatusIcon,
   renderBacklogSection,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
@@ -31,11 +35,14 @@ export function ImplementationPhaseContent({
         </section>
       )}
       {renderBacklogSection()}
-      {renderChatPanel({
-        title: 'Synchronisation mit AImar',
-        description:
-          'Nutze den Chat, um Blocker, Testabdeckung oder Learnings zu dokumentieren. So bleibt das Delivery-Team auf Kurs.',
-      })}
+      <ChatPanelContainer
+        title="Synchronisation mit AImar"
+        description="Nutze den Chat, um Blocker, Testabdeckung oder Learnings zu dokumentieren. So bleibt das Delivery-Team auf Kurs."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }

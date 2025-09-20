@@ -84,14 +84,6 @@ export interface PipelineGraphEdge {
 
 export type StatusInfoMap = Record<string, { label: string; color: string }>;
 
-export type ChatPanelRenderer = (options: {
-  title: string;
-  description?: string;
-  placeholderTitle?: string;
-  placeholderDescription?: string;
-  className?: string;
-}) => ReactNode;
-
 export interface PhaseNavItem {
   id: PhaseId;
   title: string;
@@ -107,7 +99,9 @@ export interface PhaseViewContext {
   purposes: PurposeSummary[];
   selectedPurpose: PurposeSummary | null;
   selectedPurposeId: string | null;
-  renderChatPanel: ChatPanelRenderer;
+  paused: boolean;
+  chatFilterValue: string;
+  setChatFilterValue: (value: string) => void;
   onCreatePurpose?: (name: string, templateId?: string) => Promise<boolean>;
   creatingPurpose?: boolean;
   templates?: PipelineTemplateSummary[];

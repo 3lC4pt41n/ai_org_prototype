@@ -1,4 +1,5 @@
 import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function ArchitectureReviewPhaseContent({
@@ -7,7 +8,10 @@ export function ArchitectureReviewPhaseContent({
   architectureReviewAwaitingApproval,
   onArchitectureReviewApproved,
   archArtifact,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
@@ -32,11 +36,14 @@ export function ArchitectureReviewPhaseContent({
           )}
         </section>
       )}
-      {renderChatPanel({
-        title: 'Abstimmung mit Reviewer*innen',
-        description:
-          'Dokumentiere Rückfragen, Freigaben oder benötigte Anpassungen, bevor die Implementierung weitergeht.',
-      })}
+      <ChatPanelContainer
+        title="Abstimmung mit Reviewer*innen"
+        description="Dokumentiere Rückfragen, Freigaben oder benötigte Anpassungen, bevor die Implementierung weitergeht."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }
