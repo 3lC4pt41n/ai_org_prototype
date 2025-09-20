@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import AImarChatPanel from '../components/AImarChatPanel';
+import React, { Suspense, lazy, useState } from 'react';
+
+const LazyChatPanel = lazy(() => import('../components/AImarChatPanel'));
 
 const STEPS = ['Zweck', 'PRD', 'Architektur', 'Plan', 'Bericht'];
 
@@ -76,7 +77,9 @@ export default function PipelinePage() {
               </ul>
             </div>
             <div className="flex-1 flex flex-col">
-              <AImarChatPanel purposeId="demo-purpose" paused={false} />
+              <Suspense fallback={<div className="p-4 text-sm text-slate-500">Lade Chat …</div>}>
+                <LazyChatPanel purposeId="demo-purpose" paused={false} />
+              </Suspense>
             </div>
           </aside>
         </div>
