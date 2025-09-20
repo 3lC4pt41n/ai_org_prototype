@@ -42,6 +42,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
 
+def _template_owned_by(template: PromptTemplate, tenant_id: str) -> bool:
+    """Return True if the template belongs to the provided tenant."""
+
+    if not tenant_id:
+        return False
+    assignments = getattr(template, "assignments", []) or []
+    return bool(
+        (template.created_by == tenant_id)
+        or any(assignment.tenant_id == tenant_id for assignment in assignments)
+    )
+
+
+def _template_accessible(template: PromptTemplate, tenant_id: str) -> bool:
+    """Return True if the template can be read/modified by the tenant."""
+
+    return bool(
+        template.created_by is None
+        or _template_owned_by(template, tenant_id)
+    )
+
+
 @router.get("/pipeline/templates", tags=["pipeline"])
 def list_pipeline_templates_endpoint(
     current_tenant: Tenant = Depends(get_current_tenant),
@@ -58,14 +79,18 @@ def list_prompt_templates_endpoint(
     with Session(engine) as session:
         templates = session.exec(
             select(PromptTemplate)
+            .options(selectinload(PromptTemplate.assignments))
             .where(
                 or_(
-                    PromptTemplate.tenant_id == current_tenant.id,
-                    PromptTemplate.tenant_id.is_(None),
+                    PromptTemplate.created_by.is_(None),
+                    PromptTemplate.created_by == current_tenant.id,
+                    PromptTemplate.assignments.any(
+                        TenantPromptAssignment.tenant_id == current_tenant.id
+                    ),
                 )
             )
             .order_by(PromptTemplate.phase_slug, PromptTemplate.created_at)
-        ).all()
+        ).unique().all()
         assignments = session.exec(
             select(TenantPromptAssignment).where(
                 TenantPromptAssignment.tenant_id == current_tenant.id
@@ -82,6 +107,7 @@ def list_prompt_templates_endpoint(
         is_default = bool(
             assignment and assignment.prompt_template_id == template.id
         )
+        tenant_specific = _template_owned_by(template, current_tenant.id)
         template_payload.append(
             {
                 "id": template.id,
@@ -89,7 +115,7 @@ def list_prompt_templates_endpoint(
                 "agent": template.agent,
                 "default_path": template.default_path,
                 "content": template.content,
-                "tenant_id": template.tenant_id,
+                "tenant_id": current_tenant.id if tenant_specific else None,
                 "created_by": template.created_by,
                 "created_at": template.created_at.isoformat()
                 if template.created_at
@@ -132,13 +158,16 @@ def create_prompt_template(
     purpose_id = payload.get("purpose_id")
 
     with Session(engine) as session:
+        created_by_value = payload.get("created_by")
+        created_by = (
+            str(created_by_value).strip() if created_by_value else current_tenant.id
+        )
         template = PromptTemplate(
             phase_slug=phase_slug,
             agent=agent,
             default_path=payload.get("default_path"),
-            created_by=payload.get("created_by"),
+            created_by=created_by,
             content=content,
-            tenant_id=current_tenant.id,
         )
         session.add(template)
         session.commit()
@@ -184,7 +213,9 @@ def create_prompt_template(
                 "agent": template.agent,
                 "default_path": template.default_path,
                 "content": template.content,
-                "tenant_id": template.tenant_id,
+                "tenant_id": current_tenant.id
+                if _template_owned_by(template, current_tenant.id)
+                else None,
                 "created_by": template.created_by,
                 "created_at": template.created_at.isoformat()
                 if template.created_at
@@ -212,10 +243,14 @@ def update_prompt_template(
 ):
     content = str(payload.get("content") or "")
     with Session(engine) as session:
-        template = session.get(PromptTemplate, template_id)
+        template = session.exec(
+            select(PromptTemplate)
+            .options(selectinload(PromptTemplate.assignments))
+            .where(PromptTemplate.id == template_id)
+        ).first()
         if not template:
             raise HTTPException(status_code=404, detail="Prompt template not found")
-        if template.tenant_id and template.tenant_id != current_tenant.id:
+        if not _template_accessible(template, current_tenant.id):
             raise HTTPException(status_code=403, detail="Forbidden for this template")
 
         template.content = content
@@ -237,10 +272,14 @@ def assign_prompt_template(
         raise HTTPException(status_code=400, detail="phase_slug and prompt_template_id are required")
 
     with Session(engine) as session:
-        template = session.get(PromptTemplate, template_id)
+        template = session.exec(
+            select(PromptTemplate)
+            .options(selectinload(PromptTemplate.assignments))
+            .where(PromptTemplate.id == template_id)
+        ).first()
         if not template:
             raise HTTPException(status_code=404, detail="Prompt template not found")
-        if template.tenant_id and template.tenant_id != current_tenant.id:
+        if not _template_accessible(template, current_tenant.id):
             raise HTTPException(status_code=403, detail="Forbidden for this template")
 
         assignment = session.exec(
