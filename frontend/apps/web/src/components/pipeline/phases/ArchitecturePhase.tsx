@@ -1,4 +1,5 @@
 import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function ArchitecturePhaseContent({
@@ -7,7 +8,10 @@ export function ArchitecturePhaseContent({
   architectureAwaitingApproval,
   onArchitectureApproved,
   prdArtifact,
-  renderChatPanel,
+  selectedPurposeId,
+  paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
@@ -32,11 +36,14 @@ export function ArchitecturePhaseContent({
           )}
         </section>
       )}
-      {renderChatPanel({
-        title: 'Rückfragen zur Architektur',
-        description:
-          'Besprich technische Annahmen oder kläre Änderungswünsche. Der Chat bleibt verfügbar, auch wenn der Fokus auf dem Blueprint liegt.',
-      })}
+      <ChatPanelContainer
+        title="Rückfragen zur Architektur"
+        description="Besprich technische Annahmen oder kläre Änderungswünsche. Der Chat bleibt verfügbar, auch wenn der Fokus auf dem Blueprint liegt."
+        purposeId={selectedPurposeId}
+        paused={paused}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
+      />
     </div>
   );
 }
