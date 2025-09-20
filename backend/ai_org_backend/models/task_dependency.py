@@ -8,6 +8,8 @@ if TYPE_CHECKING:
 class TaskDependency(SQLModel, table=True):  # type: ignore[call-arg]
     """Dependency relationships between tasks."""
 
+    __tablename__ = "task_dependency"
+
     id: Optional[int] = Field(default=None, primary_key=True)
     
     # CORRECTED: Use the original field names from the existing database
