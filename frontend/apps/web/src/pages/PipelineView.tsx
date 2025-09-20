@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import Editor from '@monaco-editor/react';
 import {
   CheckCircle2,
@@ -15,7 +24,6 @@ import PurposeSelector from '../components/PurposeSelector';
 import ArtifactSection from '../components/ArtifactSection';
 import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
-import AImarChatPanel from '../components/AImarChatPanel';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
 import {
@@ -53,6 +61,8 @@ const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
   architecture_review: 'architecture_review',
   implementation: 'implementation',
 };
+
+const LazyChatPanel = lazy(() => import('../components/AImarChatPanel'));
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Standard übernehmen' },
@@ -853,12 +863,20 @@ export default function PipelineView() {
             <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">{title}</h3>
             {description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>}
           </div>
-          <AImarChatPanel
-            purposeId={selectedPurposeId}
-            paused={paused}
-            filterValue={chatFilterValue}
-            onFilterValueChange={setChatFilterValue}
-          />
+          <Suspense
+            fallback={
+              <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+                Lade Chat …
+              </div>
+            }
+          >
+            <LazyChatPanel
+              purposeId={selectedPurposeId}
+              paused={paused}
+              filterValue={chatFilterValue}
+              onFilterValueChange={setChatFilterValue}
+            />
+          </Suspense>
         </div>
       </section>
     );
