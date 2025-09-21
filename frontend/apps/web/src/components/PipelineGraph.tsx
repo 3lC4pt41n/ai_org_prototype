@@ -2,6 +2,8 @@ import React from "react";
 import ReactFlow, { Controls, Background } from "reactflow";
 import "reactflow/dist/style.css";
 
+console.log("Loading PipelineGraph module");
+
 interface PipelineGraphProps {
   nodes: Array<{
     id: string;
