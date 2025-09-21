@@ -40,6 +40,8 @@ import type {
   PromptTemplateRecord,
 } from '../components/pipeline/types';
 
+console.log('Loading PipelineView module');
+
 interface PhaseMeta {
   id: PhaseId;
   title: string;
