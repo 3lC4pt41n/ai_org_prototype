@@ -409,6 +409,44 @@ export default function PipelineView() {
     ],
   );
 
+  const tenantDefaultTemplate = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const slug = currentPhaseDefaults.slug;
+    return (
+      promptTemplates.find(
+        (template) => template.phase_slug === slug && template.is_tenant_default,
+      ) ?? null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const currentPromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const key = currentPhaseDefaults.prompt_template;
+    if (!key) return null;
+    return (
+      promptTemplates.find((template) => template.id === key) ??
+      promptTemplates.find(
+        (template) => template.default_path === key && !template.tenant_id,
+      ) ??
+      null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const effectivePromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (currentPromptRecord && currentPromptRecord.tenant_id) {
+      return currentPromptRecord;
+    }
+    if (tenantDefaultTemplate) {
+      return tenantDefaultTemplate;
+    }
+    return currentPromptRecord;
+  }, [currentPromptRecord, tenantDefaultTemplate]);
+
+  const basePromptContent = useMemo(
+    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
+    [effectivePromptRecord, currentPhaseDefaults],
+  );
+
   const handlePhaseSettingsSave = useCallback(async () => {
     if (!selectedPurposeId || !currentPhaseDefaults) return;
     const baseTokens = currentPhaseDefaults.tokens_plan_default ?? 0;
@@ -838,44 +876,6 @@ export default function PipelineView() {
       currentTemplate.phases.find((phase) => phase.slug === currentPhaseSlug) ?? null
     );
   }, [currentTemplate, currentPhaseSlug]);
-
-  const tenantDefaultTemplate = useMemo<PromptTemplateRecord | null>(() => {
-    if (!currentPhaseDefaults) return null;
-    const slug = currentPhaseDefaults.slug;
-    return (
-      promptTemplates.find(
-        (template) => template.phase_slug === slug && template.is_tenant_default,
-      ) ?? null
-    );
-  }, [promptTemplates, currentPhaseDefaults]);
-
-  const currentPromptRecord = useMemo<PromptTemplateRecord | null>(() => {
-    if (!currentPhaseDefaults) return null;
-    const key = currentPhaseDefaults.prompt_template;
-    if (!key) return null;
-    return (
-      promptTemplates.find((template) => template.id === key) ??
-      promptTemplates.find(
-        (template) => template.default_path === key && !template.tenant_id,
-      ) ??
-      null
-    );
-  }, [promptTemplates, currentPhaseDefaults]);
-
-  const effectivePromptRecord = useMemo<PromptTemplateRecord | null>(() => {
-    if (currentPromptRecord && currentPromptRecord.tenant_id) {
-      return currentPromptRecord;
-    }
-    if (tenantDefaultTemplate) {
-      return tenantDefaultTemplate;
-    }
-    return currentPromptRecord;
-  }, [currentPromptRecord, tenantDefaultTemplate]);
-
-  const basePromptContent = useMemo(
-    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
-    [effectivePromptRecord, currentPhaseDefaults],
-  );
 
   const isTenantDefaultActive = Boolean(
     tenantDefaultTemplate && tenantDefaultTemplate.tenant_id,
