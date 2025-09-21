@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type ComponentType,
 } from 'react';
 import Editor from '@monaco-editor/react';
 import {
@@ -24,11 +25,32 @@ import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
-// Importiere die zentral definierten Zuordnungen für Phasen-Komponenten
 import {
-  PHASE_CONTENT_COMPONENTS,
-  PHASE_SIDEBAR_COMPONENTS,
-} from '../components/pipeline/phaseComponents';
+  PurposePhaseContent,
+  PurposePhaseSidebar,
+} from '../components/pipeline/phases/PurposePhase';
+import {
+  VisionPhaseContent,
+  VisionPhaseSidebar,
+} from '../components/pipeline/phases/VisionPhase';
+import { PrdPhaseContent, PrdPhaseSidebar } from '../components/pipeline/phases/PrdPhase';
+import {
+  ArchitecturePhaseContent,
+  ArchitecturePhaseSidebar,
+} from '../components/pipeline/phases/ArchitecturePhase';
+import {
+  ArchitectureReviewPhaseContent,
+  ArchitectureReviewPhaseSidebar,
+} from '../components/pipeline/phases/ArchitectureReviewPhase';
+import {
+  ImplementationPhaseContent,
+  ImplementationPhaseSidebar,
+} from '../components/pipeline/phases/ImplementationPhase';
+import { ReviewPhaseContent, ReviewPhaseSidebar } from '../components/pipeline/phases/ReviewPhase';
+import {
+  ReleasePhaseContent,
+  ReleasePhaseSidebar,
+} from '../components/pipeline/phases/ReleasePhase';
 import type {
   ArtifactItem,
   PhaseNavItem,
@@ -76,6 +98,28 @@ const SCOPE_OPTIONS: { value: 'purpose' | 'tenant_default' | 'template'; label: 
   { value: 'tenant_default', label: 'Als Mandanten-Standard speichern' },
   { value: 'template', label: 'Vorlage aktualisieren' },
 ];
+
+const PHASE_CONTENT_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
+  purpose: PurposePhaseContent,
+  vision: VisionPhaseContent,
+  prd: PrdPhaseContent,
+  architecture: ArchitecturePhaseContent,
+  architecture_review: ArchitectureReviewPhaseContent,
+  implementation: ImplementationPhaseContent,
+  review: ReviewPhaseContent,
+  release: ReleasePhaseContent,
+};
+
+const PHASE_SIDEBAR_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
+  purpose: PurposePhaseSidebar,
+  vision: VisionPhaseSidebar,
+  prd: PrdPhaseSidebar,
+  architecture: ArchitecturePhaseSidebar,
+  architecture_review: ArchitectureReviewPhaseSidebar,
+  implementation: ImplementationPhaseSidebar,
+  review: ReviewPhaseSidebar,
+  release: ReleasePhaseSidebar,
+};
 
 export default function PipelineView() {
   const artifacts = usePipelineStore((s) => s.artifacts) as ArtifactItem[];
