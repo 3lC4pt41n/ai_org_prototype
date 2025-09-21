@@ -28,54 +28,6 @@ import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
-const LazyPurposePhaseContent = lazy(() =>
-  import('../components/pipeline/phases/PurposePhase').then((m) => ({ default: m.PurposePhaseContent })),
-);
-const LazyPurposePhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/PurposePhase').then((m) => ({ default: m.PurposePhaseSidebar })),
-);
-const LazyVisionPhaseContent = lazy(() =>
-  import('../components/pipeline/phases/VisionPhase').then((m) => ({ default: m.VisionPhaseContent })),
-);
-const LazyVisionPhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/VisionPhase').then((m) => ({ default: m.VisionPhaseSidebar })),
-);
-const LazyPrdPhaseContent = lazy(() =>
-  import('../components/pipeline/phases/PrdPhase').then((m) => ({ default: m.PrdPhaseContent })),
-);
-const LazyPrdPhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/PrdPhase').then((m) => ({ default: m.PrdPhaseSidebar })),
-);
-const LazyArchitecturePhaseContent = lazy(() =>
-  import('../components/pipeline/phases/ArchitecturePhase').then((m) => ({ default: m.ArchitecturePhaseContent })),
-);
-const LazyArchitecturePhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/ArchitecturePhase').then((m) => ({ default: m.ArchitecturePhaseSidebar })),
-);
-const LazyArchitectureReviewPhaseContent = lazy(() =>
-  import('../components/pipeline/phases/ArchitectureReviewPhase').then((m) => ({ default: m.ArchitectureReviewPhaseContent })),
-);
-const LazyArchitectureReviewPhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/ArchitectureReviewPhase').then((m) => ({ default: m.ArchitectureReviewPhaseSidebar })),
-);
-const LazyImplementationPhaseContent = lazy(() =>
-  import('../components/pipeline/phases/ImplementationPhase').then((m) => ({ default: m.ImplementationPhaseContent })),
-);
-const LazyImplementationPhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/ImplementationPhase').then((m) => ({ default: m.ImplementationPhaseSidebar })),
-);
-const LazyReviewPhaseContent = lazy(() =>
-  import('../components/pipeline/phases/ReviewPhase').then((m) => ({ default: m.ReviewPhaseContent })),
-);
-const LazyReviewPhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/ReviewPhase').then((m) => ({ default: m.ReviewPhaseSidebar })),
-);
-const LazyReleasePhaseContent = lazy(() =>
-  import('../components/pipeline/phases/ReleasePhase').then((m) => ({ default: m.ReleasePhaseContent })),
-);
-const LazyReleasePhaseSidebar = lazy(() =>
-  import('../components/pipeline/phases/ReleasePhase').then((m) => ({ default: m.ReleasePhaseSidebar })),
-);
 import type {
   ArtifactItem,
   PhaseNavItem,
@@ -86,6 +38,90 @@ import type {
   PromptTemplateListResponse,
   PromptTemplateRecord,
 } from '../components/pipeline/types';
+
+function createLazyPhaseComponent<
+  TModule extends Record<string, ComponentType<PhaseViewContext>>,
+  TExport extends keyof TModule,
+>(
+  loader: () => Promise<TModule>,
+  exportName: TExport,
+): LazyExoticComponent<ComponentType<PhaseViewContext>> {
+  return lazy(async () => {
+    const module = await loader();
+    const Component = module[exportName];
+
+    if (!Component) {
+      throw new Error(`Phase component "${String(exportName)}" could not be loaded.`);
+    }
+
+    return { default: Component };
+  });
+}
+
+const LazyPurposePhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/PurposePhase'),
+  'PurposePhaseContent',
+);
+const LazyPurposePhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/PurposePhase'),
+  'PurposePhaseSidebar',
+);
+const LazyVisionPhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/VisionPhase'),
+  'VisionPhaseContent',
+);
+const LazyVisionPhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/VisionPhase'),
+  'VisionPhaseSidebar',
+);
+const LazyPrdPhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/PrdPhase'),
+  'PrdPhaseContent',
+);
+const LazyPrdPhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/PrdPhase'),
+  'PrdPhaseSidebar',
+);
+const LazyArchitecturePhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ArchitecturePhase'),
+  'ArchitecturePhaseContent',
+);
+const LazyArchitecturePhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ArchitecturePhase'),
+  'ArchitecturePhaseSidebar',
+);
+const LazyArchitectureReviewPhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ArchitectureReviewPhase'),
+  'ArchitectureReviewPhaseContent',
+);
+const LazyArchitectureReviewPhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ArchitectureReviewPhase'),
+  'ArchitectureReviewPhaseSidebar',
+);
+const LazyImplementationPhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ImplementationPhase'),
+  'ImplementationPhaseContent',
+);
+const LazyImplementationPhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ImplementationPhase'),
+  'ImplementationPhaseSidebar',
+);
+const LazyReviewPhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ReviewPhase'),
+  'ReviewPhaseContent',
+);
+const LazyReviewPhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ReviewPhase'),
+  'ReviewPhaseSidebar',
+);
+const LazyReleasePhaseContent = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ReleasePhase'),
+  'ReleasePhaseContent',
+);
+const LazyReleasePhaseSidebar = createLazyPhaseComponent(
+  () => import('../components/pipeline/phases/ReleasePhase'),
+  'ReleasePhaseSidebar',
+);
 
 console.log('Loading PipelineView module');
 
