@@ -6,6 +6,9 @@ import {
   useState,
   type ReactNode,
   type ComponentType,
+  type LazyExoticComponent,
+  Suspense,
+  lazy,
 } from 'react';
 import Editor from '@monaco-editor/react';
 import {
@@ -25,32 +28,54 @@ import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
-import {
-  PurposePhaseContent,
-  PurposePhaseSidebar,
-} from '../components/pipeline/phases/PurposePhase';
-import {
-  VisionPhaseContent,
-  VisionPhaseSidebar,
-} from '../components/pipeline/phases/VisionPhase';
-import { PrdPhaseContent, PrdPhaseSidebar } from '../components/pipeline/phases/PrdPhase';
-import {
-  ArchitecturePhaseContent,
-  ArchitecturePhaseSidebar,
-} from '../components/pipeline/phases/ArchitecturePhase';
-import {
-  ArchitectureReviewPhaseContent,
-  ArchitectureReviewPhaseSidebar,
-} from '../components/pipeline/phases/ArchitectureReviewPhase';
-import {
-  ImplementationPhaseContent,
-  ImplementationPhaseSidebar,
-} from '../components/pipeline/phases/ImplementationPhase';
-import { ReviewPhaseContent, ReviewPhaseSidebar } from '../components/pipeline/phases/ReviewPhase';
-import {
-  ReleasePhaseContent,
-  ReleasePhaseSidebar,
-} from '../components/pipeline/phases/ReleasePhase';
+const LazyPurposePhaseContent = lazy(() =>
+  import('../components/pipeline/phases/PurposePhase').then((m) => ({ default: m.PurposePhaseContent })),
+);
+const LazyPurposePhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/PurposePhase').then((m) => ({ default: m.PurposePhaseSidebar })),
+);
+const LazyVisionPhaseContent = lazy(() =>
+  import('../components/pipeline/phases/VisionPhase').then((m) => ({ default: m.VisionPhaseContent })),
+);
+const LazyVisionPhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/VisionPhase').then((m) => ({ default: m.VisionPhaseSidebar })),
+);
+const LazyPrdPhaseContent = lazy(() =>
+  import('../components/pipeline/phases/PrdPhase').then((m) => ({ default: m.PrdPhaseContent })),
+);
+const LazyPrdPhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/PrdPhase').then((m) => ({ default: m.PrdPhaseSidebar })),
+);
+const LazyArchitecturePhaseContent = lazy(() =>
+  import('../components/pipeline/phases/ArchitecturePhase').then((m) => ({ default: m.ArchitecturePhaseContent })),
+);
+const LazyArchitecturePhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/ArchitecturePhase').then((m) => ({ default: m.ArchitecturePhaseSidebar })),
+);
+const LazyArchitectureReviewPhaseContent = lazy(() =>
+  import('../components/pipeline/phases/ArchitectureReviewPhase').then((m) => ({ default: m.ArchitectureReviewPhaseContent })),
+);
+const LazyArchitectureReviewPhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/ArchitectureReviewPhase').then((m) => ({ default: m.ArchitectureReviewPhaseSidebar })),
+);
+const LazyImplementationPhaseContent = lazy(() =>
+  import('../components/pipeline/phases/ImplementationPhase').then((m) => ({ default: m.ImplementationPhaseContent })),
+);
+const LazyImplementationPhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/ImplementationPhase').then((m) => ({ default: m.ImplementationPhaseSidebar })),
+);
+const LazyReviewPhaseContent = lazy(() =>
+  import('../components/pipeline/phases/ReviewPhase').then((m) => ({ default: m.ReviewPhaseContent })),
+);
+const LazyReviewPhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/ReviewPhase').then((m) => ({ default: m.ReviewPhaseSidebar })),
+);
+const LazyReleasePhaseContent = lazy(() =>
+  import('../components/pipeline/phases/ReleasePhase').then((m) => ({ default: m.ReleasePhaseContent })),
+);
+const LazyReleasePhaseSidebar = lazy(() =>
+  import('../components/pipeline/phases/ReleasePhase').then((m) => ({ default: m.ReleasePhaseSidebar })),
+);
 import type {
   ArtifactItem,
   PhaseNavItem,
@@ -99,26 +124,32 @@ const SCOPE_OPTIONS: { value: 'purpose' | 'tenant_default' | 'template'; label: 
   { value: 'template', label: 'Vorlage aktualisieren' },
 ];
 
-const PHASE_CONTENT_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
-  purpose: PurposePhaseContent,
-  vision: VisionPhaseContent,
-  prd: PrdPhaseContent,
-  architecture: ArchitecturePhaseContent,
-  architecture_review: ArchitectureReviewPhaseContent,
-  implementation: ImplementationPhaseContent,
-  review: ReviewPhaseContent,
-  release: ReleasePhaseContent,
+const PHASE_CONTENT_COMPONENTS: Record<
+  PhaseId,
+  LazyExoticComponent<ComponentType<PhaseViewContext>>
+> = {
+  purpose: LazyPurposePhaseContent,
+  vision: LazyVisionPhaseContent,
+  prd: LazyPrdPhaseContent,
+  architecture: LazyArchitecturePhaseContent,
+  architecture_review: LazyArchitectureReviewPhaseContent,
+  implementation: LazyImplementationPhaseContent,
+  review: LazyReviewPhaseContent,
+  release: LazyReleasePhaseContent,
 };
 
-const PHASE_SIDEBAR_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
-  purpose: PurposePhaseSidebar,
-  vision: VisionPhaseSidebar,
-  prd: PrdPhaseSidebar,
-  architecture: ArchitecturePhaseSidebar,
-  architecture_review: ArchitectureReviewPhaseSidebar,
-  implementation: ImplementationPhaseSidebar,
-  review: ReviewPhaseSidebar,
-  release: ReleasePhaseSidebar,
+const PHASE_SIDEBAR_COMPONENTS: Record<
+  PhaseId,
+  LazyExoticComponent<ComponentType<PhaseViewContext>>
+> = {
+  purpose: LazyPurposePhaseSidebar,
+  vision: LazyVisionPhaseSidebar,
+  prd: LazyPrdPhaseSidebar,
+  architecture: LazyArchitecturePhaseSidebar,
+  architecture_review: LazyArchitectureReviewPhaseSidebar,
+  implementation: LazyImplementationPhaseSidebar,
+  review: LazyReviewPhaseSidebar,
+  release: LazyReleasePhaseSidebar,
 };
 
 export default function PipelineView() {
@@ -961,9 +992,17 @@ export default function PipelineView() {
   const PhaseContentComponent = PHASE_CONTENT_COMPONENTS[currentPhase];
   const PhaseSidebarComponent = PHASE_SIDEBAR_COMPONENTS[currentPhase];
 
-  const phaseContent = <PhaseContentComponent {...phaseContext} />;
+  const phaseContent = (
+    <Suspense fallback={<div>Lade Phase-Inhalt…</div>}>
+      <PhaseContentComponent {...phaseContext} />
+    </Suspense>
+  );
 
-  const phaseSidebarContent = <PhaseSidebarComponent {...phaseContext} />;
+  const phaseSidebarContent = (
+    <Suspense fallback={null}>
+      <PhaseSidebarComponent {...phaseContext} />
+    </Suspense>
+  );
 
   function downloadArtifactFile(artifactId: string, filename: string) {
     const token = localStorage.getItem('token');
