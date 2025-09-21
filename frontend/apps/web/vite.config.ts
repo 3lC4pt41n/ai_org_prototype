@@ -1,7 +1,7 @@
-// project/vite.config.js
+// project/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "node:path";          // <- GANZES Modul holen
+import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
@@ -10,19 +10,28 @@ export default defineConfig({
       "@ui": path.resolve(__dirname, "../../packages/ui/src"),
       "@api": path.resolve(__dirname, "../../packages/api-client/src"),
       "@web": path.resolve(__dirname, "src"),
-
-    }
+    },
   },
   server: {
+    port: 5732,          // fester Port für Dev-Server
+    strictPort: true,    // bricht ab, wenn Port belegt
     proxy: {
-      // FastAPI runs on :8000
       "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true
-      }
-    }
+        target: "http://localhost:8000", // FastAPI Backend
+        changeOrigin: true,
+      },
+    },
   },
   build: {
-    sourcemap: true
-  }
+    sourcemap: true,        // 🔍 Source Maps aktivieren → Debugging in DevTools
+    target: "esnext",       // modernere Syntax, bessere Tree-Shaking
+    outDir: "dist",         // Standard-Ausgabeordner
+    emptyOutDir: true,      // vorher dist leeren
+  },
+  esbuild: {
+    jsx: "automatic",       // React 17+ JSX Transform
+    logOverride: {          // weniger Spam in der Konsole
+      "this-is-undefined-in-esm": "silent",
+    },
+  },
 });
