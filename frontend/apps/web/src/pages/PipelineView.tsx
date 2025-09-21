@@ -24,6 +24,7 @@ import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
+// Importiere die zentral definierten Zuordnungen für Phasen-Komponenten
 import {
   PHASE_CONTENT_COMPONENTS,
   PHASE_SIDEBAR_COMPONENTS,

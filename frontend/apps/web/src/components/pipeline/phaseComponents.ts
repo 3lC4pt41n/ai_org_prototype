@@ -1,6 +1,8 @@
 import type { ComponentType } from 'react';
 import type { PhaseId } from './phaseConfig';
 import type { PhaseViewContext } from './types';
+
+// Importiere alle Phasen-Komponenten direkt aus ihren Quelldateien
 import {
   PurposePhaseContent,
   PurposePhaseSidebar,
@@ -25,9 +27,11 @@ import {
 import { ReviewPhaseContent, ReviewPhaseSidebar } from './phases/ReviewPhase';
 import { ReleasePhaseContent, ReleasePhaseSidebar } from './phases/ReleasePhase';
 
-export type PhaseComponent = ComponentType<PhaseViewContext>;
-
-export const PHASE_CONTENT_COMPONENTS: Record<PhaseId, PhaseComponent> = {
+/**
+ * Zuordnung der Content-Komponenten zu den Phasen-IDs. Jede Phase wird
+ * explizit ihrer Komponente zugewiesen, sodass es keine zirkulären Abhängigkeiten gibt.
+ */
+export const PHASE_CONTENT_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
   purpose: PurposePhaseContent,
   vision: VisionPhaseContent,
   prd: PrdPhaseContent,
@@ -38,7 +42,11 @@ export const PHASE_CONTENT_COMPONENTS: Record<PhaseId, PhaseComponent> = {
   release: ReleasePhaseContent,
 };
 
-export const PHASE_SIDEBAR_COMPONENTS: Record<PhaseId, PhaseComponent> = {
+/**
+ * Zuordnung der Sidebar-Komponenten zu den Phasen-IDs. Auch hier wird jede
+ * Phase direkt mit ihrer zugehörigen Sidebar-Komponente verknüpft.
+ */
+export const PHASE_SIDEBAR_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
   purpose: PurposePhaseSidebar,
   vision: VisionPhaseSidebar,
   prd: PrdPhaseSidebar,
