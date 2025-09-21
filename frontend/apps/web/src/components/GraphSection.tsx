@@ -1,5 +1,7 @@
 import PipelineGraph from "./PipelineGraph";
 
+console.log("Loading GraphSection module");
+
 interface Props {
   statusIcon: React.ReactNode;
   nodes: Array<{
