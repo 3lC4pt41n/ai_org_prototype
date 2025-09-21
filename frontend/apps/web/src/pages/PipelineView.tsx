@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type ComponentType,
 } from 'react';
 import Editor from '@monaco-editor/react';
 import {
@@ -25,23 +24,10 @@ import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
-import { PurposePhaseContent, PurposePhaseSidebar } from '../components/pipeline/phases/PurposePhase';
-import { VisionPhaseContent, VisionPhaseSidebar } from '../components/pipeline/phases/VisionPhase';
-import { PrdPhaseContent, PrdPhaseSidebar } from '../components/pipeline/phases/PrdPhase';
 import {
-  ArchitecturePhaseContent,
-  ArchitecturePhaseSidebar,
-} from '../components/pipeline/phases/ArchitecturePhase';
-import {
-  ArchitectureReviewPhaseContent,
-  ArchitectureReviewPhaseSidebar,
-} from '../components/pipeline/phases/ArchitectureReviewPhase';
-import {
-  ImplementationPhaseContent,
-  ImplementationPhaseSidebar,
-} from '../components/pipeline/phases/ImplementationPhase';
-import { ReviewPhaseContent, ReviewPhaseSidebar } from '../components/pipeline/phases/ReviewPhase';
-import { ReleasePhaseContent, ReleasePhaseSidebar } from '../components/pipeline/phases/ReleasePhase';
+  PHASE_CONTENT_COMPONENTS,
+  PHASE_SIDEBAR_COMPONENTS,
+} from '../components/pipeline/phaseComponents';
 import type {
   ArtifactItem,
   PhaseNavItem,
@@ -123,28 +109,6 @@ export default function PipelineView() {
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>([]);
   const [promptAssignments, setPromptAssignments] = useState<PromptAssignmentSummary[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
-
-  // Define phase component mappings locally to avoid circular dependencies
-  const PHASE_CONTENT_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
-    purpose: PurposePhaseContent,
-    vision: VisionPhaseContent,
-    prd: PrdPhaseContent,
-    architecture: ArchitecturePhaseContent,
-    architecture_review: ArchitectureReviewPhaseContent,
-    implementation: ImplementationPhaseContent,
-    review: ReviewPhaseContent,
-    release: ReleasePhaseContent,
-  };
-  const PHASE_SIDEBAR_COMPONENTS: Record<PhaseId, ComponentType<PhaseViewContext>> = {
-    purpose: PurposePhaseSidebar,
-    vision: VisionPhaseSidebar,
-    prd: PrdPhaseSidebar,
-    architecture: ArchitecturePhaseSidebar,
-    architecture_review: ArchitectureReviewPhaseSidebar,
-    implementation: ImplementationPhaseSidebar,
-    review: ReviewPhaseSidebar,
-    release: ReleasePhaseSidebar,
-  };
 
   const defaultTemplateId = useMemo(() => {
     if (!templates.length) return null;
