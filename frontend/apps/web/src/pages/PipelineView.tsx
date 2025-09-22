@@ -223,6 +223,11 @@ export default function PipelineView() {
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>([]);
   const [promptAssignments, setPromptAssignments] = useState<PromptAssignmentSummary[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
+  const [autoPipeline, setAutoPipeline] = useState(false);
+
+  const toggleAutoPipeline = useCallback(() => {
+    setAutoPipeline((prev) => !prev);
+  }, []);
 
   const defaultTemplateId = useMemo(() => {
     if (!templates.length) return null;
@@ -359,6 +364,24 @@ export default function PipelineView() {
       setUpdatingResearch(false);
     }
   }, [allowResearch, updatingResearch]);
+
+  const approveArtifact = useCallback(
+    async (artifactId: string) => {
+      const toastId = toast.loading('Artefakt wird freigegeben …');
+      try {
+        await postJson(`/artifacts/${artifactId}/approve`, {});
+        if (selectedPurposeId) {
+          await fetchGraphAndStatus(selectedPurposeId);
+        }
+        await fetchArtifacts();
+        await fetchBacklog();
+        toast.success('Artefakt freigegeben', { id: toastId });
+      } catch {
+        toast.error('Freigabe fehlgeschlagen', { id: toastId });
+      }
+    },
+    [fetchArtifacts, fetchBacklog, fetchGraphAndStatus, selectedPurposeId],
+  );
 
   const handleCreatePurpose = useCallback(
     async (purposeName: string, templateId?: string) => {
@@ -553,20 +576,21 @@ export default function PipelineView() {
 
   const recommendedPhase = useMemo<PhaseId>(() => {
     if (!purposeCompleted) return 'purpose';
-    if (!visionCompleted) return 'vision';
-    if (!prdCompleted) return 'prd';
-    if (!architectureCompleted) return 'architecture';
-    if (!architectureReviewCompleted) return 'architecture_review';
+    if (!visionArtifact || !visionArtifact.released) return 'vision';
+    if (!prdArtifact || !prdArtifact.released) return 'prd';
+    if (!archArtifact || !archArtifact.released) return 'architecture';
+    if (!architectureReviewArtifact || !architectureReviewArtifact.released)
+      return 'architecture_review';
     if (!implementationCompleted) return 'implementation';
     if (!reviewCompleted) return 'review';
     if (!releaseCompleted) return 'release';
     return 'release';
   }, [
     purposeCompleted,
-    visionCompleted,
-    prdCompleted,
-    architectureCompleted,
-    architectureReviewCompleted,
+    visionArtifact,
+    prdArtifact,
+    archArtifact,
+    architectureReviewArtifact,
     implementationCompleted,
     reviewCompleted,
     releaseCompleted,
@@ -620,6 +644,33 @@ export default function PipelineView() {
     },
     [applyChatFilterForPhase],
   );
+
+  useEffect(() => {
+    if (!autoPipeline) {
+      return;
+    }
+    if (currentPhase === 'vision' && visionArtifact && !visionArtifact.released) {
+      void approveArtifact(visionArtifact.id);
+    } else if (currentPhase === 'prd' && prdArtifact && !prdArtifact.released) {
+      void approveArtifact(prdArtifact.id);
+    } else if (currentPhase === 'architecture' && archArtifact && !archArtifact.released) {
+      void approveArtifact(archArtifact.id);
+    } else if (
+      currentPhase === 'architecture_review' &&
+      architectureReviewArtifact &&
+      !architectureReviewArtifact.released
+    ) {
+      void approveArtifact(architectureReviewArtifact.id);
+    }
+  }, [
+    approveArtifact,
+    archArtifact,
+    architectureReviewArtifact,
+    autoPipeline,
+    currentPhase,
+    prdArtifact,
+    visionArtifact,
+  ]);
 
   const handlePhaseSelect = (phase: PhaseId) => {
     setPhase(phase);
@@ -1085,6 +1136,22 @@ export default function PipelineView() {
               )}
               {allowResearch == null ? 'Web …' : allowResearch ? 'Web aus' : 'Web an'}
             </button>
+            <button
+              type="button"
+              onClick={toggleAutoPipeline}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                autoPipeline
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-700'
+                  : 'bg-slate-200 hover:bg-slate-300 text-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100'
+              }`}
+            >
+              {autoPipeline ? (
+                <PauseCircle className="h-4 w-4" aria-hidden />
+              ) : (
+                <PlayCircle className="h-4 w-4" aria-hidden />
+              )}
+              {autoPipeline ? 'Auto aus' : 'Auto an'}
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
@@ -1159,6 +1226,41 @@ export default function PipelineView() {
             )}
             {isLoading && <p className="text-sm text-slate-500">Lade...</p>}
             {phaseContent}
+            {!autoPipeline && currentPhase === 'vision' && visionArtifact && !visionArtifact.released && (
+              <button
+                onClick={() => void approveArtifact(visionArtifact.id)}
+                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                Vision freigeben
+              </button>
+            )}
+            {!autoPipeline && currentPhase === 'prd' && prdArtifact && !prdArtifact.released && (
+              <button
+                onClick={() => void approveArtifact(prdArtifact.id)}
+                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                PRD freigeben
+              </button>
+            )}
+            {!autoPipeline && currentPhase === 'architecture' && archArtifact && !archArtifact.released && (
+              <button
+                onClick={() => void approveArtifact(archArtifact.id)}
+                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                Architektur freigeben
+              </button>
+            )}
+            {!autoPipeline &&
+              currentPhase === 'architecture_review' &&
+              architectureReviewArtifact &&
+              !architectureReviewArtifact.released && (
+                <button
+                  onClick={() => void approveArtifact(architectureReviewArtifact.id)}
+                  className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+                >
+                  Review freigeben
+                </button>
+              )}
           </div>
         </div>
 
