@@ -409,196 +409,6 @@ export default function PipelineView() {
     ],
   );
 
-  const tenantDefaultTemplate = useMemo<PromptTemplateRecord | null>(() => {
-    if (!currentPhaseDefaults) return null;
-    const slug = currentPhaseDefaults.slug;
-    return (
-      promptTemplates.find(
-        (template) => template.phase_slug === slug && template.is_tenant_default,
-      ) ?? null
-    );
-  }, [promptTemplates, currentPhaseDefaults]);
-
-  const currentPromptRecord = useMemo<PromptTemplateRecord | null>(() => {
-    if (!currentPhaseDefaults) return null;
-    const key = currentPhaseDefaults.prompt_template;
-    if (!key) return null;
-    return (
-      promptTemplates.find((template) => template.id === key) ??
-      promptTemplates.find(
-        (template) => template.default_path === key && !template.tenant_id,
-      ) ??
-      null
-    );
-  }, [promptTemplates, currentPhaseDefaults]);
-
-  const effectivePromptRecord = useMemo<PromptTemplateRecord | null>(() => {
-    if (currentPromptRecord && currentPromptRecord.tenant_id) {
-      return currentPromptRecord;
-    }
-    if (tenantDefaultTemplate) {
-      return tenantDefaultTemplate;
-    }
-    return currentPromptRecord;
-  }, [currentPromptRecord, tenantDefaultTemplate]);
-
-  const basePromptContent = useMemo(
-    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
-    [effectivePromptRecord, currentPhaseDefaults],
-  );
-
-  const handlePhaseSettingsSave = useCallback(async () => {
-    if (!selectedPurposeId || !currentPhaseDefaults) return;
-    const baseTokens = currentPhaseDefaults.tokens_plan_default ?? 0;
-    const parsedTokens = phaseTokens.trim() === '' ? baseTokens : Number(phaseTokens);
-    const tokensValue = Number.isFinite(parsedTokens)
-      ? Math.max(0, Math.trunc(parsedTokens))
-      : baseTokens;
-
-    const payload: Record<string, unknown> = {
-      purpose_id: selectedPurposeId,
-      scope: phaseScope,
-      tokens_plan_default: tokensValue,
-      model_name: phaseModel || null,
-    };
-
-    setPhaseSaving(true);
-    const toastId = toast.loading('Phase wird aktualisiert …');
-    let successMessage = 'Phase aktualisiert.';
-
-    try {
-      let promptTemplateId: string | null | undefined =
-        currentPhaseDefaults.prompt_template ?? null;
-
-      if (phaseScope === 'tenant_default') {
-        if (!phasePrompt.trim()) {
-          throw new Error('Prompt darf nicht leer sein.');
-        }
-
-        if (tenantDefaultTemplate && tenantDefaultTemplate.tenant_id) {
-          if (
-            (phasePrompt || '').trim() !==
-            (tenantDefaultTemplate.content || '').trim()
-          ) {
-            await putJson(`/pipeline/prompts/update/${tenantDefaultTemplate.id}`, {
-              content: phasePrompt,
-            });
-          }
-          promptTemplateId = tenantDefaultTemplate.id;
-          successMessage = 'Mandanten-Prompt aktualisiert.';
-        } else if (
-          (phasePrompt || '').trim() !== (basePromptContent || '').trim()
-        ) {
-          const created = await postJson<{ id: string }>(
-            '/pipeline/prompts/create',
-            {
-              phase_slug: currentPhaseDefaults.slug,
-              content: phasePrompt,
-              agent: currentPhaseDefaults.agent_role ?? null,
-              set_default: true,
-              purpose_id: selectedPurposeId,
-            },
-          );
-          promptTemplateId = created?.id ?? null;
-          successMessage = 'Prompt-Vorlage als Mandanten-Standard gespeichert.';
-        } else {
-          promptTemplateId = currentPromptRecord?.id ?? promptTemplateId ?? null;
-        }
-      } else if (phaseScope === 'template') {
-        const globalTemplate =
-          (currentPromptRecord && !currentPromptRecord.tenant_id
-            ? currentPromptRecord
-            : null) ??
-          promptTemplates.find(
-            (template) =>
-              template.phase_slug === currentPhaseDefaults.slug && !template.tenant_id,
-          );
-        if (!globalTemplate) {
-          throw new Error('Globales Template nicht gefunden.');
-        }
-        if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
-          await putJson(`/pipeline/prompts/update/${globalTemplate.id}`, {
-            content: phasePrompt,
-          });
-        }
-        promptTemplateId = globalTemplate.id;
-        successMessage = 'Globale Prompt-Vorlage aktualisiert.';
-      } else {
-        if (!(phasePrompt || '').trim()) {
-          promptTemplateId = null;
-        } else if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
-          if (
-            currentPromptRecord &&
-            currentPromptRecord.tenant_id &&
-            !currentPromptRecord.is_tenant_default
-          ) {
-            await putJson(`/pipeline/prompts/update/${currentPromptRecord.id}`, {
-              content: phasePrompt,
-            });
-            promptTemplateId = currentPromptRecord.id;
-          } else {
-            const created = await postJson<{ id: string }>(
-              '/pipeline/prompts/create',
-              {
-                phase_slug: currentPhaseDefaults.slug,
-                content: phasePrompt,
-                agent: currentPhaseDefaults.agent_role ?? null,
-              },
-            );
-            promptTemplateId = created?.id ?? null;
-          }
-        } else if (currentPromptRecord) {
-          promptTemplateId = currentPromptRecord.id;
-        }
-      }
-
-      if (promptTemplateId !== undefined) {
-        payload.prompt_template = promptTemplateId;
-      }
-
-      const response = await putJson<{ template: PipelineTemplateSummary }>(
-        `/pipeline/phases/${currentPhaseDefaults.id}`,
-        payload,
-      );
-      if (response?.template) {
-        setCurrentTemplate(response.template);
-      }
-
-      await fetchGraphAndStatus(selectedPurposeId);
-      await fetchBacklog();
-
-      const [templateList, promptList] = await Promise.all([
-        getJson<PipelineTemplateSummary[]>('/pipeline/templates'),
-        getJson<PromptTemplateListResponse>('/pipeline/prompts'),
-      ]);
-      setTemplates(Array.isArray(templateList) ? templateList : []);
-      setPromptTemplates(Array.isArray(promptList?.templates) ? promptList.templates : []);
-      setPromptAssignments(
-        Array.isArray(promptList?.assignments) ? promptList.assignments : [],
-      );
-
-      toast.success(successMessage, { id: toastId });
-    } catch (error) {
-      console.error(error);
-      toast.error('Einstellungen konnten nicht gespeichert werden.', { id: toastId });
-    } finally {
-      setPhaseSaving(false);
-    }
-  }, [
-    basePromptContent,
-    currentPhaseDefaults,
-    currentPromptRecord,
-    fetchBacklog,
-    fetchGraphAndStatus,
-    phaseModel,
-    phasePrompt,
-    phaseScope,
-    phaseTokens,
-    promptTemplates,
-    selectedPurposeId,
-    tenantDefaultTemplate,
-  ]);
-
   const visionArtifacts = artifacts.filter((a) =>
     a.repo_path?.toLowerCase().includes('vision/'),
   );
@@ -876,6 +686,196 @@ export default function PipelineView() {
       currentTemplate.phases.find((phase) => phase.slug === currentPhaseSlug) ?? null
     );
   }, [currentTemplate, currentPhaseSlug]);
+
+  const tenantDefaultTemplate = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const slug = currentPhaseDefaults.slug;
+    return (
+      promptTemplates.find(
+        (template) => template.phase_slug === slug && template.is_tenant_default,
+      ) ?? null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const currentPromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (!currentPhaseDefaults) return null;
+    const key = currentPhaseDefaults.prompt_template;
+    if (!key) return null;
+    return (
+      promptTemplates.find((template) => template.id === key) ??
+      promptTemplates.find(
+        (template) => template.default_path === key && !template.tenant_id,
+      ) ??
+      null
+    );
+  }, [promptTemplates, currentPhaseDefaults]);
+
+  const effectivePromptRecord = useMemo<PromptTemplateRecord | null>(() => {
+    if (currentPromptRecord && currentPromptRecord.tenant_id) {
+      return currentPromptRecord;
+    }
+    if (tenantDefaultTemplate) {
+      return tenantDefaultTemplate;
+    }
+    return currentPromptRecord;
+  }, [currentPromptRecord, tenantDefaultTemplate]);
+
+  const basePromptContent = useMemo(
+    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
+    [effectivePromptRecord, currentPhaseDefaults],
+  );
+
+  const handlePhaseSettingsSave = useCallback(async () => {
+    if (!selectedPurposeId || !currentPhaseDefaults) return;
+    const baseTokens = currentPhaseDefaults.tokens_plan_default ?? 0;
+    const parsedTokens = phaseTokens.trim() === '' ? baseTokens : Number(phaseTokens);
+    const tokensValue = Number.isFinite(parsedTokens)
+      ? Math.max(0, Math.trunc(parsedTokens))
+      : baseTokens;
+
+    const payload: Record<string, unknown> = {
+      purpose_id: selectedPurposeId,
+      scope: phaseScope,
+      tokens_plan_default: tokensValue,
+      model_name: phaseModel || null,
+    };
+
+    setPhaseSaving(true);
+    const toastId = toast.loading('Phase wird aktualisiert …');
+    let successMessage = 'Phase aktualisiert.';
+
+    try {
+      let promptTemplateId: string | null | undefined =
+        currentPhaseDefaults.prompt_template ?? null;
+
+      if (phaseScope === 'tenant_default') {
+        if (!phasePrompt.trim()) {
+          throw new Error('Prompt darf nicht leer sein.');
+        }
+
+        if (tenantDefaultTemplate && tenantDefaultTemplate.tenant_id) {
+          if (
+            (phasePrompt || '').trim() !==
+            (tenantDefaultTemplate.content || '').trim()
+          ) {
+            await putJson(`/pipeline/prompts/update/${tenantDefaultTemplate.id}`, {
+              content: phasePrompt,
+            });
+          }
+          promptTemplateId = tenantDefaultTemplate.id;
+          successMessage = 'Mandanten-Prompt aktualisiert.';
+        } else if (
+          (phasePrompt || '').trim() !== (basePromptContent || '').trim()
+        ) {
+          const created = await postJson<{ id: string }>(
+            '/pipeline/prompts/create',
+            {
+              phase_slug: currentPhaseDefaults.slug,
+              content: phasePrompt,
+              agent: currentPhaseDefaults.agent_role ?? null,
+              set_default: true,
+              purpose_id: selectedPurposeId,
+            },
+          );
+          promptTemplateId = created?.id ?? null;
+          successMessage = 'Prompt-Vorlage als Mandanten-Standard gespeichert.';
+        } else {
+          promptTemplateId = currentPromptRecord?.id ?? promptTemplateId ?? null;
+        }
+      } else if (phaseScope === 'template') {
+        const globalTemplate =
+          (currentPromptRecord && !currentPromptRecord.tenant_id
+            ? currentPromptRecord
+            : null) ??
+          promptTemplates.find(
+            (template) =>
+              template.phase_slug === currentPhaseDefaults.slug && !template.tenant_id,
+          );
+        if (!globalTemplate) {
+          throw new Error('Globales Template nicht gefunden.');
+        }
+        if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
+          await putJson(`/pipeline/prompts/update/${globalTemplate.id}`, {
+            content: phasePrompt,
+          });
+        }
+        promptTemplateId = globalTemplate.id;
+        successMessage = 'Globale Prompt-Vorlage aktualisiert.';
+      } else {
+        if (!(phasePrompt || '').trim()) {
+          promptTemplateId = null;
+        } else if ((phasePrompt || '').trim() !== (basePromptContent || '').trim()) {
+          if (
+            currentPromptRecord &&
+            currentPromptRecord.tenant_id &&
+            !currentPromptRecord.is_tenant_default
+          ) {
+            await putJson(`/pipeline/prompts/update/${currentPromptRecord.id}`, {
+              content: phasePrompt,
+            });
+            promptTemplateId = currentPromptRecord.id;
+          } else {
+            const created = await postJson<{ id: string }>(
+              '/pipeline/prompts/create',
+              {
+                phase_slug: currentPhaseDefaults.slug,
+                content: phasePrompt,
+                agent: currentPhaseDefaults.agent_role ?? null,
+              },
+            );
+            promptTemplateId = created?.id ?? null;
+          }
+        } else if (currentPromptRecord) {
+          promptTemplateId = currentPromptRecord.id;
+        }
+      }
+
+      if (promptTemplateId !== undefined) {
+        payload.prompt_template = promptTemplateId;
+      }
+
+      const response = await putJson<{ template: PipelineTemplateSummary }>(
+        `/pipeline/phases/${currentPhaseDefaults.id}`,
+        payload,
+      );
+      if (response?.template) {
+        setCurrentTemplate(response.template);
+      }
+
+      await fetchGraphAndStatus(selectedPurposeId);
+      await fetchBacklog();
+
+      const [templateList, promptList] = await Promise.all([
+        getJson<PipelineTemplateSummary[]>('/pipeline/templates'),
+        getJson<PromptTemplateListResponse>('/pipeline/prompts'),
+      ]);
+      setTemplates(Array.isArray(templateList) ? templateList : []);
+      setPromptTemplates(Array.isArray(promptList?.templates) ? promptList.templates : []);
+      setPromptAssignments(
+        Array.isArray(promptList?.assignments) ? promptList.assignments : [],
+      );
+
+      toast.success(successMessage, { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error('Einstellungen konnten nicht gespeichert werden.', { id: toastId });
+    } finally {
+      setPhaseSaving(false);
+    }
+  }, [
+    basePromptContent,
+    currentPhaseDefaults,
+    currentPromptRecord,
+    fetchBacklog,
+    fetchGraphAndStatus,
+    phaseModel,
+    phasePrompt,
+    phaseScope,
+    phaseTokens,
+    promptTemplates,
+    selectedPurposeId,
+    tenantDefaultTemplate,
+  ]);
 
   const isTenantDefaultActive = Boolean(
     tenantDefaultTemplate && tenantDefaultTemplate.tenant_id,
