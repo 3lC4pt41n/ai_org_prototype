@@ -5,8 +5,11 @@ Idempotent MERGE/SET operations, safe to call often.
 """
 from __future__ import annotations
 
+from datetime import datetime as dt
 from typing import Optional
 
+from ai_org_backend.db import SessionLocal
+from ai_org_backend.models import Task
 from ai_org_backend.services.storage import driver  # existing Neo4j driver
 
 
@@ -96,3 +99,41 @@ def remove_dependency(from_id: str, to_id: str) -> None:
     """
     with driver.session() as g:
         g.run(cypher, **{"from": from_id, "to": to_id})
+
+
+def upsert_artifact(
+    task_id: str,
+    sha256: str,
+    *,
+    status: Optional[str] = None,
+    desc: Optional[str] = None,
+) -> None:
+    """MERGE Artifact node and PRODUCED edge for the given task."""
+
+    task_status = status
+    task_desc = desc
+    if task_status is None or task_desc is None:
+        with SessionLocal() as session:
+            task_obj = session.get(Task, task_id)
+            if task_status is None:
+                task_status = str(task_obj.status) if task_obj and task_obj.status else "todo"
+            if task_desc is None:
+                task_desc = task_obj.description if task_obj and task_obj.description else ""
+    computed_status = str(task_status) if task_status is not None else "todo"
+    computed_desc = (task_desc or "")[:200]
+    params = {
+        "tid": task_id,
+        "sha": sha256,
+        "status": computed_status,
+        "desc": computed_desc,
+        "ts": dt.utcnow().isoformat(),
+    }
+    cypher = """
+    MERGE (t:Task {id:$tid})
+      ON CREATE SET t.status=$status, t.desc=$desc, t.created_at=$ts
+    MERGE (a:Artifact {sha256:$sha})
+      ON CREATE SET a.created_at=$ts
+    MERGE (t)-[:PRODUCED]->(a)
+    """
+    with driver.session() as g:
+        g.run(cypher, **params)
