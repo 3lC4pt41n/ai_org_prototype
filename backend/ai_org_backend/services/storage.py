@@ -135,29 +135,18 @@ def resolve_for_read(repo_path: str) -> Path:
     return abs_path
 
 
-def _link_neo4j(task_id: str, artefact_sha: str) -> None:
+def _link_neo4j(
+    task_id: str,
+    artefact_sha: str,
+    *,
+    status: Optional[str] = None,
+    desc: Optional[str] = None,
+) -> None:
     """Link artifact to task in Neo4j graph, ensuring both nodes and relation exist."""
     try:
-        # Ensure the task exists in graph (merge on id). Fetch task info for meaningful properties.
-        with Session(engine) as session:
-            task_obj = session.get(Task, task_id)
-            t_status = str(task_obj.status) if task_obj else "todo"
-            t_desc = task_obj.description if task_obj else ""
-        with driver.session() as g:
-            g.run(
-                """
-                MERGE (t:Task {id:$tid})
-                  ON CREATE SET t.status=$status, t.desc=$desc, t.created_at=$ts
-                MERGE (a:Artifact {sha256:$sha})
-                  ON CREATE SET a.created_at=$ts
-                MERGE (t)-[:PRODUCED]->(a)
-                """,
-                tid=task_id,
-                sha=artefact_sha,
-                status=t_status,
-                desc=t_desc[:200],
-                ts=dt.utcnow().isoformat(),
-            )
+        from ai_org_backend.services import graph_sync
+
+        graph_sync.upsert_artifact(task_id, artefact_sha, status=status, desc=desc)
     except Exception as exc:
         logging.getLogger(__name__).error(
             f"Neo4j link failed for Task {task_id}, Artifact {artefact_sha[:8]}: {exc}"
@@ -245,11 +234,15 @@ def register_artefact(
     text_content: Optional[str] = None
     tokens = 0
     # Save artefact in database and link to task
+    task_status: Optional[str] = None
+    task_desc: Optional[str] = None
     try:
         with Session(engine) as session:
             session.add(artefact)
             task_obj = session.get(Task, task_id)
             if task_obj:
+                task_status = str(task_obj.status) if task_obj.status is not None else None
+                task_desc = task_obj.description or ""
                 # Update token usage (approximate)
                 try:
                     text_content = tgt.read_text(encoding="utf-8", errors="ignore")
@@ -332,7 +325,7 @@ def register_artefact(
     if original_exists and allow_overwrite:
         ARTIFACT_UPDATES.inc()
     try:
-        _link_neo4j(task_id, sha)
+        _link_neo4j(task_id, sha, status=task_status, desc=task_desc)
     except Exception:
         # Fehler im Neo4j-Link wurden bereits geloggt
         pass  # nosec

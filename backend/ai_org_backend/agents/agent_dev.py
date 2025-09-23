@@ -10,10 +10,11 @@ from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, 
 from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED, insights_generated_total
+from ai_org_backend.services import graph_sync
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.deep_research import run_deep_research
 from ai_org_backend.services.llm_client import MODEL_DEFAULT, MODEL_THINKING, chat_with_tools
-from ai_org_backend.services.storage import driver, save_artefact
+from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
@@ -276,25 +277,25 @@ def agent_dev(tid: str, task_id: str) -> None:
             # Update Neo4j graph with new tasks and dependencies (incremental sync)
             try:
                 with SessionLocal() as session2:
-                    new_tasks = (
-                        session2.query(Task)
-                        .filter(Task.notes == f"auto-split from task {task_id}")
-                        .all()
+                    new_tasks = [
+                        (
+                            t_obj.id,
+                            t_obj.description,
+                            str(t_obj.status),
+                        )
+                        for t_obj in (
+                            session2.query(Task)
+                            .filter(Task.notes == f"auto-split from task {task_id}")
+                            .all()
+                        )
+                    ]
+                for new_task_id, new_desc, new_status in new_tasks:
+                    graph_sync.upsert_task(
+                        new_task_id,
+                        desc=new_desc,
+                        status=new_status,
                     )
-                with driver.session() as g:
-                    for t_obj in new_tasks:
-                        g.run(
-                            """MERGE (t:Task {id:$id}) SET t.desc=$desc, t.status=$status""",
-                            id=t_obj.id,
-                            desc=t_obj.description,
-                            status=str(t_obj.status),
-                        )
-                        g.run(
-                            """MATCH (p:Task {id:$pid}), (c:Task {id:$cid})
-                                 MERGE (p)-[:DEPENDS_ON {kind:'FINISH_START'}]->(c)""",
-                            pid=task_id,
-                            cid=t_obj.id,
-                        )
+                    graph_sync.upsert_dependency(task_id, new_task_id, kind="FINISH_START")
             except Exception as e:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
     try:
