@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import GraphDatabase
-from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 from sqlmodel import SQLModel
 
 import ai_org_backend.hooks.review_hook  # noqa: F401
@@ -27,14 +27,10 @@ from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.db import engine
+from ai_org_backend.metrics import BUDGET_GA, TASK_CNT, TASK_LAT
 from ai_org_backend.models import TaskOwner, Tenant
-
-# ──────────────── ENV / constants ─────────────────────────────
-from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
+from ai_org_backend.services.repo import Repo, budget_left, debit  # noqa: F401
 from ai_org_backend.tasks.celery_app import celery
-
-# Expose Repo here so existing imports keep working:
-from .repo import Repo  # noqa: F401
 
 load_dotenv()
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
@@ -45,42 +41,6 @@ FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 TOKEN_PRICE_PER_1000 = float(os.getenv("TOKEN_PRICE_PER_1000", "0.0005"))
 
 driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASS))
-
-# ──────────────── Metrics Prometheus ──────────────────────────
-if os.getenv("DISABLE_METRICS") != "1":
-    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role", "tenant"])
-    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["tenant", "role", "status"])
-    BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"])
-else:  # create unregistered dummies
-    TASK_LAT = Histogram("ai_task_latency_sec", "Task latency", ["role", "tenant"], registry=None)
-    TASK_CNT = Counter("ai_tasks_total", "Tasks done", ["tenant", "role", "status"], registry=None)
-    BUDGET_GA = Gauge("ai_budget_left_usd", "Budget left", ["tenant"], registry=None)
-
-# ──────────────── SQLModel tables ─────────────────────────────
-
-
-# ──────────────── Budget utils ───────────────────────────────
-def budget_left(tenant: str = "demo", purpose: str | None = None) -> float:
-    if purpose:
-        # Return budget left for a specific purpose
-        return float(pool.get(f"budget:{tenant}:{purpose}") or DEFAULT_BUDGET)
-    # Sum budgets of all purposes for this tenant
-    total = 0.0
-    for key in pool.keys(f"budget:{tenant}:*"):
-        total += float(pool.get(key) or 0)
-    return total
-
-
-def debit(tenant: str, amount: float, purpose: str | None = None):
-    if purpose:
-        current = float(pool.get(f"budget:{tenant}:{purpose}") or DEFAULT_BUDGET)
-        left = max(current - amount, 0)
-        pool.set(f"budget:{tenant}:{purpose}", left)
-    else:
-        # No purpose specified: do not alter any budget, just get total
-        left = budget_left(tenant, None)
-    BUDGET_GA.labels(tenant).set(left)
-
 
 # ──────────────── Celery setup ───────────────────────────────
 # (Celery app initialized in ai_org_backend.tasks.celery_app)
