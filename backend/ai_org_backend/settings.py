@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     workspace_dir: Path = Path(
         os.getenv("WORKSPACE_DIR", "/app/workspace")
     ).resolve()
+    token_price_per_1000: float = float(os.getenv("TOKEN_PRICE_PER_1000", "0.02"))
 
 
 @lru_cache()
