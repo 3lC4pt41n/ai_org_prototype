@@ -17,7 +17,7 @@ from ai_org_backend.db import SessionLocal  # noqa: E402
 
 # Small metrics parity (keeps style with other agents)
 from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
-from ai_org_backend.models import Purpose, Task  # noqa: E402
+from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.repo import Repo  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
@@ -108,8 +108,6 @@ def reviewer_task(
 
     with SessionLocal() as s:
         # Fetch blueprint content from its artefact(s)
-        from ai_org_backend.models import Artefact
-
         try:
             review_task = s.get(Task, review_task_id)
             if not review_task:
@@ -148,9 +146,9 @@ def reviewer_task(
                 )
             else:
                 art = s.exec(
-                    select(Artefact)
-                    .where(Artefact.task_id == resolved_blueprint_id)
-                    .order_by(desc(Artefact.created_at))
+                    select(Artifact)
+                    .where(Artifact.task_id == resolved_blueprint_id)
+                    .order_by(desc(Artifact.created_at))
                 ).first()
                 if art:
                     from ai_org_backend.services.storage import resolve_for_read
@@ -191,7 +189,7 @@ def reviewer_task(
             Repo(tenant_id).update(
                 review_task_id,
                 status="done",
-                owner="Review",
+                owner=TaskOwner.REVIEW,
                 notes="approved",
             )
             logging.info(

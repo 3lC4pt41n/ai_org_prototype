@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_org_backend.models import TaskOwner
 from ai_org_backend.orchestrator.inspector import insights_generated_total
 from ai_org_backend.utils.llm import chat, chat_completion
 from ai_org_backend.models.chat import ChatRole
@@ -52,5 +53,10 @@ def insight_agent(tenant: str, task_id: str) -> None:
     register_artefact(task_id, txt.encode(), filename=f"{task_id}_insight.txt")
     from ai_org_backend.main import Repo
 
-    Repo(tenant).update(task_id, status="done", owner="Insight", notes="analysis")
+    Repo(tenant).update(
+        task_id,
+        status="done",
+        owner=TaskOwner.INSIGHT,
+        notes="analysis",
+    )
     insights_generated_total.inc()

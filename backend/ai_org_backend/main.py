@@ -27,7 +27,7 @@ from ai_org_backend.api.root import router as root_router
 from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.db import engine
-from ai_org_backend.models import Tenant
+from ai_org_backend.models import TaskOwner, Tenant
 
 # ──────────────── ENV / constants ─────────────────────────────
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
@@ -101,7 +101,12 @@ from ai_org_backend.agents.reviewer import reviewer_task  # noqa: E402
 
 @celery.task(name="agent.telemetry")
 def agent_telemetry(tid: str, task_id: str):
-    Repo(tid).update(task_id, status="done", owner="Telemetry", notes="metrics emitted")
+    Repo(tid).update(
+        task_id,
+        status="done",
+        owner=TaskOwner.TELEMETRY,
+        notes="metrics emitted",
+    )
     TASK_CNT.labels(tid, "telemetry", "done").inc()
 
 

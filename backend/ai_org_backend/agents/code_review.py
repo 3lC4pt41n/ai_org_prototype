@@ -11,7 +11,7 @@ from typing import List  # noqa: E402
 from ai_org_backend.db import SessionLocal  # noqa: E402
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit  # noqa: E402
 from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
-from ai_org_backend.models import Artifact, Purpose, Task  # noqa: E402
+from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
 from ai_org_backend.services.storage import save_artefact  # noqa: E402
@@ -113,7 +113,7 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
     Repo(tenant_id).update(
         task_id,
         status="done",
-        owner="QA-Review",
+        owner=TaskOwner.QA_REVIEW,
         notes=notes_msg,
         issues_found=issues_found,
         tokens_actual=resp.usage.total_tokens if resp and hasattr(resp, "usage") else 0,

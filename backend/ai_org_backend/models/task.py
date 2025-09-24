@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 class TaskStatus(str, Enum):
     """Status values for :class:`Task`."""
+
     TODO = "todo"
     DOING = "doing"
     DONE = "done"
@@ -24,6 +25,28 @@ class TaskStatus(str, Enum):
     SKIPPED = "skipped"
     # Mark task skipped due to insufficient budget
     BUDGET_EXCEEDED = "budget_exceeded"
+
+
+class TaskOwner(str, Enum):
+    """Normalized owner identifiers used across agents and orchestrators."""
+
+    ARCHITECT = "ARCHITECT"
+    DEV = "DEV"
+    INSIGHT = "INSIGHT"
+    PM = "PM"
+    PRODUCT_OWNER = "PRODUCT_OWNER"
+    QA = "QA"
+    QA_E2E = "QA_E2E"
+    QA_INTEGRATION = "QA_INTEGRATION"
+    QA_PERF = "QA_PERF"
+    QA_REFACTOR = "QA_REFACTOR"
+    QA_REVIEW = "QA_REVIEW"
+    QA_SECURITY = "QA_SECURITY"
+    REPO = "REPO"
+    REVIEW = "REVIEW"
+    TELEMETRY = "TELEMETRY"
+    UX_UI = "UX_UI"
+    VISION_AGENT = "VISION_AGENT"
 
 
 class Task(SQLModel, table=True):  # type: ignore[call-arg]

@@ -4,7 +4,7 @@ import logging
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, TaskOwner
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.tasks.celery_app import celery
 
@@ -26,7 +26,7 @@ def agent_insight(tenant_id: str, task_id: str) -> None:
             allow_overwrite=True,
         )
         task.status = "done"
-        task.owner = "Insight"
+        task.owner = TaskOwner.INSIGHT
         task.notes = "insights generated"
         session.add(task)
         session.commit()

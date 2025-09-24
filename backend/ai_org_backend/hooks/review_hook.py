@@ -17,7 +17,7 @@ from typing import Any, Optional, cast
 
 from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Artifact, Task, TaskDependency
+from ai_org_backend.models import Artifact, Task, TaskDependency, TaskOwner
 from sqlmodel import select
 from ai_org_backend.services import storage as _storage
 
@@ -57,7 +57,7 @@ def _ensure_review_task(tenant_id: str, purpose_id: str) -> Task:
             tokens_plan=0,
             purpose_relevance=1.0,
             status="todo",
-            owner="Review",
+            owner=TaskOwner.REVIEW,
             notes="awaiting_approval",
         )
         s.add(t)

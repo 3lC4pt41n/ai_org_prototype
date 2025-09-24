@@ -1,6 +1,6 @@
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import DEFAULT_BUDGET, TASK_CNT, Repo, budget_left
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, TaskOwner
 from ai_org_backend.services.storage import save_artefact
 from ai_org_backend.tasks.celery_app import celery
 from sqlmodel import func, select
@@ -48,7 +48,12 @@ def agent_project_manager(tenant_id: str) -> None:
         notes="",
     )
     save_artefact(report_task.id, content.encode("utf-8"), filename="standup.md")
-    Repo(tenant_id).update(report_task.id, status="done", owner="PM", notes="standup OK")
+    Repo(tenant_id).update(
+        report_task.id,
+        status="done",
+        owner=TaskOwner.PM,
+        notes="standup OK",
+    )
     TASK_CNT.labels(tenant_id, "pm", "done").inc()
     from ai_org_backend.orchestrator.inspector import alert
 
