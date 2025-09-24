@@ -15,7 +15,7 @@ How it works:
   - `normalize_role(s)`: maps common synonyms / model outputs to canonical roles.
 
 Canonical roles (kept small & stable to match router -> queues):
-  - dev, ux_ui, qa, telemetry, repo, architect, product, qa_review, qa_refactor
+  - dev, ux_ui, qa, telemetry, repo, architect, po, qa_review, qa_refactor
 """
 
 import re  # noqa: E402
@@ -29,7 +29,7 @@ CANONICAL_ROLES = {
     "telemetry",
     "repo",
     "architect",
-    "product",
+    "po",
     "qa_review",
     "qa_refactor",
     "reviewer",
@@ -82,7 +82,7 @@ def _build_rules() -> List[Tuple[str, re.Pattern]]:
     # Product / Requirements
     rules.append(
         (
-            "product",
+            "po",
             pat(
                 [
                     "prd",
@@ -327,10 +327,10 @@ def normalize_role(s: str) -> Optional[str]:
         "architecture": "architect",
         "architect": "architect",
         # Product / Requirements
-        "po": "product",
-        "product": "product",
-        "requirements": "product",
-        "prd": "product",
+        "po": "po",
+        "product": "po",
+        "requirements": "po",
+        "prd": "po",
         # Review / Refactor
         "review": "qa_review",
         "code review": "qa_review",

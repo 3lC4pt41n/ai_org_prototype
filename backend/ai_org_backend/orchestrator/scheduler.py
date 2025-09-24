@@ -93,6 +93,48 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             )
         ).first()
 
+        vision_task = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "vision document",
+            )
+        ).first()
+
+        po_task = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "product requirements document",
+            )
+        ).first()
+
+        if (
+            vision_task
+            and vision_task.status == TaskStatus.DONE
+            and not po_task
+        ):
+            if purpose and (
+                purpose.mode == "auto"
+                or "approved" in (vision_task.notes or "").lower()
+            ):
+                new_task = Task(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    description="Product Requirements Document",
+                    status="todo",
+                    owner="PO",
+                    agent_role="po",
+                    notes="awaiting_completion",
+                )
+                db_session.add(new_task)
+                db_session.commit()
+                db_session.refresh(new_task)
+                logging.info(
+                    "[Orchestrator] Created PRD Task %s for purpose %s",
+                    new_task.id,
+                    purpose_id,
+                )
+            return
+
     # Decide whether to run Planner (nur wenn Review freigegeben ist)
     if (
         blueprint_task
