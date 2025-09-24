@@ -166,7 +166,7 @@ services:
       - ../.env
     command: >
       celery -A ai_org_backend.tasks.celery_app worker
-             -Q ${TENANT}:dev,${TENANT}:qa,${TENANT}:ux_ui,${TENANT}:telemetry,${TENANT}:reviewer
+             -Q ${TENANT}:dev,${TENANT}:qa,${TENANT}:ux_ui,${TENANT}:telemetry,${TENANT}:reviewer,${TENANT}:planner,${TENANT}:po
              -l INFO -P solo
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
