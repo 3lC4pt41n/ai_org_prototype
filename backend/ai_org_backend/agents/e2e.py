@@ -13,7 +13,7 @@ from sqlalchemy import desc
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Artefact, Purpose, Task
+from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.services.storage import save_artefact
@@ -30,11 +30,11 @@ TEMPLATE = load_template("e2e_tests.j2")
 
 def _load_latest_prd(s, purpose_id: str) -> str:
     q = (
-        s.query(Artefact)
-        .join(Task, Task.id == Artefact.task_id)
+        s.query(Artifact)
+        .join(Task, Task.id == Artifact.task_id)
         .filter(Task.purpose_id == purpose_id)
-        .filter(Artefact.filename.endswith("requirements/product_requirements.md"))
-        .order_by(desc(Artefact.created_at))
+        .filter(Artifact.filename.endswith("requirements/product_requirements.md"))
+        .order_by(desc(Artifact.created_at))
     )
     a = q.first()
     return (a.blob.decode("utf-8", errors="ignore") if a and a.blob else "").strip()
@@ -93,14 +93,14 @@ def e2e_task(tenant_id: str, task_id: str) -> None:
         if rc == 0:
             t = s.get(Task, task_id)
             t.status = "done"
-            t.owner = "QA-E2E"
+            t.owner = TaskOwner.QA_E2E
             t.notes = "e2e passed"
             s.add(t)
             s.commit()
         else:
             t = s.get(Task, task_id)
             t.status = "failed"
-            t.owner = "QA-E2E"
+            t.owner = TaskOwner.QA_E2E
             t.notes = "e2e failures"
             s.add(t)
             s.commit()

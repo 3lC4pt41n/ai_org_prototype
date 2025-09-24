@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from ai_org_backend.agents.utils import load_template
 from ai_org_backend.api.auth import hash_password  # import the bcrypt hash helper
 from ai_org_backend.db import engine
-from ai_org_backend.models import Task, TaskDependency
+from ai_org_backend.models import Task, TaskDependency, TaskOwner
 from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.services.storage import register_artefact
 
@@ -177,7 +177,12 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
         prd_content.encode("utf-8"),
         filename="requirements/product_requirements.md",
     )
-    Repo(TENANT).update(prd_task.id, status="done", owner="ProductOwner", notes="PRD completed")
+    Repo(TENANT).update(
+        prd_task.id,
+        status="done",
+        owner=TaskOwner.PRODUCT_OWNER,
+        notes="PRD completed",
+    )
 
     # Generate architecture blueprint and task plan
     try:
@@ -293,7 +298,11 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
             blueprint.encode("utf-8"),
             filename="blueprints/architecture_blueprint.md",
         )
-        repo.update(blueprint_id, status="done", owner="Architect")
+        repo.update(
+            blueprint_id,
+            status="done",
+            owner=TaskOwner.ARCHITECT,
+        )
     from ai_org_backend.scripts.seed_graph import ingest
 
     ingest(TENANT)

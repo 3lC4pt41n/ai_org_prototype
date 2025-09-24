@@ -14,7 +14,7 @@ import logging
 from typing import List
 
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Task, TaskDependency, Tenant
+from ai_org_backend.models import Task, TaskDependency, TaskOwner, Tenant
 from sqlmodel import select
 from ai_org_backend.repo import Repo as _Repo
 
@@ -34,7 +34,9 @@ SPECIAL = {
 }
 
 
-def _create_task(tenant_id: str, purpose_id: str, desc: str, owner: str) -> Task:
+def _create_task(
+    tenant_id: str, purpose_id: str, desc: str, owner: TaskOwner
+) -> Task:
     with SessionLocal() as s:
         t = Task(
             tenant_id=tenant_id,
@@ -141,7 +143,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     tenant_id,
                     purpose_id,
                     "Code Review",
-                    owner="QA-Review",
+                    owner=TaskOwner.QA_REVIEW,
                 )
                 _depends_on_all_non_special(code_rev.id, purpose_id)
                 try:
@@ -157,7 +159,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                         tenant_id,
                         purpose_id,
                         "Refactor Codebase",
-                        owner="QA-Refactor",
+                        owner=TaskOwner.QA_REFACTOR,
                     )
                     _depends_on_all_non_special(ref_task.id, purpose_id)
                     try:
@@ -181,7 +183,7 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                     tenant_id,
                     purpose_id,
                     "Refactor Codebase",
-                    owner="QA-Refactor",
+                    owner=TaskOwner.QA_REFACTOR,
                 )
                 _depends_on_all_non_special(ref_task.id, purpose_id)
                 try:
@@ -196,7 +198,12 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         if _all_non_test_done(purpose_id) and (
             it is None or str(it.status) not in {"todo", "running", "done", "failed"}
         ):
-            it = _create_task(tenant_id, purpose_id, "Integration Tests", owner="QA-Integration")
+            it = _create_task(
+                tenant_id,
+                purpose_id,
+                "Integration Tests",
+                owner=TaskOwner.QA_INTEGRATION,
+            )
             _depends_on_all_non_special(it.id, purpose_id)
             try:
                 integration_task.apply_async((tenant_id, it.id), queue=f"{tenant_id}:qa")
@@ -208,7 +215,12 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         # Stage 2: After Integration done -> run E2E
         if it and str(it.status) == "done":
             if e2e is None:
-                e2e = _create_task(tenant_id, purpose_id, "E2E & Acceptance Tests", owner="QA-E2E")
+                e2e = _create_task(
+                    tenant_id,
+                    purpose_id,
+                    "E2E & Acceptance Tests",
+                    owner=TaskOwner.QA_E2E,
+                )
                 # Depend e2e on integration
                 exists = s.exec(
                     select(TaskDependency.id).where(
@@ -230,7 +242,12 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
         # Stage 3: After E2E done -> run Perf + Security
         if e2e and str(e2e.status) == "done":
             if perf is None:
-                perf = _create_task(tenant_id, purpose_id, "Performance Tests", owner="QA-Perf")
+                perf = _create_task(
+                    tenant_id,
+                    purpose_id,
+                    "Performance Tests",
+                    owner=TaskOwner.QA_PERF,
+                )
             dep_perf = s.exec(
                 select(TaskDependency.id).where(
                     TaskDependency.from_id == e2e.id,
@@ -241,7 +258,12 @@ def _maybe_schedule_tests(changed_task_id: str) -> None:
                 s.add(TaskDependency(from_id=e2e.id, to_id=perf.id))
                 s.commit()
             if sec is None:
-                sec = _create_task(tenant_id, purpose_id, "Security Scan", owner="QA-Sec")
+                sec = _create_task(
+                    tenant_id,
+                    purpose_id,
+                    "Security Scan",
+                    owner=TaskOwner.QA_SECURITY,
+                )
             dep_sec = s.exec(
                 select(TaskDependency.id).where(
                     TaskDependency.from_id == e2e.id,

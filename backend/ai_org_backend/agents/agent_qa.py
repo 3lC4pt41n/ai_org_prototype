@@ -8,7 +8,7 @@ from sqlmodel import func, select
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
 from ai_org_backend.metrics import prom_counter
-from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
@@ -30,10 +30,10 @@ MAX_AGENT_RETRIES = 2
 
 
 @celery.task(name="agent.qa")
-def agent_qa(tid: str, task_id: str) -> None:
+def agent_qa(tenant_id: str, task_id: str) -> None:
     """Generate a QA test report for the task using OpenAI."""
-    logging.info(f"[QAAgent] Starting QA review for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("qa", tid).time():
+    logging.info(f"[QAAgent] Starting QA review for task {task_id} (tenant {tenant_id})")
+    with TASK_LAT.labels("qa", tenant_id).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -64,7 +64,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                 memory_snippets = []
             else:
                 memory_snippets = memory.get_relevant_snippets(
-                    tid, task_obj.purpose_id, task_obj.description, top_k=3
+                    tenant_id, task_obj.purpose_id, task_obj.description, top_k=3
                 )
             ctx["memory_snippets"] = memory_snippets
             # Attach code artefact snippet from preceding Dev task if available
@@ -85,13 +85,18 @@ def agent_qa(tid: str, task_id: str) -> None:
                         dev_task_id,
                         task_id,
                     )
-                    Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
-                    PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels(tid, "qa", "failed").inc()
+                    Repo(tenant_id).update(
+                        task_id,
+                        status="skipped",
+                        owner=TaskOwner.QA,
+                        notes="no dev artefact",
+                    )
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    TASK_CNT.labels(tenant_id, "qa", "failed").inc()
                     return
                 snippets = []
                 for artefact in artifacts:
-                    file_path = settings.workspace_dir / tid / artefact.repo_path
+                    file_path = settings.workspace_dir / tenant_id / artefact.repo_path
                     try:
                         code_content = file_path.read_text(encoding="utf-8")
                     except Exception as e:
@@ -157,17 +162,27 @@ def agent_qa(tid: str, task_id: str) -> None:
                         dev_task_id,
                         task_id,
                     )
-                    Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev artefact")
-                    PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels(tid, "qa", "failed").inc()
+                    Repo(tenant_id).update(
+                        task_id,
+                        status="skipped",
+                        owner=TaskOwner.QA,
+                        notes="no dev artefact",
+                    )
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    TASK_CNT.labels(tenant_id, "qa", "failed").inc()
                     return
             else:
                 logging.warning(
                     f"[QAAgent] No preceding dev task found for task {task_id}, skipping QA"
                 )
-                Repo(tid).update(task_id, status="skipped", owner="QA", notes="no dev task")
-                PROM_TASK_FAILED.labels(tid).inc()
-                TASK_CNT.labels(tid, "qa", "failed").inc()
+                Repo(tenant_id).update(
+                    task_id,
+                    status="skipped",
+                    owner=TaskOwner.QA,
+                    notes="no dev task",
+                )
+                PROM_TASK_FAILED.labels(tenant_id).inc()
+                TASK_CNT.labels(tenant_id, "qa", "failed").inc()
                 return
         prompt = PROMPT_TMPL.render(**ctx)
         response = None
@@ -196,7 +211,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                     exc,
                 )
                 if attempt < MAX_AGENT_RETRIES:
-                    Repo(tid).update(
+                    Repo(tenant_id).update(
                         task_id,
                         retries=task_obj.retries + 1,
                         notes="LLM error: " + error_msg,
@@ -206,9 +221,11 @@ def agent_qa(tid: str, task_id: str) -> None:
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
                 else:
-                    Repo(tid).update(task_id, status="failed", owner="QA", notes=error_msg)
-                    PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels(tid, "qa", "failed").inc()
+                    Repo(tenant_id).update(
+                        task_id, status="failed", owner=TaskOwner.QA, notes=error_msg
+                    )
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    TASK_CNT.labels(tenant_id, "qa", "failed").inc()
                     return
         # Only save QA report on success
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
@@ -238,27 +255,27 @@ def agent_qa(tid: str, task_id: str) -> None:
             test_paths = []
             for art in test_artifacts:
                 art_path = Path(art.repo_path)
-                if art_path.parts and art_path.parts[0] == tid:
+                if art_path.parts and art_path.parts[0] == tenant_id:
                     art_path = Path(*art_path.parts[1:])
                 test_paths.append(str(art_path))
-            tests_passed, test_output, note = run_tests(tid, test_paths)
+            tests_passed, test_output, note = run_tests(tenant_id, test_paths)
             save_artefact(
                 task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt"
             )
             if tests_passed:
-                Repo(tid).update(
+                Repo(tenant_id).update(
                     task_id,
                     status="done",
-                    owner="QA",
+                    owner=TaskOwner.QA,
                     notes="QA report - tests passed",
                     tokens_actual=tokens_used,
                 )
                 logging.info(f"[QAAgent] All tests passed for task {task_id}")
             else:
-                Repo(tid).update(
+                Repo(tenant_id).update(
                     task_id,
                     status="failed",
-                    owner="QA",
+                    owner=TaskOwner.QA,
                     notes=note or "QA report - tests failed",
                     tokens_actual=tokens_used,
                 )
@@ -294,7 +311,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                         else 0
                     ) or 500
                     fix_task = Task(
-                        tenant_id=tid,
+                        tenant_id=tenant_id,
                         purpose_id=parent_task.purpose_id,
                         description=new_desc,
                         business_value=biz_value,
@@ -319,7 +336,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                 try:
                     from ai_org_backend.scripts.seed_graph import ingest
 
-                    ingest(tid)
+                    ingest(tenant_id)
                 except Exception as e:
                     logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
         else:
@@ -328,10 +345,10 @@ def agent_qa(tid: str, task_id: str) -> None:
             save_artefact(
                 task_id, no_test_msg.encode("utf-8"), filename=f"{task_id}_test_results.txt"
             )
-            Repo(tid).update(
+            Repo(tenant_id).update(
                 task_id,
                 status="failed",
-                owner="QA",
+                owner=TaskOwner.QA,
                 notes="QA report - no tests",
                 tokens_actual=tokens_used,
             )
@@ -346,7 +363,7 @@ def agent_qa(tid: str, task_id: str) -> None:
                 ) or 500
                 new_desc = f"Add tests: {parent_task.description}"
                 fix_task = Task(
-                    tenant_id=tid,
+                    tenant_id=tenant_id,
                     purpose_id=parent_task.purpose_id,
                     description=new_desc,
                     business_value=biz_value,
@@ -371,16 +388,16 @@ def agent_qa(tid: str, task_id: str) -> None:
             try:
                 from ai_org_backend.scripts.seed_graph import ingest
 
-                ingest(tid)
+                ingest(tenant_id)
             except Exception as e:
                 logging.error(f"[QAAgent] Neo4j ingest failed for new task {new_task_id}: {e}")
     try:
         debit(
-            tid,
+            tenant_id,
             tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
             task_obj.purpose_id if task_obj else None,
         )
     except Exception as e:
         logging.error(f"[QAAgent] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels(tid, "qa", "done").inc()
+    TASK_CNT.labels(tenant_id, "qa", "done").inc()
     logging.info(f"[QAAgent] Task {task_id} completed by QA agent (tokens used: {tokens_used})")

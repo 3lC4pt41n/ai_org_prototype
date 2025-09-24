@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Purpose, Task, Tenant
+from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner, Tenant
 from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
@@ -82,7 +82,7 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
             purpose_id=purpose_id,
             description="Product Requirements Document",
             status="done",
-            owner="Product Owner",
+            owner=TaskOwner.PRODUCT_OWNER,
         )
         session.add(prd_task_obj)
         session.commit()
@@ -101,7 +101,10 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
             allow_overwrite=True,
         )
         Repo(tenant_id).update(
-            prd_task_obj.id, status="done", owner="Product Owner", notes="PRD created"
+            prd_task_obj.id,
+            status="done",
+            owner=TaskOwner.PRODUCT_OWNER,
+            notes="PRD created",
         )
 
     try:
