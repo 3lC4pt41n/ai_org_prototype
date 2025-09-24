@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
-from ai_org_backend.models import Artifact, Task
+from ai_org_backend.models import Artifact, Task, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
@@ -108,14 +108,19 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             files_created += 1
         # Mark task as done and assign to Repo owner
         if error_msg:
-            Repo(tenant_id).update(task_id, status="failed", owner="Repo", notes=error_msg)
+            Repo(tenant_id).update(
+                task_id,
+                status="failed",
+                owner=TaskOwner.REPO,
+                notes=error_msg,
+            )
             PROM_TASK_FAILED.labels(tenant_id).inc()
             TASK_CNT.labels(tenant_id, "repo", "failed").inc()
             return
         Repo(tenant_id).update(
             task_id,
             status="done",
-            owner="Repo",
+            owner=TaskOwner.REPO,
             notes=f"{files_created} file(s) created",
             tokens_actual=tokens_used,
         )

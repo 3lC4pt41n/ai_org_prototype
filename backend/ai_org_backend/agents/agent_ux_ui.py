@@ -4,7 +4,7 @@ import logging
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, budget_left, debit
-from ai_org_backend.models import Purpose, Task
+from ai_org_backend.models import Purpose, Task, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
 from ai_org_backend.services.storage import save_artefact
@@ -18,10 +18,10 @@ PROMPT_TMPL = load_template("ux_ui.j2")
 
 
 @celery.task(name="agent.ux_ui")
-def agent_ux_ui(tid: str, task_id: str) -> None:
+def agent_ux_ui(tenant_id: str, task_id: str) -> None:
     """Generate a wireframe design for the task using OpenAI."""
-    logging.info(f"[UXAgent] Generating UX/UI design for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("ux_ui", tid).time():
+    logging.info(f"[UXAgent] Generating UX/UI design for task {task_id} (tenant {tenant_id})")
+    with TASK_LAT.labels("ux_ui", tenant_id).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -42,7 +42,7 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 "tokens_plan": task_obj.tokens_plan,
                 "tokens_actual": task_obj.tokens_actual,
             }
-            budget_val = budget_left(tid, task_obj.purpose_id)
+            budget_val = budget_left(tenant_id, task_obj.purpose_id)
             ctx = {
                 "purpose": purpose_name,
                 "task": task_data,
@@ -61,7 +61,7 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                 memory_snippets = []
             else:
                 memory_snippets = memory.get_relevant_snippets(
-                    tid, task_obj.purpose_id, task_obj.description, top_k=3
+                    tenant_id, task_obj.purpose_id, task_obj.description, top_k=3
                 )
             ctx["memory_snippets"] = memory_snippets
         prompt = PROMPT_TMPL.render(**ctx)
@@ -93,15 +93,20 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
                     exc,
                 )
                 if attempt == 0:
-                    Repo(tid).update(task_id, retries=task_obj.retries + 1, notes=error_msg)
+                    Repo(tenant_id).update(task_id, retries=task_obj.retries + 1, notes=error_msg)
                     err = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     ctx["error_note"] = err
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = "o3-pro"
                 else:
-                    Repo(tid).update(task_id, status="failed", owner="UX/UI", notes=error_msg)
-                    PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels(tid, "ux_ui", "failed").inc()
+                    Repo(tenant_id).update(
+                        task_id,
+                        status="failed",
+                        owner=TaskOwner.UX_UI,
+                        notes=error_msg,
+                    )
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    TASK_CNT.labels(tenant_id, "ux_ui", "failed").inc()
                     return
         # Artefakt nur bei Erfolg speichern
         save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.md")
@@ -113,16 +118,20 @@ def agent_ux_ui(tid: str, task_id: str) -> None:
         except Exception as e:
             logging.debug("Failed to retrieve token usage for task %s: %s", task_id, e)
             tokens_used = 0
-        Repo(tid).update(
-            task_id, status="done", owner="UX/UI", notes="wireframe", tokens_actual=tokens_used
+        Repo(tenant_id).update(
+            task_id,
+            status="done",
+            owner=TaskOwner.UX_UI,
+            notes="wireframe",
+            tokens_actual=tokens_used,
         )
     try:
         debit(
-            tid,
+            tenant_id,
             tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
             task_obj.purpose_id,
         )
     except Exception as e:
         logging.error(f"[UXAgent] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels(tid, "ux_ui", "done").inc()
+    TASK_CNT.labels(tenant_id, "ux_ui", "done").inc()
     logging.info(f"[UXAgent] Task {task_id} completed by UX/UI agent (tokens used: {tokens_used})")

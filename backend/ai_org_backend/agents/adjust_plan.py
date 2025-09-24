@@ -1,6 +1,6 @@
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, Repo
-from ai_org_backend.models import Task
+from ai_org_backend.models import Task, TaskOwner
 from ai_org_backend.tasks.celery_app import celery
 from sqlmodel import func, select
 
@@ -12,7 +12,7 @@ def agent_adjust_plan(tenant_id: str) -> None:
     high_retry_module = None
     fail_count = retry_count = 0
     with SessionLocal() as session:
-        for owner in ["Dev", "UX/UI", "QA"]:
+        for owner in (TaskOwner.DEV, TaskOwner.UX_UI, TaskOwner.QA):
             f_cnt = session.exec(
                 select(func.count(Task.id)).where(
                     Task.tenant_id == tenant_id,
@@ -38,7 +38,8 @@ def agent_adjust_plan(tenant_id: str) -> None:
         any_task = session.query(Task).filter_by(tenant_id=tenant_id).first()
         purpose_id = any_task.purpose_id if any_task else None
     if high_fail_module:
-        desc = f"Investigate recurring failures in {high_fail_module} tasks"
+        owner_label = high_fail_module.value.replace("_", " ")
+        desc = f"Investigate recurring failures in {owner_label} tasks"
         with SessionLocal() as session:
             exists = (
                 session.query(Task)
@@ -56,7 +57,8 @@ def agent_adjust_plan(tenant_id: str) -> None:
             )
             new_tasks.append(f"– {desc} (Task ID: {t.id})")
     elif high_retry_module:
-        desc = f"Improve success rate of {high_retry_module} agent (frequent retries)"
+        owner_label = high_retry_module.value.replace("_", " ")
+        desc = f"Improve success rate of {owner_label} agent (frequent retries)"
         with SessionLocal() as session:
             exists = (
                 session.query(Task)
@@ -90,7 +92,12 @@ def agent_adjust_plan(tenant_id: str) -> None:
         notes="",
     )
     save_artefact(task.id, content.encode("utf-8"), filename="planning-adjustment.md")
-    Repo(tenant_id).update(task.id, status="done", owner="PM", notes="adjustment OK")
+    Repo(tenant_id).update(
+        task.id,
+        status="done",
+        owner=TaskOwner.PM,
+        notes="adjustment OK",
+    )
     TASK_CNT.labels(tenant_id, "pm", "done").inc()
     from ai_org_backend.orchestrator.inspector import alert
 

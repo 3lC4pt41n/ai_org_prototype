@@ -17,7 +17,7 @@ from ai_org_backend.main import (
     debit,
     pool,
 )
-from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskStatus
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner, TaskStatus
 from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
     CRIT_Q,
@@ -177,7 +177,11 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             media_type="text/markdown",
             allow_overwrite=True,
         )
-        Repo(tenant_id).update(blueprint_task_id, owner="Architect", notes="Blueprint completed")
+        Repo(tenant_id).update(
+            blueprint_task_id,
+            owner=TaskOwner.ARCHITECT,
+            notes="Blueprint completed",
+        )
 
     # Mark PRD artifact as released (safety check)
     with Session(engine) as db_session:

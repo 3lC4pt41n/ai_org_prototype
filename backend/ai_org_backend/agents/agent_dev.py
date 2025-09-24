@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, debit
-from ai_org_backend.models import Purpose, Task, TaskDependency, Tenant
+from ai_org_backend.models import Purpose, Task, TaskDependency, TaskOwner, Tenant
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED, insights_generated_total
 from ai_org_backend.services import graph_sync
@@ -29,10 +29,10 @@ PROMPT_TMPL = load_template("dev.j2")
 
 
 @celery.task(name="agent.dev")
-def agent_dev(tid: str, task_id: str) -> None:
+def agent_dev(tenant_id: str, task_id: str) -> None:
     """Generate code for the given task using OpenAI."""
-    logging.info(f"[DevAgent] Generating code for task {task_id} (tenant {tid})")
-    with TASK_LAT.labels("dev", tid).time():
+    logging.info(f"[DevAgent] Generating code for task {task_id} (tenant {tenant_id})")
+    with TASK_LAT.labels("dev", tenant_id).time():
         with SessionLocal() as session:
             task_obj = session.get(Task, task_id)
             purpose_name = ""
@@ -47,7 +47,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                 logging.error(f"Task {task_id} not found in DB")
                 return
 
-            tenant = session.get(Tenant, tid)
+            tenant = session.get(Tenant, tenant_id)
             allow_research = bool(tenant and tenant.allow_web_research)
 
             ctx = {
@@ -70,7 +70,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                 memory_snippets = []
             else:
                 memory_snippets = memory.get_relevant_snippets(
-                    tid, task_obj.purpose_id, task_obj.description, top_k=3
+                    tenant_id, task_obj.purpose_id, task_obj.description, top_k=3
                 )
 
             trigger_keywords = (
@@ -93,7 +93,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                     f"Give me the safest and most up-to-date way to: {task_obj.description}. "
                     "Return concrete code-level hints and recommended libraries with versions."
                 )
-                research = run_deep_research(tid, q, model=MODEL_THINKING)
+                research = run_deep_research(tenant_id, q, model=MODEL_THINKING)
                 research_note = research["summary"][:2000]
             if research_note:
                 memory_snippets.insert(
@@ -112,7 +112,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                     messages=[{"role": ChatRole.USER.value, "content": prompt}],
                     model=model,
                     temperature=0,
-                    tenant_id=tid,
+                    tenant_id=tenant_id,
                     usage_label="dev",
                 )
                 content = response["choices"][0]["message"]["content"]
@@ -122,10 +122,10 @@ def agent_dev(tid: str, task_id: str) -> None:
                 error_msg = None
                 break
             except BudgetExceededError:
-                Repo(tid).update(
+                Repo(tenant_id).update(
                     task_id,
                     status="budget_exceeded",
-                    owner="Dev",
+                    owner=TaskOwner.DEV,
                     notes="Budget exhausted. Please top up and retry.",
                 )
                 return
@@ -138,7 +138,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                     exc,
                 )
                 if attempt < MAX_AGENT_RETRIES:
-                    Repo(tid).update(
+                    Repo(tenant_id).update(
                         task_id,
                         retries=task_obj.retries + 1,
                         notes="LLM error: " + error_msg,
@@ -148,9 +148,11 @@ def agent_dev(tid: str, task_id: str) -> None:
                     prompt = PROMPT_TMPL.render(**ctx)
                     model = MODEL_THINKING
                 else:
-                    Repo(tid).update(task_id, status="failed", owner="Dev", notes=error_msg)
-                    PROM_TASK_FAILED.labels(tid).inc()
-                    TASK_CNT.labels(tid, "dev", "failed").inc()
+                    Repo(tenant_id).update(
+                        task_id, status="failed", owner=TaskOwner.DEV, notes=error_msg
+                    )
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    TASK_CNT.labels(tenant_id, "dev", "failed").inc()
                     return
         # Save artefact only on successful LLM output
         overwrite_flag = "allow_overwrite" in (task_obj.notes or "")
@@ -197,7 +199,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                 fname = f"{base}/{fname}"
             file_path = Path(fname)
             if file_path.parent and str(file_path.parent) != ".":
-                target_dir = settings.workspace_dir / tid / file_path.parent
+                target_dir = settings.workspace_dir / tenant_id / file_path.parent
                 target_dir.mkdir(parents=True, exist_ok=True)
             logging.info(f"[DevAgent] Saving generated code to '{fname}' for task {task_id}")
             save_artefact(
@@ -216,10 +218,10 @@ def agent_dev(tid: str, task_id: str) -> None:
             logging.debug("Failed to retrieve token usage for task %s: %s", task_id, e)
             tokens_used = 0
         # Mark the current task as done and check for follow-up tasks
-        Repo(tid).update(
+        Repo(tenant_id).update(
             task_id,
             status="done",
-            owner="Dev",
+            owner=TaskOwner.DEV,
             notes="code generated",
             tokens_actual=tokens_used,
         )
@@ -250,7 +252,7 @@ def agent_dev(tid: str, task_id: str) -> None:
                 ) or 500
                 for desc in followups:
                     new_task = Task(
-                        tenant_id=tid,
+                        tenant_id=tenant_id,
                         purpose_id=parent.purpose_id,
                         description=desc,
                         business_value=bv_each,
@@ -300,11 +302,11 @@ def agent_dev(tid: str, task_id: str) -> None:
                 logging.error(f"[DevAgent] Neo4j graph update failed: {e}")
     try:
         debit(
-            tid,
+            tenant_id,
             tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
             task_obj.purpose_id,
         )
     except Exception as e:
         logging.error(f"[DevAgent] Budget debit failed for task {task_id}: {e}")
-    TASK_CNT.labels(tid, "dev", "done").inc()
+    TASK_CNT.labels(tenant_id, "dev", "done").inc()
     logging.info(f"[DevAgent] Task {task_id} completed by Dev agent (tokens used: {tokens_used})")

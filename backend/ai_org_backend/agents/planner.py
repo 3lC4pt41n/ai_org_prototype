@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import prom_counter, prom_hist
-from ai_org_backend.models import Artifact, Task, TaskDependency
+from ai_org_backend.models import Artifact, Task, TaskDependency, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.orchestrator.role_rules import heuristic_role
@@ -360,7 +360,7 @@ def planner_task(tenant_id: str, purpose_id: str) -> None:
                     tokens_plan=0,
                     purpose_relevance=1.0,
                     status="todo",
-                    owner="Review",
+                    owner=TaskOwner.REVIEW,
                     notes="awaiting_approval",
                 )
                 session.add(review_task)
