@@ -9,13 +9,15 @@ from sqlalchemy import desc, func
 from sqlmodel import Session, select
 
 from ai_org_backend.db import SessionLocal, engine
-from ai_org_backend.main import Repo, TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, debit
 from ai_org_backend.models import Artifact, Purpose, Task
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.services.storage import resolve_for_read, save_artefact
 from ai_org_backend.tasks.celery_app import celery
+from ai_org_backend.metrics import TASK_CNT, TASK_LAT
+from ai_org_backend.services.repo import Repo, debit
+from ai_org_backend.settings import settings
 
 from .utils import load_template
 
@@ -221,7 +223,7 @@ def agent_po(tenant_id: str, task_id: str) -> None:
         try:
             debit(
                 tenant_id,
-                tokens_used * (TOKEN_PRICE_PER_1000 / 1000.0),
+                tokens_used * (settings.token_price_per_1000 / 1000.0),
                 purpose.id,
             )
         except Exception as exc:  # pragma: no cover - billing is best-effort
