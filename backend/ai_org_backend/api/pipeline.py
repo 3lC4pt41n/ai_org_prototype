@@ -20,6 +20,7 @@ from ai_org_backend.models import (
     Purpose,
     Task,
     TaskDependency,
+    TaskOwner,
     Tenant,
     TenantPromptAssignment,
 )
@@ -369,7 +370,7 @@ def _generate_vision_artifact(
         vision_task = repo.update(
             vision_task.id,
             status="doing",
-            owner="VisionAgent",
+            owner=TaskOwner.VISION_AGENT,
             notes="Vision in progress",
         )
     except Exception:
@@ -385,7 +386,7 @@ def _generate_vision_artifact(
             repo.update(
                 vision_task.id,
                 status="failed",
-                owner="VisionAgent",
+                owner=TaskOwner.VISION_AGENT,
                 notes=f"Vision agent error: {exc}",
             )
         except Exception:
@@ -419,7 +420,7 @@ def _generate_vision_artifact(
             repo.update(
                 vision_task.id,
                 status="failed",
-                owner="VisionAgent",
+                owner=TaskOwner.VISION_AGENT,
                 notes=f"Vision save failed: {exc}",
             )
         except Exception:
@@ -442,7 +443,7 @@ def _generate_vision_artifact(
         repo.update(
             vision_task.id,
             status="done",
-            owner="VisionAgent",
+            owner=TaskOwner.VISION_AGENT,
             notes="Vision completed",
         )
     except Exception:
@@ -514,7 +515,7 @@ def _generate_prd_artifact(
         prd_task = repo.update(
             prd_task.id,
             status="doing",
-            owner="ProductOwner",
+            owner=TaskOwner.PRODUCT_OWNER,
             notes="PRD in progress",
         )
     except Exception:
@@ -528,7 +529,7 @@ def _generate_prd_artifact(
             repo.update(
                 prd_task.id,
                 status="failed",
-                owner="ProductOwner",
+                owner=TaskOwner.PRODUCT_OWNER,
                 notes=f"PRD agent error: {exc}",
             )
         except Exception:
@@ -562,7 +563,7 @@ def _generate_prd_artifact(
             repo.update(
                 prd_task.id,
                 status="failed",
-                owner="ProductOwner",
+                owner=TaskOwner.PRODUCT_OWNER,
                 notes=f"PRD save failed: {exc}",
             )
         except Exception:
@@ -585,7 +586,7 @@ def _generate_prd_artifact(
         repo.update(
             prd_task.id,
             status="done",
-            owner="ProductOwner",
+            owner=TaskOwner.PRODUCT_OWNER,
             notes="PRD completed",
         )
     except Exception:

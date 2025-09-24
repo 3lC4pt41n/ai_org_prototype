@@ -1,6 +1,6 @@
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Task, Tenant
+from ai_org_backend.models import Task, TaskOwner, Tenant
 from ai_org_backend.repo import Repo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
@@ -41,5 +41,10 @@ def approve_review(task_id: str, current_tenant: Tenant = Depends(get_current_te
             raise HTTPException(status_code=403, detail="Forbidden for this tenant")
         if t.description.lower() != "architecture & domain review":
             raise HTTPException(status_code=400, detail="Not a review task")
-        Repo(current_tenant.id).update(task_id, status="done", owner="Review", notes="approved")
+        Repo(current_tenant.id).update(
+            task_id,
+            status="done",
+            owner=TaskOwner.REVIEW,
+            notes="approved",
+        )
         return {"ok": True, "task_id": task_id, "status": "done"}
