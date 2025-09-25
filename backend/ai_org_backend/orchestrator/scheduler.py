@@ -8,15 +8,13 @@ from sqlalchemy import not_
 from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
-from ai_org_backend.main import (
-    BUDGET_GA,
-    TOKEN_PRICE_PER_1000,
-    Repo,
-    budget_left,
-    celery,
-    debit,
-    pool,
-)
+from ai_org_backend.metrics import BUDGET_GA
+from ai_org_backend.redis_client import pool
+from ai_org_backend.services.repo import Repo, budget_left, debit
+from ai_org_backend.settings import settings
+from ai_org_backend.tasks.celery_app import celery
+
+TOKEN_PRICE_PER_1000 = settings.token_price_per_1000
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner, TaskStatus
 from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
