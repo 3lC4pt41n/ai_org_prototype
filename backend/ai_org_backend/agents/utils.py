@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from jinja2 import Template
+from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound
 from sqlmodel import select
 
 from ai_org_backend.db import SessionLocal
@@ -12,6 +13,7 @@ from ai_org_backend.models import PromptTemplate
 
 
 _PROMPTS_DIR: Path | None = None
+_ENV: Environment | None = None
 
 
 def _find_prompts_dir() -> Path:
@@ -31,18 +33,46 @@ def _find_prompts_dir() -> Path:
     raise FileNotFoundError("Could not locate 'prompts' directory")
 
 
+def _get_prompts_dir() -> Path:
+    """Return the directory containing prompt templates."""
+
+    global _PROMPTS_DIR
+    if _PROMPTS_DIR is not None:
+        return _PROMPTS_DIR
+
+    configured = Path(os.environ.get("PROMPTS_DIR", "/app/prompts"))
+    if configured.exists():
+        _PROMPTS_DIR = configured
+        return _PROMPTS_DIR
+
+    _PROMPTS_DIR = _find_prompts_dir()
+    return _PROMPTS_DIR
+
+
+def _get_environment() -> Environment:
+    """Create (or reuse) a Jinja2 environment configured for prompt loading."""
+
+    global _ENV
+    if _ENV is None:
+        prompts_dir = _get_prompts_dir()
+        _ENV = Environment(
+            loader=FileSystemLoader(str(prompts_dir)),
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+    return _ENV
+
+
 def load_template(name: str) -> Template:
     """Load a Jinja2 template from the shared ``prompts`` directory."""
 
-    global _PROMPTS_DIR
-    if _PROMPTS_DIR is None:
-        _PROMPTS_DIR = _find_prompts_dir()
+    env = _get_environment()
 
     try:
         with SessionLocal() as session:
             template = session.get(PromptTemplate, name)
             if template and template.content:
-                return Template(template.content)
+                return env.from_string(template.content)
 
             if name.endswith(".j2"):
                 template = session.exec(
@@ -51,13 +81,16 @@ def load_template(name: str) -> Template:
                     .order_by(PromptTemplate.created_at.desc())
                 ).first()
                 if template and template.content:
-                    return Template(template.content)
+                    return env.from_string(template.content)
     except Exception:
         # DB lookup is best-effort; fall back to filesystem prompts
         pass
 
-    tmpl_file = _PROMPTS_DIR / name
-    if not tmpl_file.exists():
-        raise FileNotFoundError(f"Template '{name}' not found in '{_PROMPTS_DIR}'")
-    return Template(tmpl_file.read_text(encoding="utf-8"))
+    try:
+        return env.get_template(name)
+    except TemplateNotFound as exc:
+        prompts_dir = _get_prompts_dir()
+        raise FileNotFoundError(
+            f"Template '{name}' not found in '{prompts_dir}'"
+        ) from exc
 
