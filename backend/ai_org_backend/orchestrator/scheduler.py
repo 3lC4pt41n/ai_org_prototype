@@ -15,7 +15,15 @@ from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 
 TOKEN_PRICE_PER_1000 = settings.token_price_per_1000
-from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner, TaskStatus
+from ai_org_backend.models import (
+    Artifact,
+    PipelinePhase,
+    Purpose,
+    Task,
+    TaskDependency,
+    TaskOwner,
+    TaskStatus,
+)
 from ai_org_backend.orchestrator.graph_orchestrator import (
     BLOCKED_Q,
     CRIT_Q,
@@ -65,6 +73,37 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
         .where(Task.status != TaskStatus.DONE)
     ).first()
     return unresolved is None
+
+
+def _resolve_agent_role(
+    session: Session, task: Task, role_hint: str | None = None
+) -> str | None:
+    """Return the agent role that should process ``task``.
+
+    Preference order:
+    1. Explicit role stored on the task.
+    2. Role derived from the linked pipeline phase (by id or slug).
+    3. Fallback hint (e.g. graph classifier result).
+    """
+
+    if task.agent_role:
+        return task.agent_role
+
+    phase: PipelinePhase | None = None
+    if task.pipeline_phase_id:
+        phase = session.get(PipelinePhase, task.pipeline_phase_id)
+
+    if phase is None and task.description:
+        slug = task.description.lower().strip()
+        if slug:
+            phase = session.exec(
+                select(PipelinePhase).where(PipelinePhase.slug == slug)
+            ).first()
+
+    if phase and phase.agent_role:
+        return phase.agent_role
+
+    return role_hint
 
 
 def _generate_plan_for_purpose(purpose_id: str) -> None:
@@ -371,20 +410,48 @@ async def orchestrator() -> None:
         for rec in cypher(LEAF_Q):
             with Session(engine) as session:
                 task_obj = session.get(Task, rec["id"])
-            if not task_obj:
-                continue
-            if task_obj.purpose_id and pool.get(f"pause:{TENANT}:{task_obj.purpose_id}"):
-                continue
-            cost_est = (task_obj.tokens_plan or 0) * (TOKEN_PRICE_PER_1000 / 1000.0)
-            budget_val = budget_left(TENANT, task_obj.purpose_id)
-            if budget_val < cost_est:
-                Repo(TENANT).update(task_obj.id, status="budget_exceeded", notes="budget skip")
-                alert(f"Task {task_obj.id} skipped due to insufficient budget", "budget")
-                continue
-            role = task_obj.agent_role or classify_role(rec["d"])
-            Repo(TENANT).update(task_obj.id, status="doing")
-            debit(TENANT, cost_est, task_obj.purpose_id)
-            celery.send_task(f"agent.{role}", args=[TENANT, rec["id"]], queue=f"{TENANT}:{role}")
+
+                if not task_obj:
+                    continue
+                if task_obj.purpose_id and pool.get(
+                    f"pause:{TENANT}:{task_obj.purpose_id}"
+                ):
+                    continue
+
+                tenant_id = task_obj.tenant_id or TENANT
+                cost_est = (task_obj.tokens_plan or 0) * (
+                    TOKEN_PRICE_PER_1000 / 1000.0
+                )
+                budget_val = budget_left(tenant_id, task_obj.purpose_id)
+                if budget_val < cost_est:
+                    Repo(tenant_id).update(
+                        task_obj.id, status="budget_exceeded", notes="budget skip"
+                    )
+                    alert(
+                        f"Task {task_obj.id} skipped due to insufficient budget",
+                        "budget",
+                    )
+                    continue
+
+                role_hint = classify_role(rec["d"])
+                role = _resolve_agent_role(session, task_obj, role_hint)
+                if not role:
+                    logging.warning(
+                        "[Orchestrator] No agent role resolved for task %s (tenant %s)",
+                        task_obj.id,
+                        tenant_id,
+                    )
+                    continue
+
+                Repo(tenant_id).update(
+                    task_obj.id, status="doing", owner=role.capitalize()
+                )
+                debit(tenant_id, cost_est, task_obj.purpose_id)
+                celery.send_task(
+                    f"agent.{role}",
+                    args=[tenant_id, task_obj.id],
+                    queue=f"{tenant_id}:{role}",
+                )
 
         if time.time() - last > 10:
             blocked = cypher(BLOCKED_Q)[0]["blocked"]
