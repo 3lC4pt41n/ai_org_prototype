@@ -14,6 +14,13 @@ from ai_org_backend.services.repo import Repo, budget_left, debit
 from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 
+# Aliases für lange Task-Beschreibungen → Phase-Slugs
+PHASE_ALIAS = {
+    "product requirements document": "prd",
+    "architecture blueprint": "architecture",
+    "architecture & domain review": "architecture_review",
+}
+
 TOKEN_PRICE_PER_1000 = settings.token_price_per_1000
 from ai_org_backend.models import (
     Artifact,
@@ -78,31 +85,28 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
 def _resolve_agent_role(
     session: Session, task: Task, role_hint: str | None = None
 ) -> str | None:
-    """Return the agent role that should process ``task``.
+    """Resolve the agent role for a task."""
 
-    Preference order:
-    1. Explicit role stored on the task.
-    2. Role derived from the linked pipeline phase (by id or slug).
-    3. Fallback hint (e.g. graph classifier result).
-    """
-
+    # 1. Wenn direkt gesetzt → nutzen
     if task.agent_role:
         return task.agent_role
 
+    # 2. Phase über pipeline_phase_id oder slug
     phase: PipelinePhase | None = None
     if task.pipeline_phase_id:
         phase = session.get(PipelinePhase, task.pipeline_phase_id)
 
     if phase is None and task.description:
-        slug = task.description.lower().strip()
-        if slug:
-            phase = session.exec(
-                select(PipelinePhase).where(PipelinePhase.slug == slug)
-            ).first()
+        slug = (task.description or "").lower().strip()
+        slug = PHASE_ALIAS.get(slug, slug)
+        phase = session.exec(
+            select(PipelinePhase).where(PipelinePhase.slug == slug)
+        ).first()
 
     if phase and phase.agent_role:
         return phase.agent_role
 
+    # 3. Fallback auf Heuristik
     return role_hint
 
 
@@ -447,6 +451,14 @@ async def orchestrator() -> None:
                     task_obj.id, status="doing", owner=role.capitalize()
                 )
                 debit(tenant_id, cost_est, task_obj.purpose_id)
+                logging.info(
+                    "[Orchestrator] Dispatching %s (task_id=%s) for tenant=%s to role=%s queue=%s",
+                    task_obj.description,
+                    task_obj.id,
+                    tenant_id,
+                    role,
+                    f"{tenant_id}:{role}",
+                )
                 celery.send_task(
                     f"agent.{role}",
                     args=[tenant_id, task_obj.id],
