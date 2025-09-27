@@ -154,7 +154,7 @@ def run_requirements_feedback(purpose: Purpose, feedback: str, current_prd: str)
 
 
 @celery.task(name="agent.po")
-def agent_po(tenant_id: str, task_id: str) -> None:
+def agent_po(tenant_id: str, task_id: str, purpose_id: str | None = None) -> None:
     """Celery task that generates a PRD and persists it as an artefact."""
 
     logger.info("[ProductOwner] Starting PRD for Task %s (tenant %s)", task_id, tenant_id)
@@ -165,12 +165,13 @@ def agent_po(tenant_id: str, task_id: str) -> None:
                 logger.error("[ProductOwner] Task %s not found", task_id)
                 return
 
-            purpose = session.get(Purpose, task.purpose_id)
+            resolved_purpose_id = purpose_id or task.purpose_id
+            purpose = session.get(Purpose, resolved_purpose_id) if resolved_purpose_id else None
             if not purpose:
                 logger.error(
                     "[ProductOwner] Purpose not found for task %s (purpose_id=%s)",
                     task_id,
-                    task.purpose_id,
+                    resolved_purpose_id,
                 )
                 return
 

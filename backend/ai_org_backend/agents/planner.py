@@ -208,8 +208,29 @@ def run_planner(
 
 
 @celery.task(name="agent.planner")
-def planner_task(tenant_id: str, purpose_id: str) -> None:
+def planner_task(
+    tenant_id: str,
+    task_id: str | None = None,
+    purpose_id: str | None = None,
+) -> None:
     """Celery task for Planner Agent: generates development tasks once blueprint and review are completed."""
+
+    if purpose_id is None and task_id:
+        with Session(engine) as session:
+            task_obj = session.get(Task, task_id)
+            if task_obj and task_obj.purpose_id:
+                purpose_id = task_obj.purpose_id
+
+    if purpose_id is None:
+        alert(
+            f"Planner: Unable to resolve purpose for task {task_id}",
+            "error",
+        )
+        logging.error(
+            "[Planner] Cannot determine purpose for planner task (task_id=%s)",
+            task_id,
+        )
+        return
 
     plan_key = f"plan_pending:{tenant_id}:{purpose_id}"
     try:
