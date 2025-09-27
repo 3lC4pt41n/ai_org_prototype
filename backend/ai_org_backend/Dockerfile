@@ -23,6 +23,9 @@ COPY backend/ai_org_backend/alembic.ini /app
 COPY backend/ai_org_backend/alembic /app/alembic
 COPY prompts /app/prompts
 
+# explizit sicherstellen, dass der Ordner im Image existiert
+RUN mkdir -p /app/prompts
+
 # Alembic: Migrationsordner verbleibt unter /app (entspricht script_location=alembic)
 
 FROM base AS prod
