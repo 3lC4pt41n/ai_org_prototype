@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import asc, desc, or_
+from sqlalchemy import asc, desc, exists, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func
 from sqlmodel import Session, select
@@ -85,9 +85,12 @@ def list_prompt_templates_endpoint(
                 or_(
                     PromptTemplate.created_by.is_(None),
                     PromptTemplate.created_by == current_tenant.id,
-                    PromptTemplate.assignments.any(
-                        TenantPromptAssignment.tenant_id == current_tenant.id
-                    ),
+                    exists()
+                    .where(
+                        TenantPromptAssignment.tenant_id == current_tenant.id,
+                        TenantPromptAssignment.prompt_template_id == PromptTemplate.id,
+                    )
+                    .correlate(PromptTemplate),
                 )
             )
             .order_by(PromptTemplate.phase_slug, PromptTemplate.created_at)
