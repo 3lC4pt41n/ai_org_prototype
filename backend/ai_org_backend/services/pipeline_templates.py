@@ -37,6 +37,7 @@ DEFAULT_PHASES: list[dict[str, object]] = [
         "business_value_default": 1.0,
         "purpose_relevance_default": 1.0,
         "agent_role": "vision",
+        "depends_on": None,
     },
     {
         "slug": "prd",
