@@ -40,6 +40,7 @@ DEFAULT_PHASES: list[dict[str, object]] = [
     {
         "slug": "prd",
         "name": "Product Requirements Document",
+        "agent_role": "po",
         "prompt_template": "requirements.j2",
         "model_name": "gpt-4",
         "tokens_plan_default": 3500,
