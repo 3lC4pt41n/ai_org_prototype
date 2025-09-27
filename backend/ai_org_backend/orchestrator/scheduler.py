@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 from sqlalchemy import not_
+from typing import Optional
+
 from sqlmodel import Session, func, select
 
 from ai_org_backend.db import engine
@@ -110,6 +113,111 @@ def _resolve_agent_role(
     return role_hint
 
 
+def _slugify_phase_name(value: str) -> str:
+    value = value.lower().replace("&", " and ")
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value or "phase"
+
+
+def _resolve_pipeline_phase(session: Session, task: Task) -> Optional[PipelinePhase]:
+    if task.pipeline_phase_id:
+        return session.get(PipelinePhase, task.pipeline_phase_id)
+
+    slug = getattr(task, "slug", None)
+    if not slug and task.description:
+        raw = (task.description or "").strip().lower()
+        slug = PHASE_ALIAS.get(raw)
+        if not slug:
+            slug = _slugify_phase_name(raw)
+
+    if not slug:
+        return None
+
+    return session.exec(select(PipelinePhase).where(PipelinePhase.slug == slug)).first()
+
+
+def _dispatch_task(
+    session: Session,
+    task: Task,
+    tenant_id: str,
+    *,
+    role: str | None = None,
+    cost_estimate: float = 0.0,
+) -> Optional[bool]:
+    """Dispatch pipeline phase tasks respecting predecessor completion order.
+
+    Returns ``True`` if the task was dispatched, ``False`` if dispatch is blocked
+    because a predecessor phase is not yet complete, and ``None`` if the task is
+    not associated with a pipeline phase.
+    """
+
+    phase = _resolve_pipeline_phase(session, task)
+    if phase is None:
+        return None
+
+    predecessor_phase: Optional[PipelinePhase] = None
+    depends_on_slug = getattr(phase, "depends_on", None)
+    if depends_on_slug:
+        predecessor_phase = session.exec(
+            select(PipelinePhase).where(PipelinePhase.slug == depends_on_slug)
+        ).first()
+    elif phase.predecessor_id:
+        predecessor_phase = session.get(PipelinePhase, phase.predecessor_id)
+
+    if predecessor_phase:
+        predecessor_task = session.exec(
+            select(Task)
+            .where(Task.purpose_id == task.purpose_id)
+            .where(Task.pipeline_phase_id == predecessor_phase.id)
+            .where(Task.status == TaskStatus.DONE)
+        ).first()
+        if not predecessor_task:
+            predecessor_label = (
+                getattr(predecessor_phase, "slug", None)
+                or depends_on_slug
+                or predecessor_phase.id
+                if predecessor_phase
+                else "unknown"
+            )
+            logging.info(
+                "[Orchestrator] Skip %s, predecessor %s not done yet",
+                getattr(phase, "slug", task.description or task.id),
+                predecessor_label,
+            )
+            return False
+
+    resolved_role = role or task.agent_role or getattr(phase, "agent_role", None)
+    if not resolved_role:
+        logging.warning(
+            "[Orchestrator] No agent role resolved for pipeline task %s (tenant %s)",
+            task.id,
+            tenant_id,
+        )
+        return False
+
+    Repo(tenant_id).update(
+        task.id,
+        status="doing",
+        owner=resolved_role.capitalize(),
+    )
+
+    if cost_estimate > 0:
+        debit(tenant_id, cost_estimate, task.purpose_id)
+
+    celery.send_task(
+        f"agent.{resolved_role}",
+        args=[tenant_id, task.id, task.purpose_id],
+        queue=f"{tenant_id}:{resolved_role}",
+    )
+    logging.info(
+        "[Orchestrator] Dispatched %s to %s",
+        getattr(phase, "slug", task.description or task.id),
+        resolved_role,
+    )
+    return True
+
+
 def _generate_plan_for_purpose(purpose_id: str) -> None:
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.scripts.seed_graph import ingest
@@ -199,7 +307,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         try:
             celery.send_task(
                 "agent.planner",
-                args=[tenant_id, purpose_id],
+                args=[tenant_id, None, purpose_id],
                 queue=f"{tenant_id}:planner",
             )
             logging.info("[Orchestrator] Planner agent dispatched for purpose %s", purpose_id)
@@ -439,6 +547,19 @@ async def orchestrator() -> None:
 
                 role_hint = classify_role(rec["d"])
                 role = _resolve_agent_role(session, task_obj, role_hint)
+
+                dispatch_result = _dispatch_task(
+                    session,
+                    task_obj,
+                    tenant_id,
+                    role=role,
+                    cost_estimate=cost_est,
+                )
+                if dispatch_result:
+                    continue
+                if dispatch_result is False:
+                    continue
+
                 if not role:
                     logging.warning(
                         "[Orchestrator] No agent role resolved for task %s (tenant %s)",
