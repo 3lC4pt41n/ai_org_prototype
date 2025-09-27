@@ -17,7 +17,7 @@ def upgrade() -> None:
             """
             DELETE FROM prompt_template
             WHERE default_path = 'requirements.j2'
-               OR name = 'requirements.j2'
+               OR phase_slug = 'requirements.j2'
             """
         )
     )
