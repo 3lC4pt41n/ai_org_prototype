@@ -461,14 +461,7 @@ async def orchestrator() -> None:
                         f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
                     )
                     if prd_task and prd_art and prd_art.released and not blueprint_task:
-                        # In manual mode the Architect should only run after human approval.
-                        if p.mode == "auto":
-                            purpose_to_process = (p, "architect")
-                        else:
-                            logging.info(
-                                "[Orchestrator] Manual mode -> waiting for Architect trigger"
-                            )
-                            continue
+                        purpose_to_process = (p, "architect")
                         break
 
                     review_task = next(
@@ -488,14 +481,7 @@ async def orchestrator() -> None:
                         and review_task.status == TaskStatus.DONE
                         and impl_todo is None
                     ):
-                        # Planner execution is also gated in manual mode until approved.
-                        if p.mode == "auto":
-                            purpose_to_process = (p, "planner")
-                        else:
-                            logging.info(
-                                "[Orchestrator] Manual mode -> waiting for Planner trigger"
-                            )
-                            continue
+                        purpose_to_process = (p, "planner")
                         break
         except Exception as e:
             logging.error("[Orchestrator] Failed to poll purposes: %s", e)
