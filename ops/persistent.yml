@@ -66,8 +66,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
       - WORKSPACE_DIR=/app/workspace
@@ -103,8 +103,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
       - WORKSPACE_DIR=/app/workspace
@@ -140,8 +140,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
       - WORKSPACE_DIR=/app/workspace
@@ -165,8 +165,8 @@ services:
     env_file:
       - ../.env
     command: >
-      celery -A ai_org_backend.tasks.celery_app worker
-             -Q ${TENANT}:dev,${TENANT}:qa,${TENANT}:ux_ui,${TENANT}:telemetry,${TENANT}:reviewer
+      celery -A ai_org_backend.tasks.celery_app worker \
+             -Q ${TENANT}:dev,${TENANT}:qa,${TENANT}:ux_ui,${TENANT}:telemetry,${TENANT}:reviewer,${TENANT}:po \
              -l INFO -P solo
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -177,8 +177,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
       - API_BASE_URL=http://ai-app:8000
       - UI_BASE_URL=http://frontend
       - CELERY_WORKER_SEND_TASK_EVENTS=true
@@ -216,8 +216,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
       - CELERY_WORKER_SEND_TASK_EVENTS=true
       - CELERY_TASK_SEND_SENT_EVENT=true
       - WORKSPACE_DIR=/app/workspace
@@ -259,8 +259,8 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - ALGORITHM=${ALGORITHM}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
     ports:
         - "8000:8000"
     healthcheck:
@@ -302,8 +302,8 @@ services:
       # explizit injizieren – garantiert, auch ohne env_file
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - WORKSPACE_DIR=/app/workspace
-      - TENANT=a865fa25-3794-410f-9bce-0be47b467f74
-      - TENANT_NAME=Tim Mergenthaler
+      - TENANT=${TENANT}
+      - TENANT_NAME=${TENANT_NAME}
     depends_on:
       postgres:
         condition: service_healthy
