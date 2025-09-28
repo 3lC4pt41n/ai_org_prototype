@@ -428,18 +428,20 @@ async def orchestrator() -> None:
                             for t in tasks
                             if t.description
                             and t.description.lower() == "product requirements document"
-                            and t.status == TaskStatus.DONE
                         ),
                         None,
+                    )
+                    prd_task_done = (
+                        prd_task if prd_task and prd_task.status == TaskStatus.DONE else None
                     )
                     blueprint_task = next(
                         (t for t in tasks if t.description == "Architecture Blueprint"),
                         None,
                     )
                     prd_art = None
-                    if prd_task:
+                    if prd_task_done:
                         prd_art = session.exec(
-                            select(Artifact).where(Artifact.task_id == prd_task.id)
+                            select(Artifact).where(Artifact.task_id == prd_task_done.id)
                         ).first()
                     impl_todo = next(
                         (
@@ -455,12 +457,30 @@ async def orchestrator() -> None:
                         ),
                         None,
                     )
+                    vision_task = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.description and t.description.lower() == "vision document"
+                        ),
+                        None,
+                    )
                     logging.info(
-                        f"[Orchestrator]  → prd_done={bool(prd_task)} "
+                        f"[Orchestrator]  → prd_done={bool(prd_task_done)} "
                         f"released={getattr(prd_art,'released',None)} "
                         f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
                     )
-                    if prd_task and prd_art and prd_art.released and not blueprint_task:
+                    if (
+                        vision_task
+                        and vision_task.status == TaskStatus.DONE
+                        and prd_task is None
+                    ):
+                        notes = (vision_task.notes or "").lower()
+                        if p.mode == "auto" or "approved" in notes:
+                            purpose_to_process = (p, "vision")
+                            break
+
+                    if prd_task_done and prd_art and prd_art.released and not blueprint_task:
                         purpose_to_process = (p, "architect")
                         break
 
@@ -488,14 +508,19 @@ async def orchestrator() -> None:
 
         if purpose_to_process:
             p, action = purpose_to_process
-            if action == "architect":
+            if action == "vision":
                 logging.info(
-                    "[Orchestrator] Approved PRD for purpose %s -> start Architect",
+                    "[Orchestrator] Vision completed for purpose %s → erstelle PRD-Task",
                     p.id,
                 )
-            else:
+            elif action == "architect":
                 logging.info(
-                    "[Orchestrator] Blueprint review approved for purpose %s -> trigger Planner",
+                    "[Orchestrator] PRD freigegeben für Purpose %s → starte Architecture",
+                    p.id,
+                )
+            else:  # planner
+                logging.info(
+                    "[Orchestrator] Blueprint & Review abgeschlossen für Purpose %s → starte Planner",
                     p.id,
                 )
             try:

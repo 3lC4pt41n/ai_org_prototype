@@ -105,6 +105,14 @@ def _git_commit(rel_path: str, message: str) -> None:
     if not status.stdout.strip():
         log.info("storage: nothing to commit in %s", WORKSPACE)
         return
+    # Remove stale Git lockfiles that could block the commit
+    lockfile = WORKSPACE / ".git" / "index.lock"
+    if lockfile.exists():
+        try:
+            lockfile.unlink()
+            log.info("Removed stale Git index.lock")
+        except Exception as e:
+            log.warning("Failed to remove Git index.lock: %s", e)
     commit_cmd = [
         "git",
         "-C",
@@ -193,6 +201,11 @@ def register_artefact(
     base_name = (base_name or "artifact").strip().lstrip("/\\")
     if not Path(base_name).suffix and media_type in ("text/markdown", "text/x-markdown"):
         base_name = f"{base_name}.md"
+    # Avoid duplicated tenant/purpose segments in nested filenames
+    parts = Path(base_name).parts
+    filtered_parts = [p for p in parts if p not in (tenant_dir, purpose_dir)]
+    if filtered_parts:
+        base_name = os.path.join(*filtered_parts)
     tgt = target_dir / base_name
     # Ensure directories exist for nested paths like "requirements/"
     tgt.parent.mkdir(parents=True, exist_ok=True)
