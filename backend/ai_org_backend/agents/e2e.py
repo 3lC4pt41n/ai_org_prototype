@@ -33,7 +33,7 @@ def _load_latest_prd(s, purpose_id: str) -> str:
         s.query(Artifact)
         .join(Task, Task.id == Artifact.task_id)
         .filter(Task.purpose_id == purpose_id)
-        .filter(Artifact.filename.endswith("requirements/product_requirements.md"))
+        .filter(Artifact.filename.endswith("requirements/product_requirements_document.md"))
         .order_by(desc(Artifact.created_at))
     )
     a = q.first()

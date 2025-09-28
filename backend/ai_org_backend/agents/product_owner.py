@@ -195,7 +195,7 @@ def agent_po(tenant_id: str, task_id: str, purpose_id: str | None = None) -> Non
             save_artefact(
                 task_id,
                 content.encode("utf-8"),
-                filename="requirements/product_requirements.md",
+                filename="requirements/product_requirements_document.md",
                 media_type="text/markdown",
                 allow_overwrite=True,
             )

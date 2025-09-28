@@ -80,7 +80,7 @@ def setup_base_data(engine):
     artifact = Artifact(
         id="artifact1",
         task_id=prd_task.id,
-        repo_path="requirements/product_requirements.md",
+        repo_path="requirements/product_requirements_document.md",
         media_type="text/markdown",
         size=0,
         sha256="0" * 64,

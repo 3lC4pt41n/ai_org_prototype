@@ -238,7 +238,7 @@ def post_chat(
                     prd_artifact = session.exec(
                         select(Artifact)
                         .where(Artifact.task.has(purpose_id=purpose_id))
-                        .where(Artifact.repo_path.ilike("%product_requirements.md"))  # type: ignore[attr-defined]
+                        .where(Artifact.repo_path.ilike("%product_requirements_document.md"))  # type: ignore[attr-defined]
                         .order_by(desc(Artifact.created_at))
                     ).first()
                 except Exception:
@@ -264,7 +264,7 @@ def post_chat(
                         filename=(
                             prd_artifact.repo_path
                             if prd_artifact
-                            else "requirements/product_requirements.md"
+                            else "requirements/product_requirements_document.md"
                         ),
                         media_type=prd_artifact.media_type if prd_artifact else "text/markdown",
                         allow_overwrite=True,
@@ -669,7 +669,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                             prd_artifact = session.exec(
                                 select(Artifact)
                                 .where(Artifact.task.has(purpose_id=purpose_id))
-                                .where(Artifact.repo_path.ilike("%product_requirements.md"))  # type: ignore[attr-defined]
+                                .where(Artifact.repo_path.ilike("%product_requirements_document.md"))  # type: ignore[attr-defined]
                                 .order_by(desc(Artifact.created_at))
                             ).first()
                         except Exception:
@@ -701,7 +701,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                     filename=(
                                         prd_artifact.repo_path
                                         if prd_artifact
-                                        else "requirements/product_requirements.md"
+                                        else "requirements/product_requirements_document.md"
                                     ),
                                     media_type=(
                                         prd_artifact.media_type if prd_artifact else "text/markdown"

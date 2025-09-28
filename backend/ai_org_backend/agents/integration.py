@@ -56,7 +56,9 @@ def integration_task(tenant_id: str, task_id: str) -> None:
         purpose = s.get(Purpose, task.purpose_id)
         if not purpose:
             return
-        prd_md = _load_latest_text_artifact(s, purpose.id, "requirements/product_requirements.md")
+        prd_md = _load_latest_text_artifact(
+            s, purpose.id, "requirements/product_requirements_document.md"
+        )
         blueprint_md = _load_latest_text_artifact(
             s, purpose.id, "blueprints/architecture_blueprint.md"
         )
