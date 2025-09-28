@@ -175,7 +175,7 @@ def seed_if_empty(purpose_name: str = PURPOSE) -> None:
     register_artefact(
         prd_task.id,
         prd_content.encode("utf-8"),
-        filename="requirements/product_requirements.md",
+        filename="requirements/product_requirements_document.md",
     )
     Repo(TENANT).update(
         prd_task.id,

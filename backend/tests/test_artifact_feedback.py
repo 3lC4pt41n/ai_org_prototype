@@ -166,7 +166,7 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
     artifact = Artifact(
         id="artifact1",
         task_id=task.id,
-        repo_path="product_requirements.md",
+        repo_path="product_requirements_document.md",
         media_type="text/markdown",
         size=0,
         sha256="0" * 64,

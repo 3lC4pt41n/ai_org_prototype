@@ -542,13 +542,14 @@ def _generate_prd_artifact(
         raise
 
     artifact: Artifact | None = None
-    repo_rel = "requirements/product_requirements.md"
+    repo_rel = "requirements/product_requirements_document.md"
     try:
         artifact = save_artefact(
             prd_task.id,
             prd_content.encode("utf-8"),
             filename=repo_rel,
             media_type="text/markdown",
+            allow_overwrite=True,
         )
         logger.info(
             "PRD artefact %s stored for purpose %s (path=%s)",
