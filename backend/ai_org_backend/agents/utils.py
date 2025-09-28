@@ -63,6 +63,17 @@ def _get_environment() -> Environment:
     return _ENV
 
 
+def _db_prompt_is_valid(content: str | None) -> bool:
+    """Return ``True`` if the DB-stored template content is usable."""
+
+    if not content:
+        return False
+    stripped = content.strip()
+    if not stripped:
+        return False
+    return "tbd" not in stripped.casefold()
+
+
 def load_template(name: str) -> Template:
     """Load a Jinja2 template from the shared ``prompts`` directory."""
 
@@ -71,8 +82,8 @@ def load_template(name: str) -> Template:
     try:
         with SessionLocal() as session:
             template = session.get(PromptTemplate, name)
-            if template and template.content:
-                return env.from_string(template.content)
+            if template and _db_prompt_is_valid(template.content):
+                return env.from_string(template.content)  # type: ignore[arg-type]
 
             if name.endswith(".j2"):
                 template = session.exec(
@@ -80,8 +91,8 @@ def load_template(name: str) -> Template:
                     .where(PromptTemplate.default_path == name)
                     .order_by(PromptTemplate.created_at.desc())
                 ).first()
-                if template and template.content:
-                    return env.from_string(template.content)
+                if template and _db_prompt_is_valid(template.content):
+                    return env.from_string(template.content)  # type: ignore[arg-type]
     except Exception:
         # DB lookup is best-effort; fall back to filesystem prompts
         pass
