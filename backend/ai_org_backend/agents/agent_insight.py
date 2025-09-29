@@ -5,7 +5,7 @@ import logging
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT
 from ai_org_backend.models import Task, TaskOwner
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.tasks.celery_app import celery
 
 
@@ -19,7 +19,7 @@ def agent_insight(tenant_id: str, task_id: str) -> None:
             logging.error(f"[InsightAgent] Task {task_id} not found for insight generation")
             return
         insight_md = "# Insights Report\nKeine besonderen Erkenntnisse."
-        save_artefact(
+        register_artefact(
             task_id,
             insight_md.encode("utf-8"),
             filename="reports/insights_report.md",

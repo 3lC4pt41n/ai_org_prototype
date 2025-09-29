@@ -36,7 +36,12 @@ from ai_org_backend.services.pipeline_templates import (
     template_to_dict,
     update_phase_configuration,
 )
-from ai_org_backend.services.storage import WORKSPACE, resolve_for_read, save_artefact, vector_store
+from ai_org_backend.services.storage import (
+    WORKSPACE,
+    resolve_for_read,
+    register_artefact,
+    vector_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +406,7 @@ def _generate_vision_artifact(
     artifact: Artifact | None = None
     repo_rel = "vision/vision_statement.md"
     try:
-        artifact = save_artefact(
+        artifact = register_artefact(
             vision_task.id,
             vision_content.encode("utf-8"),
             filename=repo_rel,
@@ -544,7 +549,7 @@ def _generate_prd_artifact(
     artifact: Artifact | None = None
     repo_rel = "requirements/product_requirements_document.md"
     try:
-        artifact = save_artefact(
+        artifact = register_artefact(
             prd_task.id,
             prd_content.encode("utf-8"),
             filename=repo_rel,
@@ -1126,7 +1131,7 @@ def post_artifact_feedback(
             updated_prd_md = run_requirements_feedback(
                 purpose, feedback=text, current_prd=current_prd
             )
-            save_artefact(
+            register_artefact(
                 artifact.task_id,
                 updated_prd_md.encode("utf-8"),
                 filename=artifact.repo_path,

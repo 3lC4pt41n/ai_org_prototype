@@ -7,7 +7,7 @@ from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, 
 from ai_org_backend.models import Purpose, Task, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
 
@@ -109,7 +109,7 @@ def agent_ux_ui(tenant_id: str, task_id: str) -> None:
                     TASK_CNT.labels(tenant_id, "ux_ui", "failed").inc()
                     return
         # Artefakt nur bei Erfolg speichern
-        save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.md")
+        register_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}.md")
         tokens_used = 0
         try:
             tokens_used = (
