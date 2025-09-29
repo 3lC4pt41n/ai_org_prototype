@@ -5,7 +5,7 @@ import logging
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.main import TASK_CNT
 from ai_org_backend.models import Task
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.tasks.celery_app import celery
 
 
@@ -19,7 +19,7 @@ def agent_integration(tenant_id: str, task_id: str) -> None:
             logging.error(f"[IntegrationAgent] Task {task_id} not found for integration")
             return
         content = f"Integration completed for task {task_id}."
-        save_artefact(
+        register_artefact(
             task_id,
             content.encode("utf-8"),
             filename="reports/integration_report.md",

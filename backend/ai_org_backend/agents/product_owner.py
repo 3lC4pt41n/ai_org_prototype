@@ -13,7 +13,7 @@ from ai_org_backend.models import Artifact, Purpose, Task
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services.budget import BudgetExceededError
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
-from ai_org_backend.services.storage import resolve_for_read, save_artefact
+from ai_org_backend.services.storage import resolve_for_read, register_artefact
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.metrics import TASK_CNT, TASK_LAT
 from ai_org_backend.services.repo import Repo, debit
@@ -192,7 +192,7 @@ def agent_po(tenant_id: str, task_id: str, purpose_id: str | None = None) -> Non
             return
 
         try:
-            save_artefact(
+            register_artefact(
                 task_id,
                 content.encode("utf-8"),
                 filename="requirements/product_requirements_document.md",

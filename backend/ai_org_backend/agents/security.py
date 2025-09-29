@@ -14,7 +14,7 @@ import os
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Task, TaskDependency
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.services.test_exec import run_bandit, run_pip_audit
 from ai_org_backend.tasks.celery_app import celery
 
@@ -62,13 +62,13 @@ def security_task(tenant_id: str, task_id: str) -> None:
             md.append(f"- {pkg}: {desc}")
     md_text = "\n".join(md)
 
-    save_artefact(
+    register_artefact(
         task_id,
         json.dumps(report, indent=2).encode("utf-8"),
         filename="reports/security_report.json",
         allow_overwrite=True,
     )
-    save_artefact(
+    register_artefact(
         task_id,
         md_text.encode("utf-8"),
         filename="reports/security_report.md",

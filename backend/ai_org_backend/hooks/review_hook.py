@@ -1,7 +1,7 @@
 """
-Review Hook (monkey-patch save_artefact)
----------------------------------------
-We hook into `save_artefact` so that **whenever** the architecture blueprint
+Review Hook (monkey-patch register_artefact)
+-------------------------------------------
+We hook into `register_artefact` so that **whenever** the architecture blueprint
 Markdown is saved, we:
   1) create (or reuse) a gating task "Architecture & Domain Review"
   2) wire dependencies: blueprint -> review -> all other tasks
@@ -22,7 +22,7 @@ from sqlmodel import select
 from ai_org_backend.services import storage as _storage
 
 # Keep original pointer so we can call it
-_orig_save_artefact = _storage.save_artefact
+_orig_register_artefact = _storage.register_artefact
 
 
 _SKIP_REVIEW_DEPENDENCY = {
@@ -175,7 +175,7 @@ def _maybe_trigger_review(task_id: str, filename: str) -> None:
     )
 
 
-def save_artefact_with_review(
+def register_artefact_with_review(
     task_id: str,
     data: bytes,
     filename: str,
@@ -183,7 +183,7 @@ def save_artefact_with_review(
     media_type: Optional[str] = None,
 ):
     """
-    Wrapper around the original save_artefact.
+    Wrapper around the original register_artefact.
     Calls the original, then triggers review if the blueprint was saved.
 
     Args:
@@ -194,7 +194,7 @@ def save_artefact_with_review(
         media_type: Optional media type for the artefact; forwarded to the
             underlying storage implementation.
     """
-    result = _orig_save_artefact(
+    result = _orig_register_artefact(
         task_id,
         data,
         filename,
@@ -210,4 +210,5 @@ def save_artefact_with_review(
 
 
 # ---- Apply monkey-patch on import -------------------------------------------
-_storage.save_artefact = cast(Any, save_artefact_with_review)
+_storage.register_artefact = cast(Any, register_artefact_with_review)
+_storage.save_artefact = cast(Any, register_artefact_with_review)

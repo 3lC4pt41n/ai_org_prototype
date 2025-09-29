@@ -75,7 +75,7 @@ def agent_adjust_plan(tenant_id: str) -> None:
                 notes="added by adjuster",
             )
             new_tasks.append(f"– {desc} (Task ID: {t.id})")
-    from ai_org_backend.services.storage import save_artefact
+    from ai_org_backend.services.storage import register_artefact
 
     summary_lines = (
         ["No plan changes were necessary."]
@@ -91,7 +91,7 @@ def agent_adjust_plan(tenant_id: str) -> None:
         purpose_relevance=0.0,
         notes="",
     )
-    save_artefact(task.id, content.encode("utf-8"), filename="planning-adjustment.md")
+    register_artefact(task.id, content.encode("utf-8"), filename="planning-adjustment.md")
     Repo(tenant_id).update(
         task.id,
         status="done",

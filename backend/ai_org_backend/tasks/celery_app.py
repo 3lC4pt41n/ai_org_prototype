@@ -22,6 +22,11 @@ celery.conf.task_create_missing_queues = True
 app = celery
 
 celery.autodiscover_tasks(packages=["ai_org_backend.agents"])
+celery.conf.include = [
+    "ai_org_backend.agents.architect",
+    "ai_org_backend.agents.architect_feedback",
+    "ai_org_backend.tasks.llm_tasks",
+]
 
 
 @before_task_publish.connect

@@ -10,7 +10,7 @@ from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner, Tenant
 from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 
@@ -93,7 +93,7 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
             f"**Purpose:** {purpose.name}\n\n"
             f"## Overview\n\nTBD\n"
         )
-        save_artefact(
+        register_artefact(
             prd_task_obj.id,
             prd_md.encode("utf-8"),
             filename="requirements/product_requirements_document.md",

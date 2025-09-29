@@ -14,7 +14,7 @@ from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
 from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner  # noqa: E402
 from ai_org_backend.models.chat import ChatRole  # noqa: E402
 from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noqa: E402
-from ai_org_backend.services.storage import save_artefact  # noqa: E402
+from ai_org_backend.services.storage import register_artefact  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
 from ai_org_backend.settings import settings  # noqa: E402
 
@@ -97,7 +97,7 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
     if not review_md.strip():
         review_md = "_No review output (LLM may have been unavailable)._"
 
-    save_artefact(
+    register_artefact(
         task_id,
         review_md.encode("utf-8"),
         filename="reviews/code_review.md",
