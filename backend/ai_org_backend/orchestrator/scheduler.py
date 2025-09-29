@@ -242,6 +242,40 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             )
         ).first()
 
+        if (
+            blueprint_task
+            and blueprint_task.status == TaskStatus.DONE
+            and review_task is None
+        ):
+            review_phase = db_session.exec(
+                select(PipelinePhase).where(PipelinePhase.slug == "architecture_review")
+            ).first()
+            repo = Repo(tenant_id)
+            review_task_obj = repo.add_task(
+                purpose_id=purpose_id,
+                description="Architecture & Domain Review",
+                business_value=getattr(review_phase, "business_value_default", 1.0),
+                tokens_plan=getattr(review_phase, "tokens_plan_default", 1500),
+                purpose_relevance=getattr(review_phase, "purpose_relevance_default", 1.0),
+                pipeline_phase_id=getattr(review_phase, "id", None),
+                agent_role=getattr(review_phase, "agent_role", "reviewer"),
+                model_name=getattr(review_phase, "model_name", None),
+                prompt_template=getattr(review_phase, "prompt_template", None),
+                requires_approval=getattr(review_phase, "requires_approval", True),
+            )
+            repo.link(blueprint_task.id, review_task_obj.id)
+            repo.update(
+                review_task_obj.id,
+                owner=TaskOwner.REVIEW,
+                notes="Awaiting architecture review",
+            )
+            logging.info(
+                "[Orchestrator] Created Architecture Review task %s for purpose %s",
+                review_task_obj.id,
+                purpose_id,
+            )
+            return
+
         vision_task = db_session.exec(
             select(Task).where(
                 Task.purpose_id == purpose_id,
@@ -434,15 +468,37 @@ async def orchestrator() -> None:
                     prd_task_done = (
                         prd_task if prd_task and prd_task.status == TaskStatus.DONE else None
                     )
+
+                    vision_task = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.description and t.description.lower() == "vision document"
+                        ),
+                        None,
+                    )
+
                     blueprint_task = next(
                         (t for t in tasks if t.description == "Architecture Blueprint"),
                         None,
                     )
+
                     prd_art = None
                     if prd_task_done:
                         prd_art = session.exec(
                             select(Artifact).where(Artifact.task_id == prd_task_done.id)
                         ).first()
+
+                    review_task = next(
+                        (
+                            t
+                            for t in tasks
+                            if t.description
+                            and t.description.lower() == "architecture & domain review"
+                        ),
+                        None,
+                    )
+
                     impl_todo = next(
                         (
                             t
@@ -457,19 +513,14 @@ async def orchestrator() -> None:
                         ),
                         None,
                     )
-                    vision_task = next(
-                        (
-                            t
-                            for t in tasks
-                            if t.description and t.description.lower() == "vision document"
-                        ),
-                        None,
-                    )
+
                     logging.info(
                         f"[Orchestrator]  → prd_done={bool(prd_task_done)} "
                         f"released={getattr(prd_art,'released',None)} "
-                        f"blueprint={bool(blueprint_task)} impl_todo={bool(impl_todo)}"
+                        f"blueprint={bool(blueprint_task)} review={bool(review_task)} "
+                        f"impl_todo={bool(impl_todo)}"
                     )
+
                     if (
                         vision_task
                         and vision_task.status == TaskStatus.DONE
@@ -484,20 +535,16 @@ async def orchestrator() -> None:
                         purpose_to_process = (p, "architect")
                         break
 
-                    review_task = next(
-                        (
-                            t
-                            for t in tasks
-                            if t.description
-                            and t.description.lower() == "architecture & domain review"
-                        ),
-                        None,
-                    )
-
                     if (
                         blueprint_task
                         and blueprint_task.status == TaskStatus.DONE
-                        and review_task
+                        and not review_task
+                    ):
+                        purpose_to_process = (p, "review")
+                        break
+
+                    if (
+                        review_task
                         and review_task.status == TaskStatus.DONE
                         and impl_todo is None
                     ):
@@ -516,6 +563,11 @@ async def orchestrator() -> None:
             elif action == "architect":
                 logging.info(
                     "[Orchestrator] PRD freigegeben für Purpose %s → starte Architecture",
+                    p.id,
+                )
+            elif action == "review":
+                logging.info(
+                    "[Orchestrator] Blueprint abgeschlossen für Purpose %s → starte Review",
                     p.id,
                 )
             else:  # planner

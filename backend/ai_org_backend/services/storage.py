@@ -95,6 +95,14 @@ def _mime(p: Path) -> str:
 def _git_commit(rel_path: str, message: str) -> None:
     """Add & commit changes in the workspace repository."""
     _ensure_repo(WORKSPACE)
+    # Entferne ggf. verwaiste Git-Lock-Datei
+    lockfile = WORKSPACE / ".git" / "index.lock"
+    if lockfile.exists():
+        try:
+            lockfile.unlink()
+            log.info("Removed stale Git index.lock")
+        except Exception as e:
+            log.warning("Failed to remove Git index.lock: %s", e)
     subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)  # nosec B603 B607
     status = subprocess.run(
         ["git", "-C", str(WORKSPACE), "status", "--porcelain"],
@@ -105,14 +113,6 @@ def _git_commit(rel_path: str, message: str) -> None:
     if not status.stdout.strip():
         log.info("storage: nothing to commit in %s", WORKSPACE)
         return
-    # Remove stale Git lockfiles that could block the commit
-    lockfile = WORKSPACE / ".git" / "index.lock"
-    if lockfile.exists():
-        try:
-            lockfile.unlink()
-            log.info("Removed stale Git index.lock")
-        except Exception as e:
-            log.warning("Failed to remove Git index.lock: %s", e)
     commit_cmd = [
         "git",
         "-C",
