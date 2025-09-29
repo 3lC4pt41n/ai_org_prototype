@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../lib/api";
-import MarkdownRenderer from "./MarkdownRenderer";
 
 interface Task {
   id: string;
@@ -87,7 +88,9 @@ const FeedbackSection: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
           </p>
           {contents[task.id] && (
             <div className="my-2 p-2 border rounded bg-white max-h-64 overflow-auto">
-              <MarkdownRenderer content={contents[task.id]} className="prose prose-slate" />
+              <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
+                {contents[task.id]}
+              </ReactMarkdown>
             </div>
           )}
           {(questions[task.id] || []).map((q, idx) => (
