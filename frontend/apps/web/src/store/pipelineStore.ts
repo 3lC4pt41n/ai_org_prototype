@@ -69,11 +69,11 @@ interface PipelineState {
   budgetTotal: number | null;
   error: unknown | null;
   activeTab: string;
-  setSelectedPurpose: (id: string | null) => void;
+  setSelectedPurpose: (id: string) => void;
   fetchPurposes: () => Promise<void>;
-  fetchBacklog: (signal?: AbortSignal) => Promise<void>;
-  fetchGraphAndStatus: (purposeId: string, signal?: AbortSignal) => Promise<void>;
-  fetchArtifacts: (signal?: AbortSignal) => Promise<void>;
+  fetchBacklog: () => Promise<void>;
+  fetchGraphAndStatus: (purposeId: string) => Promise<void>;
+  fetchArtifacts: () => Promise<void>;
   selectArtifact: (id: string) => void;
   setActiveTab: (tab: string) => void;
   fetchArtifactContent: (artifactId: string) => Promise<void>;
@@ -105,7 +105,7 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   error: null,
   activeTab: 'graph',
 
-  setSelectedPurpose: (id: string | null) => {
+  setSelectedPurpose: (id: string) => {
     set({
       selectedPurposeId: id,
       selectedArtifactId: null,

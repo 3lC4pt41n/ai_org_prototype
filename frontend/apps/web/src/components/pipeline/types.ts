@@ -67,8 +67,6 @@ export interface PurposeSummary {
   id: string;
   name: string;
   mode?: 'manual' | 'auto';
-  purpose?: string;
-  created_at?: string;
 }
 
 export interface PipelineGraphNode {
