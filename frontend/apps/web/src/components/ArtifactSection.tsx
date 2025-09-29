@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useMemo, type ChangeEvent } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api, postJson } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import FileViewer from './FileViewer';
-import MarkdownRenderer from './MarkdownRenderer';
 import usePipelineStore from '../store/pipelineStore';
 
 interface Artifact {
@@ -269,7 +270,11 @@ export default function ArtifactSection({
     } catch {
       /* ignore – treat as markdown */
     }
-    return <MarkdownRenderer content={fb.content} className="prose prose-slate" />;
+    return (
+      <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
+        {fb.content}
+      </ReactMarkdown>
+    );
   }
 
   return (
