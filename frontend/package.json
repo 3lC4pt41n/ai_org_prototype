@@ -25,6 +25,7 @@
     "@radix-ui/react-accordion": "^1.2.12",
     "axios": "^1.11.0",
     "lucide-react": "^0.372.0",
+    "mermaid": "^10.9.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.5.2",
