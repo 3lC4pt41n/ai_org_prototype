@@ -12,7 +12,7 @@ from ai_org_backend.main import TASK_CNT, TASK_LAT, TOKEN_PRICE_PER_1000, Repo, 
 from ai_org_backend.models import Artifact, Task, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.settings import settings
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
@@ -104,7 +104,7 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
             if file_path.parent and str(file_path.parent) != ".":
                 target_dir = settings.workspace_dir / tenant_id / file_path.parent
                 target_dir.mkdir(parents=True, exist_ok=True)
-            save_artefact(task_id, file_content.encode("utf-8"), filename=path)
+            register_artefact(task_id, file_content.encode("utf-8"), filename=path)
             files_created += 1
         # Mark task as done and assign to Repo owner
         if error_msg:

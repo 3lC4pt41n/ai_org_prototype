@@ -11,7 +11,7 @@ from ai_org_backend.metrics import prom_counter
 from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.services.testing import run_tests
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
@@ -228,7 +228,7 @@ def agent_qa(tenant_id: str, task_id: str) -> None:
                     TASK_CNT.labels(tenant_id, "qa", "failed").inc()
                     return
         # Only save QA report on success
-        save_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
+        register_artefact(task_id, content.encode("utf-8"), filename=f"{task_id}_qa.txt")
         tokens_used = 0
         try:
             tokens_used = (
@@ -259,7 +259,7 @@ def agent_qa(tenant_id: str, task_id: str) -> None:
                     art_path = Path(*art_path.parts[1:])
                 test_paths.append(str(art_path))
             tests_passed, test_output, note = run_tests(tenant_id, test_paths)
-            save_artefact(
+            register_artefact(
                 task_id, test_output.encode("utf-8"), filename=f"{task_id}_test_results.txt"
             )
             if tests_passed:
@@ -342,7 +342,7 @@ def agent_qa(tenant_id: str, task_id: str) -> None:
         else:
             logging.warning(f"[QAAgent] No tests found for task {task_id}")
             no_test_msg = "no tests detected"
-            save_artefact(
+            register_artefact(
                 task_id, no_test_msg.encode("utf-8"), filename=f"{task_id}_test_results.txt"
             )
             Repo(tenant_id).update(
