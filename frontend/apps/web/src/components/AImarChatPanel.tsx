@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson, API_BASE } from '../lib/api';
 import usePipelineStore from '../store/pipelineStore';
+import MarkdownRenderer from './MarkdownRenderer';
 
 enum ChatRole {
   USER = 'user',
@@ -360,10 +359,10 @@ export default function AImarChatPanel({
                       );
                     }
                   } catch {}
-                  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>;
+                  return <MarkdownRenderer content={m.content} />;
                 })()
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                <MarkdownRenderer content={m.content} />
               )}
               {(m as any).artifact_ids && (m as any).artifact_ids.length > 0 && (
                 <div className="mt-1">
