@@ -10,12 +10,12 @@
     "dev:web": "pnpm --filter web dev",
     "build:web": "pnpm --filter web build",
     "storybook": "pnpm --filter ui storybook",
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
     "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\"",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md,yml}\"",
-    "test": "jest",
-    "test:unit": "jest --runTestsByPath \"**/*.unit.(ts|tsx)\"",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --runTestsByPath \"**/*.unit.(ts|tsx)\"",
     "test:e2e": "playwright test",
     "cz": "cz",
     "release": "semantic-release",
@@ -36,12 +36,42 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.4",
+    "@testing-library/react": "^14.3.1",
+    "@types/jest": "^29.5.14",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
+    "ts-jest": "^29.3.4",
     "vite": "^5.4.19"
+  },
+  "jest": {
+    "preset": "ts-jest/presets/js-with-ts-esm",
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": [
+      "<rootDir>/apps/web/src/__tests__/setupTests.ts"
+    ],
+    "extensionsToTreatAsEsm": [
+      ".ts",
+      ".tsx"
+    ],
+    "globals": {
+      "ts-jest": {
+        "useESM": true,
+        "tsconfig": "./tsconfig.base.json"
+      }
+    },
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "transformIgnorePatterns": [],
+    "testPathIgnorePatterns": [
+      "<rootDir>/apps/web/src/__tests__/setupTests.ts"
+    ]
   },
   "type": "module",
   "config": {
