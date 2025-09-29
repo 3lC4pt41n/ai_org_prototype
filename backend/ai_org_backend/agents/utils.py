@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader, Template
 from sqlmodel import select
 
 from ai_org_backend.db import SessionLocal
@@ -97,11 +97,5 @@ def load_template(name: str) -> Template:
         # DB lookup is best-effort; fall back to filesystem prompts
         pass
 
-    try:
-        return env.get_template(name)
-    except TemplateNotFound as exc:
-        prompts_dir = _get_prompts_dir()
-        raise FileNotFoundError(
-            f"Template '{name}' not found in '{prompts_dir}'"
-        ) from exc
+    return env.get_template(name)
 
