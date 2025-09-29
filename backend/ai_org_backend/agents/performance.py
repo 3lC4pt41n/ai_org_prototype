@@ -13,7 +13,7 @@ import tempfile
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Task, TaskDependency
-from ai_org_backend.services.storage import save_artefact
+from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.services.test_exec import run_locust
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.settings import settings
@@ -45,7 +45,7 @@ def performance_task(tenant_id: str, task_id: str) -> None:
 
     # Save locustfile
     locust_rel = f"tests/perf/locustfile_{task_id}.py"
-    save_artefact(task_id, LOCUST_TMPL.encode("utf-8"), filename=locust_rel, allow_overwrite=True)
+    register_artefact(task_id, LOCUST_TMPL.encode("utf-8"), filename=locust_rel, allow_overwrite=True)
 
     locust_path = settings.workspace_dir / tenant_id / locust_rel
     rc, out, err = run_locust(
@@ -60,7 +60,7 @@ def performance_task(tenant_id: str, task_id: str) -> None:
         f"Host={host}\nUsers={users}\nSpawn={spawn}\nRun={run_time}\n\n"
         f"STDOUT:\n{out}\n\nSTDERR:\n{err}"
     )
-    save_artefact(
+    register_artefact(
         task_id,
         report.encode("utf-8"),
         filename="reports/performance_report.txt",

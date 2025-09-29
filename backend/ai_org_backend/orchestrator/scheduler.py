@@ -221,7 +221,7 @@ def _dispatch_task(
 def _generate_plan_for_purpose(purpose_id: str) -> None:
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.scripts.seed_graph import ingest
-    from ai_org_backend.services.storage import save_artefact
+    from ai_org_backend.services.storage import register_artefact
 
     with Session(engine) as db_session:
         purpose = db_session.get(Purpose, purpose_id)
@@ -395,7 +395,7 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             db_session.refresh(blueprint_task)
             blueprint_task_id = blueprint_task.id
             logging.info("[Orchestrator] Created new Architecture Blueprint task %s", blueprint_task_id)
-        save_artefact(
+        register_artefact(
             blueprint_task_id,
             blueprint_md.encode("utf-8"),
             filename="blueprints/architecture_blueprint.md",

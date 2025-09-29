@@ -22,7 +22,7 @@ from ai_org_backend.models.chat import (
     ChatScope,
 )
 from ai_org_backend.redis_client import pool
-from ai_org_backend.services.storage import resolve_for_read, save_artefact
+from ai_org_backend.services.storage import resolve_for_read, register_artefact
 from ai_org_backend.services.vector_store import VectorStore
 from ai_org_backend.utils import llm
 
@@ -258,7 +258,7 @@ def post_chat(
                     ).first()
                     target_task_id = prd_task.id if prd_task else None
                 if target_task_id:
-                    save_artefact(
+                    register_artefact(
                         target_task_id,
                         updated_prd_md.encode("utf-8"),
                         filename=(
@@ -695,7 +695,7 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                 ).first()
                                 target_task_id = prd_task.id if prd_task else None
                             if target_task_id:
-                                save_artefact(
+                                register_artefact(
                                     target_task_id,
                                     updated_prd_md.encode("utf-8"),
                                     filename=(
