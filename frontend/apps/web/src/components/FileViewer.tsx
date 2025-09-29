@@ -1,5 +1,6 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import Editor from "@monaco-editor/react";
-import MarkdownRenderer from "./MarkdownRenderer";
 
 type Props = {
   /** Text-Inhalt, falls es Text ist (md, code, html etc.). */
@@ -82,8 +83,10 @@ export default function FileViewer({ text, blobUrl, contentType, filename, heigh
   // Markdown
   if (isMarkdown(contentType, filename) && text != null) {
     return (
-      <div className="max-h-96 overflow-y-auto p-4 border rounded bg-white">
-        <MarkdownRenderer content={text} className="prose prose-slate" />
+      <div className="prose prose-slate max-h-96 overflow-y-auto p-4 border rounded bg-white">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {text}
+        </ReactMarkdown>
       </div>
     );
   }
