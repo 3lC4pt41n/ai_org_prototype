@@ -16,11 +16,13 @@ def _reload_modules():
     import ai_org_backend.api.dependencies as dependencies
     import ai_org_backend.db as db
     import ai_org_backend.api.purposes as purposes_module
+    import ai_org_backend.settings as settings_module
 
     importlib.reload(db)
     importlib.reload(dependencies)
+    importlib.reload(settings_module)
     importlib.reload(purposes_module)
-    return db, dependencies, purposes_module
+    return db, dependencies, purposes_module, settings_module
 
 
 def _create_app(purposes_module):
@@ -130,8 +132,9 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
 
     db_file = tmp_path / "test.db"
     monkeypatch.setitem(os.environ, "DATABASE_URL", f"sqlite:///{db_file}")
+    monkeypatch.setitem(os.environ, "WORKSPACE_DIR", str(tmp_path / "workspace"))
 
-    db, dependencies, purposes_module = _reload_modules()
+    db, dependencies, purposes_module, settings_module = _reload_modules()
 
     SQLModel.metadata.create_all(db.engine)
 
@@ -142,6 +145,13 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
         purposes_module.graph_sync,
         "remove_tasks",
         lambda ids: removed_from_graph.setdefault("ids", list(ids)),
+    )
+
+    removed_purposes: list[str] = []
+    monkeypatch.setattr(
+        purposes_module.graph_sync,
+        "remove_purpose",
+        lambda pid: removed_purposes.append(pid),
     )
 
     retracted: list[str] = []
@@ -158,6 +168,11 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
 
     dummy_pool.delete = _delete_key
     monkeypatch.setattr(purposes_module, "pool", dummy_pool)
+
+    workspace_root = settings_module.settings.workspace_dir
+    target_dir = workspace_root / tenant.id / purpose.id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "dummy.txt").write_text("data")
 
     app = _create_app(purposes_module)
     _override_tenant(app, tenant, dependencies)
@@ -192,7 +207,10 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
 
     assert retracted == [artifact.id]
     assert removed_from_graph.get("ids") == task_ids
+    assert removed_purposes == [purpose.id]
     assert sorted(dummy_pool.deleted_keys) == [
         f"budget:{tenant.id}:{purpose.id}",
         f"pause:{tenant.id}:{purpose.id}",
     ]
+
+    assert not target_dir.exists()

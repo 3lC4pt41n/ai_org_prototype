@@ -152,3 +152,16 @@ def remove_tasks(task_ids: Iterable[str]) -> None:
     """
     with driver.session() as g:
         g.run(cypher, ids=ids)
+
+
+def remove_purpose(purpose_id: str) -> None:
+    """Detach-delete a Purpose node by id."""
+
+    if not purpose_id:
+        return
+    cypher = """
+    MATCH (p:Purpose {id:$pid})
+    DETACH DELETE p
+    """
+    with driver.session() as g:
+        g.run(cypher, pid=purpose_id)
