@@ -1,18 +1,134 @@
 import logging
+import shutil
+from typing import Iterable
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import update
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import or_, update
+from sqlmodel import Session, delete, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner, Tenant
+from ai_org_backend.models import (
+    Artifact,
+    ArtifactFeedback,
+    ChatMessage,
+    ChatMessageArtifact,
+    ChatThreadContext,
+    Feedback,
+    Purpose,
+    Task,
+    TaskDependency,
+    TaskOwner,
+    Tenant,
+)
 from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services.storage import register_artefact
+from ai_org_backend.services import graph_sync
+from ai_org_backend.settings import settings
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
+logger = logging.getLogger(__name__)
+
+
+def _remove_workspace_dir(tenant_id: str, purpose_id: str) -> None:
+    """Best-effort removal of the workspace directory for a purpose."""
+
+    workspace_root = settings.workspace_dir.resolve()
+    candidate = (workspace_root / tenant_id / purpose_id).resolve()
+    if not str(candidate).startswith(str(workspace_root)):
+        logger.warning("Refusing to delete workspace outside root: %s", candidate)
+        return
+    try:
+        shutil.rmtree(candidate)
+    except FileNotFoundError:
+        return
+    except Exception as exc:  # pragma: no cover - best effort cleanup
+        logger.warning("Failed to remove workspace directory %s: %s", candidate, exc)
+
+
+def _delete_related_records(session: Session, purpose_id: str) -> list[str]:
+    """Remove all database rows tied to the given purpose.
+
+    Returns the list of task IDs deleted so callers can mirror the change
+    in external systems (e.g. Neo4j).
+    """
+
+    task_ids: list[str] = session.exec(
+        select(Task.id).where(Task.purpose_id == purpose_id)
+    ).all()
+    if not task_ids:
+        task_ids = []
+
+    artifact_ids: list[str] = []
+    if task_ids:
+        artifact_ids = session.exec(
+            select(Artifact.id).where(Artifact.task_id.in_(task_ids))
+        ).all()
+        if not artifact_ids:
+            artifact_ids = []
+
+    chat_ids: set[str] = set(
+        session.exec(select(ChatMessage.id).where(ChatMessage.purpose_id == purpose_id)).all()
+    )
+    if task_ids:
+        chat_ids.update(
+            session.exec(select(ChatMessage.id).where(ChatMessage.task_id.in_(task_ids))).all()
+        )
+    if artifact_ids:
+        chat_ids.update(
+            session.exec(
+                select(ChatMessageArtifact.chat_message_id).where(
+                    ChatMessageArtifact.artifact_id.in_(artifact_ids)
+                )
+            ).all()
+        )
+
+    if artifact_ids:
+        session.exec(
+            delete(ArtifactFeedback).where(ArtifactFeedback.artifact_id.in_(artifact_ids))
+        )
+        session.exec(
+            delete(ChatMessageArtifact).where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+        )
+        session.exec(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
+
+    if chat_ids:
+        session.exec(
+            delete(ChatMessageArtifact).where(ChatMessageArtifact.chat_message_id.in_(chat_ids))
+        )
+        session.exec(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
+
+    if task_ids:
+        session.exec(
+            delete(TaskDependency).where(
+                or_(
+                    TaskDependency.from_id.in_(task_ids),
+                    TaskDependency.to_id.in_(task_ids),
+                )
+            )
+        )
+        session.exec(delete(Task).where(Task.id.in_(task_ids)))
+
+    session.exec(delete(Feedback).where(Feedback.purpose_id == purpose_id))
+    session.exec(
+        delete(ChatThreadContext).where(ChatThreadContext.purpose_id == purpose_id)
+    )
+
+    return task_ids
+
+
+def _cleanup_graph(task_ids: Iterable[str], purpose_id: str) -> None:
+    """Remove nodes and relationships in Neo4j for a deleted purpose."""
+
+    ids = [tid for tid in task_ids if tid]
+    try:
+        if ids:
+            graph_sync.delete_tasks(ids)
+        graph_sync.delete_purpose(purpose_id)
+    except Exception as exc:  # pragma: no cover - best effort cleanup
+        logger.warning("Failed to clean up graph for purpose %s: %s", purpose_id, exc)
 
 
 @router.post("/{purpose_id}/activate")
@@ -137,3 +253,28 @@ def update_purpose(
         session.commit()
         session.refresh(purpose)
     return {"purpose_id": purpose.id, "mode": purpose.mode}
+
+
+@router.delete("/{purpose_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_purpose(
+    purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
+) -> Response:
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        purpose = session.get(Purpose, purpose_id)
+        if not purpose or purpose.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        task_ids = _delete_related_records(session, purpose_id)
+        session.delete(purpose)
+        session.commit()
+
+    pause_key = f"pause:{tenant_id}:{purpose_id}"
+    try:
+        pool.delete(pause_key)
+    except Exception as exc:  # pragma: no cover - Redis best effort
+        logger.warning("Failed to clear pause flag %s: %s", pause_key, exc)
+
+    _cleanup_graph(task_ids, purpose_id)
+    _remove_workspace_dir(tenant_id, purpose_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

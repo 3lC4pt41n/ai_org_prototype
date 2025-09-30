@@ -6,7 +6,7 @@ Idempotent MERGE/SET operations, safe to call often.
 from __future__ import annotations
 
 from datetime import datetime as dt
-from typing import Optional
+from typing import Optional, Sequence
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task
@@ -99,6 +99,34 @@ def remove_dependency(from_id: str, to_id: str) -> None:
     """
     with driver.session() as g:
         g.run(cypher, **{"from": from_id, "to": to_id})
+
+
+def delete_tasks(task_ids: Sequence[str]) -> None:
+    """Delete Task nodes (and attached relationships) in Neo4j."""
+
+    ids = [tid for tid in task_ids if tid]
+    if not ids:
+        return
+    cypher = """
+    MATCH (t:Task)
+    WHERE t.id IN $ids
+    DETACH DELETE t
+    """
+    with driver.session() as g:
+        g.run(cypher, **{"ids": ids})
+
+
+def delete_purpose(purpose_id: str) -> None:
+    """Delete a Purpose node and detach related edges in Neo4j."""
+
+    if not purpose_id:
+        return
+    cypher = """
+    MATCH (p:Purpose {id:$pid})
+    DETACH DELETE p
+    """
+    with driver.session() as g:
+        g.run(cypher, **{"pid": purpose_id})
 
 
 def upsert_artifact(
