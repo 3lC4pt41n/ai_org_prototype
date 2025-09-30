@@ -10,7 +10,6 @@ import type {
   ArtifactItem,
   PromptTemplateListResponse,
   PromptTemplateRecord,
-  PromptAssignmentSummary,
   PipelinePhaseDefaults,
 } from '../types';
 
@@ -30,17 +29,6 @@ type PhaseConfig = {
   agentRole: string | null;
   /** nur speicherbar, wenn eine echte phaseId existiert */
   isUpdatable: boolean;
-};
-
-type AgentEditorState = {
-  phaseSlug: string;
-  agent: string;
-  templateId: string | null;
-  prompt: string;
-  isSystem: boolean;
-  defaultPath: string | null;
-  templateName?: string | null;
-  workingId?: string | null;
 };
 
 type StoredPhaseDefaults = {
@@ -256,32 +244,27 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
 
   const [promptTemplates, setPromptTemplates] =
     useState<PromptTemplateRecord[]>([]);
-  const [promptAssignments, setPromptAssignments] =
-    useState<PromptAssignmentSummary[]>([]);
   const [phaseConfigs, setPhaseConfigs] = useState<PhaseConfig[]>([]);
   const [initialPhaseConfigs, setInitialPhaseConfigs] = useState<PhaseConfig[]>([]);
   const [phaseConfigsLoading, setPhaseConfigsLoading] = useState(false);
   const [savingPhaseSlug, setSavingPhaseSlug] = useState<string | null>(null);
   const [editingPhase, setEditingPhase] = useState<PhaseConfig | null>(null);
   const [editingPrompt, setEditingPrompt] = useState('');
-  const [agentEditor, setAgentEditor] = useState<AgentEditorState | null>(null);
 
   const [history, setHistory] = useState<any[]>([]);
   const lastLoadedPurposeRef = useRef<string | null>(null);
 
-  const refreshPromptsAndAssignments = useCallback(async () => {
+  const refreshPromptTemplates = useCallback(async () => {
     try {
       const data = await getJson<PromptTemplateListResponse>('/pipeline/prompts');
       const templatesList = Array.isArray(data?.templates) ? data.templates : [];
-      const assignmentsList = Array.isArray(data?.assignments) ? data.assignments : [];
       setPromptTemplates(templatesList);
-      setPromptAssignments(assignmentsList);
-      return { templatesList, assignmentsList };
+      return templatesList;
     } catch (error) {
-      console.error('Failed to refresh prompts and assignments', error);
-      return { templatesList: promptTemplates, assignmentsList: promptAssignments };
+      console.error('Failed to refresh prompt templates', error);
+      return promptTemplates;
     }
-  }, [promptTemplates, promptAssignments]);
+  }, [promptTemplates]);
 
   const changedPhaseConfigs = useMemo(
     () =>
@@ -291,159 +274,6 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       }),
     [phaseConfigs, initialPhaseConfigs],
   );
-
-  const DEFAULT_AGENTS: Record<string, string[]> = {
-    architecture: ['architect', 'architect_feedback'],
-    implementation: ['planner', 'qa', 'uxui', 'dev'],
-    prd: ['prd_writer'],
-    vision: ['vision_writer'],
-    review: ['reviewer'],
-    release: ['release_coordinator'],
-  };
-
-  const getAgentsForPhase = useCallback(
-    (slug: string): string[] => {
-      const fromTemplates = Array.from(
-        new Set(
-          promptTemplates
-            .filter(
-              (tpl) => tpl.phase_slug === slug && typeof tpl.agent === 'string' && tpl.agent,
-            )
-            .map((tpl) => String(tpl.agent)),
-        ),
-      );
-      if (fromTemplates.length) return fromTemplates;
-      return DEFAULT_AGENTS[slug] ?? [];
-    },
-    [promptTemplates],
-  );
-
-  const getTemplatesForPhaseAgent = useCallback(
-    (slug: string, agent: string) => {
-      return promptTemplates
-        .filter((tpl) => tpl.phase_slug === slug && (tpl.agent ?? '') === agent)
-        .map((tpl) => ({
-          id: tpl.id,
-          label: tpl.name || tpl.id,
-          isSystem: !tpl.tenant_id,
-          defaultPath: tpl.default_path ?? null,
-        }));
-    },
-    [promptTemplates],
-  );
-
-  const getAssignedTemplateId = useCallback(
-    (slug: string, agent: string): string | null => {
-      const hit = promptAssignments.find((assignment) => {
-        if (assignment.phase_slug !== slug) return false;
-        if (typeof assignment.agent === 'string') {
-          if (assignment.agent !== agent) return false;
-        }
-        if (selectedPurposeId) {
-          return assignment.purpose_id === selectedPurposeId;
-        }
-        return true;
-      });
-      return hit ? hit.prompt_template_id : null;
-    },
-    [promptAssignments, selectedPurposeId],
-  );
-
-  const assignAgentTemplate = useCallback(
-    async (phaseSlug: string, agent: string, promptTemplateId: string | null) => {
-      try {
-        await postJson('/pipeline/prompts/assign', {
-          phase_slug: phaseSlug,
-          agent,
-          prompt_template_id: promptTemplateId,
-          ...(selectedPurposeId ? { purpose_id: selectedPurposeId } : {}),
-        });
-        toast.success('Prompt zugewiesen.');
-        await refreshPromptsAndAssignments();
-      } catch (error) {
-        console.error('assignAgentTemplate failed', error);
-        toast.error('Zuweisung fehlgeschlagen.');
-      }
-    },
-    [selectedPurposeId, refreshPromptsAndAssignments],
-  );
-
-  const openAgentEditor = useCallback(
-    async (phaseSlug: string, agent: string, templateId?: string | null) => {
-      const template =
-        promptTemplates.find((tpl) => tpl.id === templateId) ||
-        promptTemplates.find((tpl) => tpl.phase_slug === phaseSlug && tpl.agent === agent) ||
-        null;
-      const isSystem = template ? !template.tenant_id : true;
-      const defaultPath = template?.default_path ?? null;
-      let content = typeof template?.content === 'string' ? template!.content : '';
-      if (!content && defaultPath) {
-        content = await fetchTemplateText(defaultPath);
-      }
-      setAgentEditor({
-        phaseSlug,
-        agent,
-        templateId: template?.id ?? null,
-        prompt: content,
-        isSystem,
-        defaultPath,
-        templateName: template?.name ?? null,
-        workingId: template?.id ?? null,
-      });
-    },
-    [promptTemplates],
-  );
-
-  const makeAgentPromptEditable = useCallback(async () => {
-    if (!agentEditor) return;
-    try {
-      const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
-        phase_slug: agentEditor.phaseSlug,
-        agent: agentEditor.agent,
-        content: agentEditor.prompt || '',
-      });
-      const newId = created?.id ?? null;
-      setAgentEditor((prev) =>
-        prev
-          ? {
-              ...prev,
-              isSystem: false,
-              templateId: newId,
-              workingId: newId,
-            }
-          : prev,
-      );
-      await refreshPromptsAndAssignments();
-      toast.success('Kopie erstellt – jetzt editierbar.');
-    } catch (error) {
-      console.error('makeAgentPromptEditable failed', error);
-      toast.error('Konnte Systemvorlage nicht duplizieren.');
-    }
-  }, [agentEditor, refreshPromptsAndAssignments]);
-
-  const saveAgentEditor = useCallback(async () => {
-    if (!agentEditor) return;
-    try {
-      let id = agentEditor.templateId;
-      if (!id) {
-        const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
-          phase_slug: agentEditor.phaseSlug,
-          agent: agentEditor.agent,
-          content: agentEditor.prompt || '',
-        });
-        id = created?.id ?? null;
-      } else {
-        await putJson(`/pipeline/prompts/update/${id}`, {
-          content: agentEditor.prompt || '',
-        });
-      }
-      await assignAgentTemplate(agentEditor.phaseSlug, agentEditor.agent, id);
-      setAgentEditor(null);
-    } catch (error) {
-      console.error('saveAgentEditor failed', error);
-      toast.error('Prompt konnte nicht gespeichert werden.');
-    }
-  }, [agentEditor, assignAgentTemplate]);
 
   const changedPhaseSlugs = useMemo(
     () => new Set(changedPhaseConfigs.map((cfg) => cfg.slug)),
@@ -581,8 +411,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       );
       let promptList: PromptTemplateRecord[] | undefined;
       if (result.promptChanged) {
-        const refreshed = await refreshPromptsAndAssignments();
-        promptList = refreshed.templatesList;
+        promptList = await refreshPromptTemplates();
       }
 
       const nextConfig = result.phase
@@ -610,7 +439,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     },
     [
       persistPhaseConfiguration,
-      refreshPromptsAndAssignments,
+      refreshPromptTemplates,
       promptTemplates,
       fetchGraphAndStatus,
       fetchBacklog,
@@ -641,14 +470,11 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       .then((data) => {
         if (!active) return;
         const templatesList = Array.isArray(data?.templates) ? data.templates : [];
-        const assignmentsList = Array.isArray(data?.assignments) ? data.assignments : [];
         setPromptTemplates(templatesList);
-        setPromptAssignments(assignmentsList);
       })
       .catch(() => {
         if (!active) return;
         setPromptTemplates([]);
-        setPromptAssignments([]);
       });
     return () => {
       active = false;
@@ -795,7 +621,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
           try {
             const result = await persistPhaseConfiguration(newPurposeId, cfg, base);
             if (result.promptChanged && !promptsRefreshed) {
-              await refreshPromptsAndAssignments();
+              await refreshPromptTemplates();
               promptsRefreshed = true;
             }
           } catch (error) {
@@ -841,7 +667,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     phaseConfigs,
     initialPhaseConfigs,
     persistPhaseConfiguration,
-    refreshPromptsAndAssignments,
+    refreshPromptTemplates,
     fetchPurposes,
     defaultTemplateId,
   ]);
@@ -1023,7 +849,6 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                 {phaseConfigs.map((cfg) => {
                   const rowDisabled = isDetails && (isLoading || savingPhaseSlug === cfg.slug);
                   const hasChanges = changedPhaseSlugs.has(cfg.slug);
-                  const availableAgents = getAgentsForPhase(cfg.slug);
                   return (
                     <tr key={cfg.slug} className="text-slate-700 dark:text-slate-200">
                       <td className="px-3 py-2">{cfg.name}</td>
@@ -1067,7 +892,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                           }
                         />
                       </td>
-                      <td className="px-3 py-2 align-top">
+                      <td className="px-3 py-2">
                         <div className="flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
                             <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
@@ -1091,61 +916,6 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                           >
                             Prompt {cfg.isSystemPrompt ? 'ansehen' : 'bearbeiten'}
                           </button>
-                          <div className="mt-3 rounded-md border border-slate-200 p-2 dark:border-slate-700">
-                            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              Agenten &amp; Vorlagen
-                            </div>
-                            {availableAgents.length === 0 ? (
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                Keine Agenten definiert.
-                              </div>
-                            ) : (
-                              <ul className="space-y-2">
-                                {availableAgents.map((agent) => {
-                                  const options = getTemplatesForPhaseAgent(cfg.slug, agent);
-                                  const assigned = getAssignedTemplateId(cfg.slug, agent);
-                                  return (
-                                    <li key={`${cfg.slug}:${agent}`} className="flex flex-col gap-1">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="text-xs font-medium text-slate-700 dark:text-slate-200">
-                                          {agent}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <select
-                                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                                            value={assigned ?? ''}
-                                            onChange={(e) =>
-                                              assignAgentTemplate(
-                                                cfg.slug,
-                                                agent,
-                                                e.target.value ? e.target.value : null,
-                                              )
-                                            }
-                                            disabled={rowDisabled}
-                                          >
-                                            <option value="">— keine Zuweisung —</option>
-                                            {options.map((option) => (
-                                              <option key={option.id} value={option.id}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          <button
-                                            type="button"
-                                            className="text-xs font-semibold text-amber-600 hover:text-amber-500"
-                                            onClick={() => openAgentEditor(cfg.slug, agent, assigned ?? undefined)}
-                                            disabled={rowDisabled}
-                                          >
-                                            {assigned ? 'Ansehen/Bearbeiten' : 'Neu (Kopie)'}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                          </div>
                         </div>
                       </td>
                       {isDetails && (
@@ -1492,69 +1262,6 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
             </>
           )}
         </section>
-      )}
-
-      {agentEditor && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                Prompt · {agentEditor.agent} · {agentEditor.phaseSlug}
-              </h3>
-              <button
-                type="button"
-                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                onClick={() => setAgentEditor(null)}
-              >
-                ×
-              </button>
-            </div>
-            {agentEditor.isSystem && (
-              <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-200">
-                Systemvorlagen sind schreibgeschützt. Erstelle eine Kopie, um Anpassungen vorzunehmen.
-                <button
-                  type="button"
-                  className="ml-2 rounded bg-amber-500 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-600"
-                  onClick={makeAgentPromptEditable}
-                >
-                  Duplizieren &amp; bearbeiten
-                </button>
-              </div>
-            )}
-            <textarea
-              rows={14}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={agentEditor.prompt}
-              onChange={(e) =>
-                setAgentEditor((prev) =>
-                  prev ? { ...prev, prompt: e.target.value } : prev,
-                )
-              }
-              readOnly={agentEditor.isSystem}
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
-                onClick={() => setAgentEditor(null)}
-              >
-                Abbrechen
-              </button>
-              <button
-                type="button"
-                className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
-                  agentEditor.isSystem
-                    ? 'bg-slate-400 dark:bg-slate-600'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
-                disabled={agentEditor.isSystem}
-                onClick={saveAgentEditor}
-              >
-                Übernehmen &amp; zuweisen
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {editingPhase && (
