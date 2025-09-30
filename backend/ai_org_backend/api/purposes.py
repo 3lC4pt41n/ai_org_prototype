@@ -1,4 +1,6 @@
 import logging
+import shutil
+from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -25,6 +27,7 @@ from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services import graph_sync
 from ai_org_backend.services.storage import register_artefact, retract_artifact
+from ai_org_backend.settings import settings
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 
@@ -255,7 +258,17 @@ def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current
 
     try:
         graph_sync.remove_tasks(task_ids)
+        graph_sync.remove_purpose(purpose_id)
     except Exception as exc:  # pragma: no cover - best effort cleanup
         logging.error("Failed to remove tasks from graph for purpose %s: %s", purpose_id, exc)
+
+    # safe workspace cleanup (best effort)
+    try:
+        root = Path(settings.workspace_dir).resolve()
+        candidate = (root / tenant_id / purpose_id).resolve()
+        if str(candidate).startswith(str(root)):
+            shutil.rmtree(candidate, ignore_errors=True)
+    except Exception as exc:  # pragma: no cover
+        logging.error("Failed to remove workspace for purpose %s: %s", purpose_id, exc)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
