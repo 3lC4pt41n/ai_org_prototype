@@ -9,6 +9,7 @@ import type {
   PipelineTemplateSummary,
   ArtifactItem,
   PromptTemplateListResponse,
+  PromptAssignmentSummary,
   PromptTemplateRecord,
   PipelinePhaseDefaults,
 } from '../types';
@@ -29,6 +30,17 @@ type PhaseConfig = {
   agentRole: string | null;
   /** nur speicherbar, wenn eine echte phaseId existiert */
   isUpdatable: boolean;
+};
+
+type AgentEditorState = {
+  phaseSlug: string;
+  agent: string;
+  templateId: string | null;
+  prompt: string;
+  isSystem: boolean;
+  defaultPath: string | null;
+  templateName?: string | null;
+  workingId?: string | null;
 };
 
 type StoredPhaseDefaults = {
@@ -244,24 +256,30 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
 
   const [promptTemplates, setPromptTemplates] =
     useState<PromptTemplateRecord[]>([]);
+  const [promptAssignments, setPromptAssignments] =
+    useState<PromptAssignmentSummary[]>([]);
   const [phaseConfigs, setPhaseConfigs] = useState<PhaseConfig[]>([]);
   const [initialPhaseConfigs, setInitialPhaseConfigs] = useState<PhaseConfig[]>([]);
   const [phaseConfigsLoading, setPhaseConfigsLoading] = useState(false);
   const [savingPhaseSlug, setSavingPhaseSlug] = useState<string | null>(null);
   const [editingPhase, setEditingPhase] = useState<PhaseConfig | null>(null);
   const [editingPrompt, setEditingPrompt] = useState('');
+  const [agentEditor, setAgentEditor] = useState<AgentEditorState | null>(null);
 
   const [history, setHistory] = useState<any[]>([]);
   const lastLoadedPurposeRef = useRef<string | null>(null);
 
-  const refreshPromptTemplates = useCallback(async () => {
+  const refreshPromptsAndAssignments = useCallback(async () => {
     try {
       const data = await getJson<PromptTemplateListResponse>('/pipeline/prompts');
       const templatesList = Array.isArray(data?.templates) ? data.templates : [];
+      const assignmentsList = Array.isArray(data?.assignments) ? data.assignments : [];
       setPromptTemplates(templatesList);
+      setPromptAssignments(assignmentsList);
       return templatesList;
     } catch (error) {
       console.error('Failed to refresh prompt templates', error);
+      setPromptAssignments([]);
       return promptTemplates;
     }
   }, [promptTemplates]);
@@ -279,6 +297,165 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     () => new Set(changedPhaseConfigs.map((cfg) => cfg.slug)),
     [changedPhaseConfigs],
   );
+
+  const DEFAULT_AGENTS: Record<string, string[]> = {
+    architecture: ['architect', 'architect_feedback'],
+    implementation: ['planner', 'qa', 'uxui', 'dev'],
+    prd: ['prd_writer'],
+    vision: ['vision_writer'],
+    review: ['reviewer'],
+    release: ['release_coordinator'],
+  };
+
+  const getAgentsForPhase = useCallback(
+    (slug: string): string[] => {
+      const fromTemplates = Array.from(
+        new Set(
+          promptTemplates
+            .filter(
+              (t) =>
+                t.phase_slug === slug &&
+                typeof t.agent === 'string' &&
+                t.agent,
+            )
+            .map((t) => String(t.agent)),
+        ),
+      );
+      if (fromTemplates.length) return fromTemplates;
+      return DEFAULT_AGENTS[slug] ?? [];
+    },
+    [promptTemplates],
+  );
+
+  const getTemplatesForPhaseAgent = useCallback(
+    (slug: string, agent: string) =>
+      promptTemplates
+        .filter((t) => t.phase_slug === slug && (t.agent ?? '') === agent)
+        .map((t) => ({
+          id: t.id,
+          label: t.name || t.id,
+          isSystem: !t.tenant_id,
+          defaultPath: t.default_path ?? null,
+        })),
+    [promptTemplates],
+  );
+
+  const getAssignedTemplateId = useCallback(
+    (slug: string, agent: string): string | null => {
+      const hit = promptAssignments.find(
+        (assignment) =>
+          assignment.phase_slug === slug &&
+          (typeof assignment.agent === 'string'
+            ? assignment.agent === agent
+            : true) &&
+          (selectedPurposeId
+            ? assignment.purpose_id === selectedPurposeId
+            : true),
+      );
+      return hit ? hit.prompt_template_id : null;
+    },
+    [promptAssignments, selectedPurposeId],
+  );
+
+  const assignAgentTemplate = useCallback(
+    async (phaseSlug: string, agent: string, promptTemplateId: string | null) => {
+      try {
+        await postJson('/pipeline/prompts/assign', {
+          phase_slug: phaseSlug,
+          agent,
+          prompt_template_id: promptTemplateId,
+          ...(selectedPurposeId ? { purpose_id: selectedPurposeId } : {}),
+        });
+        toast.success('Prompt zugewiesen.');
+        await refreshPromptsAndAssignments();
+      } catch (error) {
+        console.error('assignAgentTemplate failed', error);
+        toast.error('Zuweisung fehlgeschlagen.');
+      }
+    },
+    [selectedPurposeId, refreshPromptsAndAssignments],
+  );
+
+  const openAgentEditor = useCallback(
+    async (phaseSlug: string, agent: string, templateId?: string | null) => {
+      const template =
+        promptTemplates.find((entry) => entry.id === templateId) ??
+        promptTemplates.find(
+          (entry) => entry.phase_slug === phaseSlug && entry.agent === agent,
+        ) ??
+        null;
+      const isSystem = template ? !template.tenant_id : true;
+      const defaultPath = template?.default_path ?? null;
+      let promptText = typeof template?.content === 'string' ? template.content : '';
+      if (!promptText && defaultPath) {
+        promptText = await fetchTemplateText(defaultPath);
+      }
+
+      setAgentEditor({
+        phaseSlug,
+        agent,
+        templateId: template?.id ?? null,
+        prompt: promptText,
+        isSystem,
+        defaultPath,
+        templateName: template?.name ?? null,
+        workingId: template?.id ?? null,
+      });
+    },
+    [promptTemplates],
+  );
+
+  const makeAgentPromptEditable = useCallback(async () => {
+    if (!agentEditor) return;
+    try {
+      const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
+        phase_slug: agentEditor.phaseSlug,
+        agent: agentEditor.agent,
+        content: agentEditor.prompt || '',
+      });
+      const newId = created?.id ?? null;
+      setAgentEditor({
+        ...agentEditor,
+        isSystem: false,
+        templateId: newId,
+        workingId: newId,
+      });
+      await refreshPromptsAndAssignments();
+      toast.success('Kopie erstellt – jetzt editierbar.');
+    } catch (error) {
+      console.error('makeAgentPromptEditable failed', error);
+      toast.error('Konnte Systemvorlage nicht duplizieren.');
+    }
+  }, [agentEditor, refreshPromptsAndAssignments]);
+
+  const saveAgentEditor = useCallback(async () => {
+    if (!agentEditor) return;
+    try {
+      let templateId = agentEditor.templateId;
+      if (!templateId) {
+        const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
+          phase_slug: agentEditor.phaseSlug,
+          agent: agentEditor.agent,
+          content: agentEditor.prompt || '',
+        });
+        templateId = created?.id ?? null;
+      } else {
+        await putJson(`/pipeline/prompts/update/${templateId}`, {
+          content: agentEditor.prompt || '',
+        });
+      }
+
+      if (!templateId) {
+        throw new Error('prompt_template_id missing after save');
+      }
+
+      await assignAgentTemplate(agentEditor.phaseSlug, agentEditor.agent, templateId);
+      setAgentEditor(null);
+    } catch (error) {
+      console.error('saveAgentEditor failed', error);
+      toast.error('Prompt konnte nicht gespeichert werden.');
+    }
+  }, [agentEditor, assignAgentTemplate]);
 
   const maybeOfferUserDefaults = useCallback(() => {
     if (typeof window === 'undefined') return false;
@@ -411,7 +588,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       );
       let promptList: PromptTemplateRecord[] | undefined;
       if (result.promptChanged) {
-        promptList = await refreshPromptTemplates();
+        promptList = await refreshPromptsAndAssignments();
       }
 
       const nextConfig = result.phase
@@ -439,7 +616,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     },
     [
       persistPhaseConfiguration,
-      refreshPromptTemplates,
+      refreshPromptsAndAssignments,
       promptTemplates,
       fetchGraphAndStatus,
       fetchBacklog,
@@ -470,11 +647,14 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       .then((data) => {
         if (!active) return;
         const templatesList = Array.isArray(data?.templates) ? data.templates : [];
+        const assignmentsList = Array.isArray(data?.assignments) ? data.assignments : [];
         setPromptTemplates(templatesList);
+        setPromptAssignments(assignmentsList);
       })
       .catch(() => {
         if (!active) return;
         setPromptTemplates([]);
+        setPromptAssignments([]);
       });
     return () => {
       active = false;
@@ -621,7 +801,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
           try {
             const result = await persistPhaseConfiguration(newPurposeId, cfg, base);
             if (result.promptChanged && !promptsRefreshed) {
-              await refreshPromptTemplates();
+              await refreshPromptsAndAssignments();
               promptsRefreshed = true;
             }
           } catch (error) {
@@ -667,7 +847,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     phaseConfigs,
     initialPhaseConfigs,
     persistPhaseConfiguration,
-    refreshPromptTemplates,
+    refreshPromptsAndAssignments,
     fetchPurposes,
     defaultTemplateId,
   ]);
@@ -916,6 +1096,65 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                           >
                             Prompt {cfg.isSystemPrompt ? 'ansehen' : 'bearbeiten'}
                           </button>
+                          <div className="mt-3 rounded-md border border-slate-200 p-2 dark:border-slate-700">
+                            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Agenten &amp; Vorlagen
+                            </div>
+                            {getAgentsForPhase(cfg.slug).length === 0 ? (
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                Keine Agenten definiert.
+                              </div>
+                            ) : (
+                              <ul className="space-y-2">
+                                {getAgentsForPhase(cfg.slug).map((agent) => {
+                                  const options = getTemplatesForPhaseAgent(cfg.slug, agent);
+                                  const assigned = getAssignedTemplateId(cfg.slug, agent);
+                                  return (
+                                    <li key={`${cfg.slug}:${agent}`} className="flex flex-col gap-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                                          {agent}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <select
+                                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                            value={assigned ?? ''}
+                                            onChange={(event) =>
+                                              assignAgentTemplate(
+                                                cfg.slug,
+                                                agent,
+                                                event.target.value || null,
+                                              )
+                                            }
+                                          >
+                                            <option value="">— keine Zuweisung —</option>
+                                            {options.map((option) => (
+                                              <option key={option.id} value={option.id}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <button
+                                            type="button"
+                                            className="text-xs font-semibold text-amber-600 hover:text-amber-500"
+                                            onClick={() =>
+                                              openAgentEditor(
+                                                cfg.slug,
+                                                agent,
+                                                assigned ?? undefined,
+                                              )
+                                            }
+                                          >
+                                            {assigned ? 'Ansehen/Bearbeiten' : 'Neu (Kopie)'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          </div>
                         </div>
                       </td>
                       {isDetails && (
@@ -952,6 +1191,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
    * Speichert die Konfiguration einer einzelnen Phase,
    * falls sich Änderungen gegenüber dem initialen Wert ergeben haben.
    */
+  // ACHTUNG: Handler steht VOR renderPhaseOverview -> verhindert "Cannot access ... before initialization"
   const handleSavePhaseRow = useCallback(
     async (slug: string) => {
       if (!selectedPurposeId) return;
@@ -1317,6 +1557,65 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                 }`}
               >
                 Übernehmen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {agentEditor && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                Prompt · {agentEditor.agent} · {agentEditor.phaseSlug}
+              </h3>
+              <button
+                type="button"
+                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                onClick={() => setAgentEditor(null)}
+              >
+                ×
+              </button>
+            </div>
+            {agentEditor.isSystem && (
+              <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-200">
+                Systemvorlagen sind schreibgeschützt. Erstelle eine Kopie, um Anpassungen vorzunehmen.
+                <button
+                  type="button"
+                  className="ml-2 rounded bg-amber-500 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                  onClick={makeAgentPromptEditable}
+                >
+                  Duplizieren &amp; bearbeiten
+                </button>
+              </div>
+            )}
+            <textarea
+              rows={14}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+              value={agentEditor.prompt}
+              onChange={(event) =>
+                setAgentEditor({ ...agentEditor, prompt: event.target.value })
+              }
+              readOnly={agentEditor.isSystem}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
+                onClick={() => setAgentEditor(null)}
+              >
+                Abbrechen
+              </button>
+              <button
+                className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
+                  agentEditor.isSystem
+                    ? 'bg-slate-400 dark:bg-slate-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                disabled={agentEditor.isSystem}
+                onClick={saveAgentEditor}
+              >
+                Übernehmen &amp; zuweisen
               </button>
             </div>
           </div>
