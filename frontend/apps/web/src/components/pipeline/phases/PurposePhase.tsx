@@ -14,7 +14,8 @@ import type {
 } from '../types';
 
 type PhaseConfig = {
-  phaseId: string;
+  /** echte Phase-ID aus dem Backend (falls vorhanden) */
+  phaseId: string | null;
   slug: string;
   name: string;
   model: string;
@@ -26,6 +27,8 @@ type PhaseConfig = {
   promptIsTenantDefault: boolean;
   isSystemPrompt: boolean;
   agentRole: string | null;
+  /** nur speicherbar, wenn eine echte phaseId existiert */
+  isUpdatable: boolean;
 };
 
 type StoredPhaseDefaults = {
@@ -34,6 +37,26 @@ type StoredPhaseDefaults = {
   tokens?: number;
   prompt?: string;
 };
+
+/**
+ * Rohtext-Datei (z. B. .j2) laden.
+ * Fallback, wenn ein System-Prompt per default_path referenziert wird,
+ * aber noch kein Inhalt in promptTemplates vorhanden ist.
+ */
+async function fetchTemplateText(path: string): Promise<string> {
+  const token = localStorage.getItem('token');
+  try {
+    const res = await fetch(`${API_BASE}/templates/${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`GET /templates/${path} failed`);
+    const text = await res.text();
+    return typeof text === 'string' ? text : '';
+  } catch (e) {
+    console.warn('Failed to fetch template text:', path, e);
+    return '';
+  }
+}
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Standard übernehmen' },
@@ -106,7 +129,7 @@ function convertPhaseDefinitionToConfig(
 ): PhaseConfig {
   if (!phase) {
     return {
-      phaseId: fallback.id,
+      phaseId: null,
       slug: fallback.id,
       name: fallback.title,
       model: '',
@@ -118,6 +141,7 @@ function convertPhaseDefinitionToConfig(
       promptIsTenantDefault: false,
       isSystemPrompt: false,
       agentRole: null,
+      isUpdatable: false,
     } satisfies PhaseConfig;
   }
 
@@ -142,14 +166,18 @@ function convertPhaseDefinitionToConfig(
     (promptKey && /\.j2$/i.test(promptKey) ? promptKey : null);
   const promptTenantId = promptRecord?.tenant_id ?? null;
   const promptIsTenantDefault = Boolean(promptRecord?.is_tenant_default);
-  const promptContent = promptRecord?.content ?? '';
+  // Falls der PromptRecord (noch) nicht geladen ist, bleibt der Content leer.
+  // Der Editor lädt ihn ggf. on-demand über /templates/{default_path}.
+  const promptContent =
+    typeof promptRecord?.content === 'string' ? promptRecord.content : '';
   const isSystemPrompt = !promptTenantId && Boolean(promptTemplateId || promptDefaultPath);
 
   const tokensValue = Number(phase.tokens_plan_default ?? 0);
   const tokens = Number.isFinite(tokensValue) ? Math.max(0, Math.trunc(tokensValue)) : 0;
 
   return {
-    phaseId: phase.id ?? slug,
+    // nur echte IDs sind speicherbar; andernfalls read‑only (z. B. ältere "release"‑Einträge)
+    phaseId: phase?.id ? String(phase.id) : null,
     slug,
     name: phase.name ?? fallback.title,
     model: phase.model_name ?? '',
@@ -161,6 +189,7 @@ function convertPhaseDefinitionToConfig(
     promptIsTenantDefault,
     isSystemPrompt,
     agentRole: phase.agent_role ?? null,
+    isUpdatable: Boolean(phase?.id),
   } satisfies PhaseConfig;
 }
 
@@ -281,6 +310,11 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         scope: 'purpose',
       };
 
+      // Wenn die Phase im Template keine echte ID hat, ist sie nicht update-fähig.
+      if (!config.isUpdatable || !config.phaseId) {
+        return { phase: null, promptChanged: false, promptTemplateId: config.promptTemplateId ?? null };
+      }
+
       const normalizedModel = (config.model || '').trim();
       const baseModel = (baseConfig.model || '').trim();
       if (normalizedModel !== baseModel) {
@@ -347,10 +381,10 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       }
 
       const response = await putJson<{ template: PipelineTemplateSummary }>(
-        `/pipeline/phases/${config.phaseId}`,
+        `/pipeline/phases/${config.phaseId}`, // garantiert echte ID, siehe Guard oben
         updates,
       );
-      const template = response?.template ?? null;
+      const template = (response && response.template) ? response.template : null;
       const updatedPhase = template?.phases.find(
         (phase) => phase.slug === config.slug || phase.id === config.phaseId,
       ) ?? null;
@@ -519,7 +553,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
   useEffect(() => {
-    if (editingPhase) {
+    if (editingPhase && typeof editingPhase.prompt === 'string') {
       setEditingPrompt(editingPhase.prompt);
     } else {
       setEditingPrompt('');
@@ -717,9 +751,22 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
   };
 
   const openPromptEditor = useCallback(
-    (slug: string) => {
+    async (slug: string) => {
       const cfg = phaseConfigs.find((entry) => entry.slug === slug);
       if (!cfg) return;
+      // System-Prompt ohne geladenen Inhalt? -> on-demand laden
+      if (cfg.isSystemPrompt && !cfg.prompt && cfg.promptDefaultPath) {
+        const text = await fetchTemplateText(cfg.promptDefaultPath);
+        if (text) {
+          // UI-Status aktualisieren (Anzeige) – bleibt trotzdem "System (read-only)"
+          setPhaseConfigs((prev) =>
+            prev.map((e) => (e.slug === slug ? { ...e, prompt: text } : e)),
+          );
+          setEditingPhase({ ...cfg, prompt: text });
+          setEditingPrompt(text);
+          return;
+        }
+      }
       setEditingPhase(cfg);
     },
     [phaseConfigs],
@@ -875,13 +922,16 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                         <td className="px-3 py-2">
                           <button
                             type="button"
-                            onClick={() => handleSavePhaseRow(cfg.slug)}
-                            disabled={!hasChanges || rowDisabled}
-                            className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${
-                              !hasChanges || rowDisabled
-                                ? 'bg-slate-400 dark:bg-slate-600'
-                                : 'bg-emerald-600 hover:bg-emerald-700'
-                            }`}
+                              onClick={() => handleSavePhaseRow(cfg.slug)}
+                              disabled={!cfg.isUpdatable || !hasChanges || rowDisabled}
+                              title={
+                                cfg.isUpdatable ? undefined : 'Diese Phase ist im aktiven Template nicht update-fähig.'
+                              }
+                              className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${
+                                !cfg.isUpdatable || !hasChanges || rowDisabled
+                                  ? 'bg-slate-400 dark:bg-slate-600'
+                                  : 'bg-emerald-600 hover:bg-emerald-700'
+                              }`}
                           >
                             {savingPhaseSlug === cfg.slug ? 'Speichern…' : 'Speichern'}
                           </button>
@@ -908,6 +958,10 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       const config = phaseConfigs.find((cfg) => cfg.slug === slug);
       const base = initialPhaseConfigs.find((cfg) => cfg.slug === slug);
       if (!config || !base) return;
+      if (!config.isUpdatable || !config.phaseId) {
+        toast('Diese Phase kann in der aktuellen Vorlage nicht aktualisiert werden.');
+        return;
+      }
       if (!hasConfigDiff(config, base)) {
         toast('Keine Änderungen für diese Phase.');
         return;
@@ -919,7 +973,12 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         await savePhaseConfig(selectedPurposeId, config, base);
         toast.success(`Phase "${config.name}" gespeichert.`);
       } catch (error) {
-        console.error('Failed to save phase configuration', error);
+        console.error('Failed to save phase configuration', slug, error);
+        // Backend meldet z. B. 500, wenn eine unbekannte Phase-ID angesprochen wird.
+        // Mit den Guards oben sollte das nicht mehr passieren; falls doch:
+        toast.error(
+          'Phase konnte nicht aktualisiert werden. Prüfe die Template‑Phase und ihre ID.',
+        );
         toast.error('Phase konnte nicht aktualisiert werden.');
       } finally {
         setSavingPhaseSlug(null);
