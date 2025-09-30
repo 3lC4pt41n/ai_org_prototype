@@ -1,16 +1,30 @@
 import logging
+from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import update
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import delete, or_, update
 from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
-from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner, Tenant
+from ai_org_backend.models import (
+    Artifact,
+    ArtifactFeedback,
+    ChatMessage,
+    ChatMessageArtifact,
+    ChatThreadContext,
+    Feedback,
+    Purpose,
+    Task,
+    TaskDependency,
+    TaskOwner,
+    Tenant,
+)
 from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
-from ai_org_backend.services.storage import register_artefact
+from ai_org_backend.services import graph_sync
+from ai_org_backend.services.storage import register_artefact, retract_artifact
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 
@@ -137,3 +151,111 @@ def update_purpose(
         session.commit()
         session.refresh(purpose)
     return {"purpose_id": purpose.id, "mode": purpose.mode}
+
+
+def _collect_task_ids(session: Session, purpose_id: str, tenant_id: str) -> List[str]:
+    """Return task IDs for the given purpose/tenant."""
+
+    result = session.exec(
+        select(Task.id).where(Task.purpose_id == purpose_id, Task.tenant_id == tenant_id)
+    )
+    return list(result)
+
+
+def _collect_artifact_ids(session: Session, task_ids: List[str]) -> List[str]:
+    if not task_ids:
+        return []
+    result = session.exec(select(Artifact.id).where(Artifact.task_id.in_(task_ids)))
+    return list(result)
+
+
+def _collect_chat_message_ids(
+    session: Session, purpose_id: str, task_ids: List[str], artifact_ids: List[str]
+) -> List[str]:
+    conditions = [ChatMessage.purpose_id == purpose_id]
+    if task_ids:
+        conditions.append(ChatMessage.task_id.in_(task_ids))
+    if artifact_ids:
+        conditions.append(ChatMessage.artifact_id.in_(artifact_ids))
+
+    if not conditions:
+        return []
+
+    where_clause = (
+        or_(*conditions)
+        if len(conditions) > 1
+        else conditions[0]
+    )
+    result = session.exec(select(ChatMessage.id).where(where_clause))
+    return list(result)
+
+
+@router.delete("/{purpose_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)) -> Response:
+    tenant_id = current_tenant.id
+    with Session(engine) as session:
+        purpose = session.get(Purpose, purpose_id)
+        if not purpose or purpose.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        task_ids = _collect_task_ids(session, purpose_id, tenant_id)
+        artifact_ids = _collect_artifact_ids(session, task_ids)
+        chat_ids = _collect_chat_message_ids(session, purpose_id, task_ids, artifact_ids)
+
+        for artifact_id in artifact_ids:
+            try:
+                retract_artifact(artifact_id, remove_from_neo4j=True)
+            except Exception as exc:  # pragma: no cover - best effort clean-up
+                logging.error(
+                    "Failed to retract artifact %s for purpose %s: %s",
+                    artifact_id,
+                    purpose_id,
+                    exc,
+                )
+
+        if artifact_ids:
+            session.exec(
+                delete(ChatMessageArtifact).where(ChatMessageArtifact.artifact_id.in_(artifact_ids))
+            )
+        if chat_ids:
+            session.exec(
+                delete(ChatMessageArtifact).where(ChatMessageArtifact.chat_message_id.in_(chat_ids))
+            )
+            session.exec(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
+
+        session.exec(delete(ChatThreadContext).where(ChatThreadContext.purpose_id == purpose_id))
+        session.exec(delete(Feedback).where(Feedback.purpose_id == purpose_id))
+
+        if artifact_ids:
+            session.exec(
+                delete(ArtifactFeedback).where(ArtifactFeedback.artifact_id.in_(artifact_ids))
+            )
+            session.exec(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
+
+        if task_ids:
+            session.exec(
+                delete(TaskDependency).where(
+                    or_(
+                        TaskDependency.from_id.in_(task_ids),
+                        TaskDependency.to_id.in_(task_ids),
+                    )
+                )
+            )
+            session.exec(delete(Task).where(Task.id.in_(task_ids)))
+
+        session.delete(purpose)
+        session.commit()
+
+    try:
+        if pool is not None:
+            pool.delete(f"pause:{tenant_id}:{purpose_id}")
+            pool.delete(f"budget:{tenant_id}:{purpose_id}")
+    except Exception as exc:  # pragma: no cover - redis best effort
+        logging.error("Failed to clear Redis keys for purpose %s: %s", purpose_id, exc)
+
+    try:
+        graph_sync.remove_tasks(task_ids)
+    except Exception as exc:  # pragma: no cover - best effort cleanup
+        logging.error("Failed to remove tasks from graph for purpose %s: %s", purpose_id, exc)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
