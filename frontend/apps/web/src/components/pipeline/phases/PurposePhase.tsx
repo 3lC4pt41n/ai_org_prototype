@@ -1,13 +1,177 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { PlayCircle, PauseCircle, Trash2, ChevronRight } from 'lucide-react';
 import usePipelineStore from '../../../store/pipelineStore';
-import { API_BASE, getJson, postJson } from '../../../lib/api';
+import { API_BASE, getJson, postJson, putJson } from '../../../lib/api';
+import { PIPELINE_PHASES } from '../phaseConfig';
 import type {
   PhaseViewContext,
   PipelineTemplateSummary,
   ArtifactItem,
+  PromptTemplateListResponse,
+  PromptTemplateRecord,
+  PipelinePhaseDefaults,
 } from '../types';
+
+type PhaseConfig = {
+  phaseId: string;
+  slug: string;
+  name: string;
+  model: string;
+  tokens: number;
+  prompt: string;
+  promptTemplateId: string | null;
+  promptDefaultPath: string | null;
+  promptTenantId: string | null;
+  promptIsTenantDefault: boolean;
+  isSystemPrompt: boolean;
+  agentRole: string | null;
+};
+
+type StoredPhaseDefaults = {
+  slug: string;
+  model?: string;
+  tokens?: number;
+  prompt?: string;
+};
+
+const MODEL_OPTIONS = [
+  { value: '', label: 'Standard übernehmen' },
+  { value: 'gpt-4', label: 'GPT-4' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  { value: 'claude-3-opus', label: 'Claude 3 Opus' },
+];
+
+function loadUserPhaseDefaults(): StoredPhaseDefaults[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem('pipelinePhaseDefaults');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry: any) => {
+        const slug = typeof entry?.slug === 'string' ? entry.slug : '';
+        if (!slug) return null;
+        const tokensValue = Number(entry?.tokens);
+        return {
+          slug,
+          model: typeof entry?.model === 'string' ? entry.model : undefined,
+          tokens: Number.isFinite(tokensValue) ? tokensValue : undefined,
+          prompt: typeof entry?.prompt === 'string' ? entry.prompt : undefined,
+        } satisfies StoredPhaseDefaults;
+      })
+      .filter(Boolean) as StoredPhaseDefaults[];
+  } catch {
+    return [];
+  }
+}
+
+function storeUserPhaseDefaults(configs: PhaseConfig[]) {
+  if (typeof window === 'undefined') return;
+  const payload = configs.map((cfg) => ({
+    slug: cfg.slug,
+    model: cfg.model,
+    tokens: cfg.tokens,
+    prompt: cfg.prompt,
+  }));
+  try {
+    window.localStorage.setItem('pipelinePhaseDefaults', JSON.stringify(payload));
+  } catch (error) {
+    console.error('Failed to persist pipeline phase defaults', error);
+    throw error;
+  }
+}
+
+function hasConfigDiff(current: PhaseConfig, base: PhaseConfig): boolean {
+  const modelCurrent = (current.model || '').trim();
+  const modelBase = (base.model || '').trim();
+  const promptCurrent = (current.prompt || '').trim();
+  const promptBase = (base.prompt || '').trim();
+  if (modelCurrent !== modelBase) return true;
+  if ((current.tokens ?? 0) !== (base.tokens ?? 0)) return true;
+  if (promptCurrent !== promptBase) return true;
+  return false;
+}
+
+function convertPhaseDefinitionToConfig(
+  phase: PipelinePhaseDefaults | null,
+  fallback: { id: string; title: string },
+  templates: PromptTemplateRecord[],
+): PhaseConfig {
+  if (!phase) {
+    return {
+      phaseId: fallback.id,
+      slug: fallback.id,
+      name: fallback.title,
+      model: '',
+      tokens: 0,
+      prompt: '',
+      promptTemplateId: null,
+      promptDefaultPath: null,
+      promptTenantId: null,
+      promptIsTenantDefault: false,
+      isSystemPrompt: false,
+      agentRole: null,
+    } satisfies PhaseConfig;
+  }
+
+  const promptKey = phase.prompt_template ?? null;
+  const promptRecord = promptKey
+    ? templates.find((tpl) => tpl.id === promptKey) ??
+      templates.find((tpl) => tpl.default_path === promptKey) ??
+      null
+    : null;
+
+  let slug = phase.slug;
+  if (!slug || typeof slug !== 'string') {
+    if (typeof phase.id === 'string' && phase.id) {
+      slug = phase.id;
+    } else {
+      slug = fallback.id;
+    }
+  }
+
+  const promptTemplateId = promptRecord?.id ?? (promptKey ?? null);
+  const promptDefaultPath = promptRecord?.default_path ??
+    (promptKey && /\.j2$/i.test(promptKey) ? promptKey : null);
+  const promptTenantId = promptRecord?.tenant_id ?? null;
+  const promptIsTenantDefault = Boolean(promptRecord?.is_tenant_default);
+  const promptContent = promptRecord?.content ?? '';
+  const isSystemPrompt = !promptTenantId && Boolean(promptTemplateId || promptDefaultPath);
+
+  const tokensValue = Number(phase.tokens_plan_default ?? 0);
+  const tokens = Number.isFinite(tokensValue) ? Math.max(0, Math.trunc(tokensValue)) : 0;
+
+  return {
+    phaseId: phase.id ?? slug,
+    slug,
+    name: phase.name ?? fallback.title,
+    model: phase.model_name ?? '',
+    tokens,
+    prompt: promptContent,
+    promptTemplateId,
+    promptDefaultPath,
+    promptTenantId,
+    promptIsTenantDefault,
+    isSystemPrompt,
+    agentRole: phase.agent_role ?? null,
+  } satisfies PhaseConfig;
+}
+
+function buildConfigsFromTemplate(
+  template: PipelineTemplateSummary | null,
+  templates: PromptTemplateRecord[],
+): PhaseConfig[] {
+  return PIPELINE_PHASES.filter((phase) => phase.id !== 'purpose').map((phase) => {
+    const templatePhase = template?.phases.find(
+      (entry) => entry.slug === phase.id || entry.id === phase.id,
+    );
+    return convertPhaseDefinitionToConfig(templatePhase ?? null, phase, templates);
+  });
+}
 
 type TopTab = 'new' | 'list' | 'details';
 
@@ -46,7 +210,150 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateId, setTemplateId] = useState<string>('');
 
+  const [promptTemplates, setPromptTemplates] =
+    useState<PromptTemplateRecord[]>([]);
+  const [phaseConfigs, setPhaseConfigs] = useState<PhaseConfig[]>([]);
+  const [initialPhaseConfigs, setInitialPhaseConfigs] = useState<PhaseConfig[]>([]);
+  const [phaseConfigsLoading, setPhaseConfigsLoading] = useState(false);
+  const [savingPhaseSlug, setSavingPhaseSlug] = useState<string | null>(null);
+  const [editingPhase, setEditingPhase] = useState<PhaseConfig | null>(null);
+  const [editingPrompt, setEditingPrompt] = useState('');
+
   const [history, setHistory] = useState<any[]>([]);
+  const lastLoadedPurposeRef = useRef<string | null>(null);
+
+  const refreshPromptTemplates = useCallback(async () => {
+    try {
+      const data = await getJson<PromptTemplateListResponse>('/pipeline/prompts');
+      const templatesList = Array.isArray(data?.templates) ? data.templates : [];
+      setPromptTemplates(templatesList);
+      return templatesList;
+    } catch (error) {
+      console.error('Failed to refresh prompt templates', error);
+      return promptTemplates;
+    }
+  }, [promptTemplates]);
+
+  const changedPhaseConfigs = useMemo(
+    () =>
+      phaseConfigs.filter((cfg) => {
+        const base = initialPhaseConfigs.find((entry) => entry.slug === cfg.slug);
+        return base ? hasConfigDiff(cfg, base) : false;
+      }),
+    [phaseConfigs, initialPhaseConfigs],
+  );
+
+  const changedPhaseSlugs = useMemo(
+    () => new Set(changedPhaseConfigs.map((cfg) => cfg.slug)),
+    [changedPhaseConfigs],
+  );
+
+  const maybeOfferUserDefaults = useCallback(() => {
+    if (typeof window === 'undefined') return false;
+    if (!changedPhaseConfigs.length) return false;
+    const confirmed = window.confirm('Konfiguration als Benutzer-Standard speichern?');
+    if (!confirmed) return false;
+    try {
+      storeUserPhaseDefaults(phaseConfigs);
+      toast.success('Benutzer-Standard gespeichert.');
+      return true;
+    } catch {
+      toast.error('Benutzer-Standard konnte nicht gespeichert werden.');
+      return false;
+    }
+  }, [changedPhaseConfigs, phaseConfigs]);
+
+  const persistPhaseConfiguration = useCallback(
+    async (
+      purposeId: string,
+      config: PhaseConfig,
+      baseConfig: PhaseConfig,
+    ): Promise<{
+      phase: PipelinePhaseDefaults | null;
+      promptChanged: boolean;
+      promptTemplateId: string | null;
+    }> => {
+      const updates: Record<string, unknown> = {
+        purpose_id: purposeId,
+        scope: 'purpose',
+      };
+
+      const normalizedModel = (config.model || '').trim();
+      const baseModel = (baseConfig.model || '').trim();
+      if (normalizedModel !== baseModel) {
+        updates.model_name = normalizedModel || null;
+      }
+
+      if ((config.tokens ?? 0) !== (baseConfig.tokens ?? 0)) {
+        const sanitizedTokens = Math.max(0, Math.trunc(Number(config.tokens) || 0));
+        updates.tokens_plan_default = sanitizedTokens;
+      }
+
+      const promptCurrent = (config.prompt || '').trim();
+      const promptBase = (baseConfig.prompt || '').trim();
+      let promptTemplateId: string | null | undefined = baseConfig.promptTemplateId ?? null;
+      let promptChanged = false;
+
+      if (promptCurrent !== promptBase) {
+        promptChanged = true;
+        if (!promptCurrent) {
+          promptTemplateId = null;
+        } else if (
+          config.promptTemplateId &&
+          config.promptTenantId &&
+          !config.promptIsTenantDefault
+        ) {
+          await putJson(`/pipeline/prompts/update/${config.promptTemplateId}`, {
+            content: promptCurrent,
+          });
+          promptTemplateId = config.promptTemplateId;
+        } else {
+          const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
+            phase_slug: config.slug,
+            content: promptCurrent,
+            agent: config.agentRole ?? null,
+          });
+          promptTemplateId = created?.id ?? null;
+        }
+      } else {
+        promptTemplateId = config.promptTemplateId ?? baseConfig.promptTemplateId ?? null;
+      }
+
+      if (
+        promptChanged ||
+        (promptTemplateId ?? null) !== (baseConfig.promptTemplateId ?? null)
+      ) {
+        updates.prompt_template = promptTemplateId ?? null;
+      }
+
+      const updateKeys = Object.keys(updates).filter(
+        (key) => key !== 'purpose_id' && key !== 'scope',
+      );
+      if (!updateKeys.length) {
+        return {
+          phase: null,
+          promptChanged: false,
+          promptTemplateId: promptTemplateId ?? null,
+        };
+      }
+
+      const response = await putJson<{ template: PipelineTemplateSummary }>(
+        `/pipeline/phases/${config.phaseId}`,
+        updates,
+      );
+      const template = response?.template ?? null;
+      const updatedPhase = template?.phases.find(
+        (phase) => phase.slug === config.slug || phase.id === config.phaseId,
+      ) ?? null;
+
+      return {
+        phase: updatedPhase ?? null,
+        promptChanged,
+        promptTemplateId: promptTemplateId ?? null,
+      };
+    },
+    [],
+  );
 
   const selectedPurpose =
     purposes.find((p: any) => p.id === selectedPurposeId) ?? null;
@@ -66,6 +373,23 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    getJson<PromptTemplateListResponse>('/pipeline/prompts')
+      .then((data) => {
+        if (!active) return;
+        const templatesList = Array.isArray(data?.templates) ? data.templates : [];
+        setPromptTemplates(templatesList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPromptTemplates([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const defaultTemplateId = useMemo(() => {
     if (!templates.length) return '';
     const tTenant = templates.find((t) => t.is_default && t.tenant_id);
@@ -79,6 +403,43 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       setTemplateId(defaultTemplateId);
     }
   }, [templateId, defaultTemplateId]);
+
+  useEffect(() => {
+    if (tab !== 'new') return;
+    const activeTemplateId = templateId || defaultTemplateId;
+    const template = templates.find((entry) => entry.id === activeTemplateId) ?? null;
+    const baseConfigs = buildConfigsFromTemplate(template ?? null, promptTemplates);
+    setInitialPhaseConfigs(baseConfigs);
+
+    const storedDefaults = loadUserPhaseDefaults();
+    if (!storedDefaults.length) {
+      setPhaseConfigs(baseConfigs);
+      return;
+    }
+
+    const merged = baseConfigs.map((cfg) => {
+      const stored = storedDefaults.find((entry) => entry.slug === cfg.slug);
+      if (!stored) return cfg;
+      const tokensValue = Number(stored.tokens);
+      const tokens = Number.isFinite(tokensValue)
+        ? Math.max(0, Math.trunc(tokensValue))
+        : cfg.tokens;
+      const next: PhaseConfig = {
+        ...cfg,
+        model: typeof stored.model === 'string' ? stored.model : cfg.model,
+        tokens,
+        prompt: typeof stored.prompt === 'string' ? stored.prompt : cfg.prompt,
+      };
+      if (typeof stored.prompt === 'string' && stored.prompt.trim()) {
+        next.isSystemPrompt = false;
+        next.promptTemplateId = null;
+        next.promptTenantId = null;
+        next.promptIsTenantDefault = false;
+      }
+      return next;
+    });
+    setPhaseConfigs(merged);
+  }, [tab, templateId, defaultTemplateId, templates, promptTemplates]);
 
   useEffect(() => {
     if (!selectedPurposeId) return;
@@ -100,14 +461,88 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     };
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
 
+  useEffect(() => {
+    if (editingPhase) {
+      setEditingPrompt(editingPhase.prompt);
+    } else {
+      setEditingPrompt('');
+    }
+  }, [editingPhase]);
+
+  useEffect(() => {
+    if (tab !== 'details' || !selectedPurposeId) return;
+
+    const samePurpose = lastLoadedPurposeRef.current === selectedPurposeId;
+    if (samePurpose && changedPhaseConfigs.length > 0) {
+      return;
+    }
+
+    let active = true;
+    setPhaseConfigsLoading(true);
+    getJson<{ template: PipelineTemplateSummary }>(
+      `/purposes/${selectedPurposeId}/pipeline`,
+    )
+      .then((data) => {
+        if (!active) return;
+        const template = data?.template ?? null;
+        const configs = buildConfigsFromTemplate(template, promptTemplates);
+        setInitialPhaseConfigs(configs);
+        setPhaseConfigs(configs);
+        lastLoadedPurposeRef.current = selectedPurposeId;
+      })
+      .catch(() => {
+        if (!active) return;
+        setInitialPhaseConfigs([]);
+        setPhaseConfigs([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setPhaseConfigsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    tab,
+    selectedPurposeId,
+    promptTemplates,
+    changedPhaseConfigs.length,
+  ]);
+
   const handleCreate = useCallback(async () => {
     const name = purposeName.trim();
     if (!name) {
       toast.error('Bitte gib ein Projektziel ein.');
       return;
     }
+
+    maybeOfferUserDefaults();
+
     const ok = await ctx.onCreatePurpose?.(name, templateId || undefined);
     if (ok) {
+      const newPurposeId = usePipelineStore.getState().selectedPurposeId;
+      if (newPurposeId && changedPhaseConfigs.length) {
+        let promptsRefreshed = false;
+        let updateFailed = false;
+        for (const cfg of phaseConfigs) {
+          const base = initialPhaseConfigs.find((entry) => entry.slug === cfg.slug);
+          if (!base || !hasConfigDiff(cfg, base)) continue;
+          try {
+            const result = await persistPhaseConfiguration(newPurposeId, cfg, base);
+            if (result.promptChanged && !promptsRefreshed) {
+              await refreshPromptTemplates();
+              promptsRefreshed = true;
+            }
+          } catch (error) {
+            console.error('Failed to persist phase configuration', error);
+            updateFailed = true;
+          }
+        }
+        if (updateFailed) {
+          toast.error('Einige Phaseneinstellungen konnten nicht übernommen werden.');
+        }
+      }
+
       try {
         const token = localStorage.getItem('token');
         const id = usePipelineStore.getState().selectedPurposeId;
@@ -124,16 +559,33 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       } catch {
         /* ignore */
       }
+
       setPurposeName('');
       setMode('manual');
       setTemplateId(defaultTemplateId || '');
       setTab('details');
       fetchPurposes();
     }
-  }, [purposeName, mode, templateId, ctx.onCreatePurpose, fetchPurposes, defaultTemplateId]);
+  }, [
+    purposeName,
+    mode,
+    templateId,
+    ctx.onCreatePurpose,
+    maybeOfferUserDefaults,
+    changedPhaseConfigs,
+    phaseConfigs,
+    initialPhaseConfigs,
+    persistPhaseConfiguration,
+    refreshPromptTemplates,
+    fetchPurposes,
+    defaultTemplateId,
+  ]);
 
   const handleStart = useCallback(
     async (id: string) => {
+      if (id === selectedPurposeId) {
+        maybeOfferUserDefaults();
+      }
       try {
         await postJson(`/purposes/${id}/start`, {});
         toast.success('Gestartet.');
@@ -144,7 +596,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         toast.error('Start fehlgeschlagen.');
       }
     },
-    [selectedPurposeId, fetchGraphAndStatus],
+    [selectedPurposeId, fetchGraphAndStatus, maybeOfferUserDefaults],
   );
 
   const handlePause = useCallback(
@@ -206,6 +658,248 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       })
       .catch(() => toast.error('Download fehlgeschlagen'));
   };
+
+  const openPromptEditor = useCallback(
+    (slug: string) => {
+      const cfg = phaseConfigs.find((entry) => entry.slug === slug);
+      if (!cfg) return;
+      setEditingPhase(cfg);
+    },
+    [phaseConfigs],
+  );
+
+  const closePromptEditor = useCallback(() => {
+    setEditingPhase(null);
+  }, []);
+
+  const makePromptEditable = useCallback(() => {
+    if (!editingPhase) return;
+    const updated: PhaseConfig = {
+      ...editingPhase,
+      isSystemPrompt: false,
+      promptTemplateId: null,
+      promptTenantId: null,
+      promptIsTenantDefault: false,
+    };
+    setPhaseConfigs((prev) =>
+      prev.map((entry) => (entry.slug === updated.slug ? updated : entry)),
+    );
+    setEditingPhase(updated);
+  }, [editingPhase]);
+
+  const handlePromptModalSave = useCallback(() => {
+    if (!editingPhase) return;
+    const trimmed = editingPrompt;
+    const updated: PhaseConfig = { ...editingPhase, prompt: trimmed };
+    setPhaseConfigs((prev) =>
+      prev.map((entry) => (entry.slug === updated.slug ? updated : entry)),
+    );
+    setEditingPhase(null);
+  }, [editingPhase, editingPrompt]);
+
+  const updatePhaseConfigValue = useCallback(
+    (slug: string, patch: Partial<PhaseConfig>) => {
+      setPhaseConfigs((prev) =>
+        prev.map((entry) => (entry.slug === slug ? { ...entry, ...patch } : entry)),
+      );
+    },
+    [],
+  );
+
+  const renderPhaseOverview = useCallback(
+    (mode: 'new' | 'details') => {
+      const isDetails = mode === 'details';
+      const isLoading = isDetails && phaseConfigsLoading;
+
+      return (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Phasenübersicht
+            </h3>
+            {isDetails && isLoading && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Lade Konfiguration …
+              </span>
+            )}
+          </div>
+          {!phaseConfigs.length && !isLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Keine Phasen gefunden.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">Phase</th>
+                    <th className="px-3 py-2 text-left font-semibold">Modell</th>
+                    <th className="px-3 py-2 text-left font-semibold">Token-Limit</th>
+                    <th className="px-3 py-2 text-left font-semibold">Prompt</th>
+                    {isDetails && (
+                      <th className="px-3 py-2 text-left font-semibold">Aktionen</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {phaseConfigs.map((cfg) => {
+                    const rowDisabled = isDetails && (isLoading || savingPhaseSlug === cfg.slug);
+                    const hasChanges = changedPhaseSlugs.has(cfg.slug);
+                    return (
+                      <tr key={cfg.slug} className="text-slate-700 dark:text-slate-200">
+                        <td className="px-3 py-2">{cfg.name}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            value={cfg.model}
+                            disabled={rowDisabled}
+                            onChange={(e) =>
+                              updatePhaseConfigValue(cfg.slug, { model: e.target.value })
+                            }
+                          >
+                            {MODEL_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            value={cfg.tokens}
+                            disabled={rowDisabled}
+                            onChange={(e) => {
+                              const next = Math.max(0, Math.trunc(Number(e.target.value) || 0));
+                              updatePhaseConfigValue(cfg.slug, { tokens: next });
+                            }}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+                                {cfg.prompt ? cfg.prompt : 'Kein Prompt hinterlegt.'}
+                              </span>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                                  cfg.isSystemPrompt
+                                    ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                }`}
+                              >
+                                {cfg.isSystemPrompt ? 'System' : 'Custom'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="self-start text-xs font-semibold text-amber-600 hover:text-amber-500"
+                              onClick={() => openPromptEditor(cfg.slug)}
+                              disabled={rowDisabled}
+                            >
+                              Prompt {cfg.isSystemPrompt ? 'ansehen' : 'bearbeiten'}
+                            </button>
+                          </div>
+                        </td>
+                        {isDetails && (
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSavePhaseRow(cfg.slug)}
+                              disabled={!hasChanges || rowDisabled}
+                              className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${
+                                !hasChanges || rowDisabled
+                                  ? 'bg-slate-400 dark:bg-slate-600'
+                                  : 'bg-emerald-600 hover:bg-emerald-700'
+                              }`}
+                            >
+                              {savingPhaseSlug === cfg.slug ? 'Speichern…' : 'Speichern'}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      );
+    },
+    [
+      phaseConfigs,
+      phaseConfigsLoading,
+      savingPhaseSlug,
+      changedPhaseSlugs,
+      updatePhaseConfigValue,
+      openPromptEditor,
+      handleSavePhaseRow,
+    ],
+  );
+
+  const handleSavePhaseRow = useCallback(
+    async (slug: string) => {
+      if (!selectedPurposeId) return;
+      const config = phaseConfigs.find((cfg) => cfg.slug === slug);
+      const base = initialPhaseConfigs.find((cfg) => cfg.slug === slug);
+      if (!config || !base) return;
+      if (!hasConfigDiff(config, base)) {
+        toast('Keine Änderungen für diese Phase.');
+        return;
+      }
+
+      maybeOfferUserDefaults();
+      setSavingPhaseSlug(slug);
+      try {
+        const result = await persistPhaseConfiguration(selectedPurposeId, config, base);
+        let promptList: PromptTemplateRecord[] | undefined;
+        if (result.promptChanged) {
+          promptList = await refreshPromptTemplates();
+        }
+        let nextConfig: PhaseConfig;
+        if (result.phase) {
+          nextConfig = convertPhaseDefinitionToConfig(
+            result.phase,
+            { id: config.slug, title: config.name },
+            promptList ?? promptTemplates,
+          );
+        } else {
+          nextConfig = {
+            ...config,
+            promptTemplateId: result.promptTemplateId,
+          };
+        }
+        setPhaseConfigs((prev) =>
+          prev.map((entry) => (entry.slug === slug ? nextConfig : entry)),
+        );
+        setInitialPhaseConfigs((prev) =>
+          prev.map((entry) => (entry.slug === slug ? nextConfig : entry)),
+        );
+        await fetchGraphAndStatus(selectedPurposeId);
+        await fetchBacklog();
+        toast.success('Phase aktualisiert.');
+      } catch (error) {
+        console.error('Failed to save phase configuration', error);
+        toast.error('Phase konnte nicht aktualisiert werden.');
+      } finally {
+        setSavingPhaseSlug(null);
+      }
+    },
+    [
+      selectedPurposeId,
+      phaseConfigs,
+      initialPhaseConfigs,
+      maybeOfferUserDefaults,
+      persistPhaseConfiguration,
+      refreshPromptTemplates,
+      promptTemplates,
+      fetchGraphAndStatus,
+      fetchBacklog,
+    ],
+  );
 
   return (
     <div className="space-y-4">
@@ -273,6 +967,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
               </select>
             </div>
           </div>
+          {renderPhaseOverview('new')}
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
@@ -392,6 +1087,8 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                 </div>
               </div>
 
+              {renderPhaseOverview('details')}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                   <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -473,6 +1170,65 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
             </>
           )}
         </section>
+      )}
+
+      {editingPhase && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                Prompt für {editingPhase.name}
+              </h3>
+              <button
+                type="button"
+                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                onClick={closePromptEditor}
+              >
+                ×
+              </button>
+            </div>
+            {editingPhase.isSystemPrompt && (
+              <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-200">
+                Systemvorlagen sind schreibgeschützt. Erstelle eine Kopie, um Anpassungen vorzunehmen.
+                <button
+                  type="button"
+                  className="ml-2 rounded bg-amber-500 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                  onClick={makePromptEditable}
+                >
+                  Duplizieren &amp; bearbeiten
+                </button>
+              </div>
+            )}
+            <textarea
+              rows={12}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+              value={editingPrompt}
+              onChange={(e) => setEditingPrompt(e.target.value)}
+              readOnly={editingPhase.isSystemPrompt}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closePromptEditor}
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={handlePromptModalSave}
+                disabled={editingPhase.isSystemPrompt}
+                className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
+                  editingPhase.isSystemPrompt
+                    ? 'bg-slate-400 dark:bg-slate-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                Übernehmen
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
