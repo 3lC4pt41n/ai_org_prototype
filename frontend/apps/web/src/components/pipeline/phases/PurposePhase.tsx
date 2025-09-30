@@ -763,151 +763,140 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     [],
   );
 
-  const renderPhaseOverview = useCallback(
-    (mode: 'new' | 'details') => {
-      const isDetails = mode === 'details';
-      const isLoading = isDetails && phaseConfigsLoading;
+  function renderPhaseOverview(mode: 'new' | 'details') {
+    const isDetails = mode === 'details';
+    const isLoading = isDetails && phaseConfigsLoading;
 
-      return (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Phasenübersicht
-            </h3>
-            {isDetails && isLoading && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Lade Konfiguration …
-              </span>
-            )}
-          </div>
-          {!phaseConfigs.length && !isLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Keine Phasen gefunden.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Phase</th>
-                    <th className="px-3 py-2 text-left font-semibold">Modell</th>
-                    <th className="px-3 py-2 text-left font-semibold">Token-Limit</th>
-                    <th className="px-3 py-2 text-left font-semibold">Agent-Rolle(n)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Prompt</th>
-                    {isDetails && (
-                      <th className="px-3 py-2 text-left font-semibold">Aktionen</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {phaseConfigs.map((cfg) => {
-                    const rowDisabled = isDetails && (isLoading || savingPhaseSlug === cfg.slug);
-                    const hasChanges = changedPhaseSlugs.has(cfg.slug);
-                    return (
-                      <tr key={cfg.slug} className="text-slate-700 dark:text-slate-200">
-                        <td className="px-3 py-2">{cfg.name}</td>
-                        <td className="px-3 py-2">
-                          <select
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                            value={cfg.model}
-                            disabled={rowDisabled}
-                            onChange={(e) =>
-                              updatePhaseConfigValue(cfg.slug, { model: e.target.value })
-                            }
-                          >
-                            {MODEL_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                            value={cfg.tokens}
-                            disabled={rowDisabled}
-                            onChange={(e) => {
-                              const next = Math.max(0, Math.trunc(Number(e.target.value) || 0));
-                              updatePhaseConfigValue(cfg.slug, { tokens: next });
-                            }}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                            value={cfg.agentRole || ''}
-                            disabled={rowDisabled}
-                            onChange={(e) =>
-                              updatePhaseConfigValue(cfg.slug, { agentRole: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                                {cfg.prompt ? cfg.prompt : 'Kein Prompt hinterlegt.'}
-                              </span>
-                              <span
-                                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                                  cfg.isSystemPrompt
-                                    ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                }`}
-                              >
-                                {cfg.isSystemPrompt ? 'System' : 'Custom'}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              className="self-start text-xs font-semibold text-amber-600 hover:text-amber-500"
-                              onClick={() => openPromptEditor(cfg.slug)}
-                              disabled={rowDisabled}
-                            >
-                              Prompt {cfg.isSystemPrompt ? 'ansehen' : 'bearbeiten'}
-                            </button>
-                          </div>
-                        </td>
-                        {isDetails && (
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              onClick={() => handleSavePhaseRow(cfg.slug)}
-                              disabled={!hasChanges || rowDisabled}
-                              className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${
-                                !hasChanges || rowDisabled
-                                  ? 'bg-slate-400 dark:bg-slate-600'
-                                  : 'bg-emerald-600 hover:bg-emerald-700'
+    return (
+      <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Phasenübersicht
+          </h3>
+          {isDetails && isLoading && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Lade Konfiguration …
+            </span>
+          )}
+        </div>
+        {!phaseConfigs.length && !isLoading ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Keine Phasen gefunden.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Phase</th>
+                  <th className="px-3 py-2 text-left font-semibold">Modell</th>
+                  <th className="px-3 py-2 text-left font-semibold">Token-Limit</th>
+                  <th className="px-3 py-2 text-left font-semibold">Agent-Rolle(n)</th>
+                  <th className="px-3 py-2 text-left font-semibold">Prompt</th>
+                  {isDetails && (
+                    <th className="px-3 py-2 text-left font-semibold">Aktionen</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {phaseConfigs.map((cfg) => {
+                  const rowDisabled = isDetails && (isLoading || savingPhaseSlug === cfg.slug);
+                  const hasChanges = changedPhaseSlugs.has(cfg.slug);
+                  return (
+                    <tr key={cfg.slug} className="text-slate-700 dark:text-slate-200">
+                      <td className="px-3 py-2">{cfg.name}</td>
+                      <td className="px-3 py-2">
+                        <select
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                          value={cfg.model}
+                          disabled={rowDisabled}
+                          onChange={(e) =>
+                            updatePhaseConfigValue(cfg.slug, { model: e.target.value })
+                          }
+                        >
+                          {MODEL_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                          value={cfg.tokens}
+                          disabled={rowDisabled}
+                          onChange={(e) => {
+                            const next = Math.max(0, Math.trunc(Number(e.target.value) || 0));
+                            updatePhaseConfigValue(cfg.slug, { tokens: next });
+                          }}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                          value={cfg.agentRole || ''}
+                          disabled={rowDisabled}
+                          onChange={(e) =>
+                            updatePhaseConfigValue(cfg.slug, { agentRole: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+                              {cfg.prompt ? cfg.prompt : 'Kein Prompt hinterlegt.'}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                                cfg.isSystemPrompt
+                                  ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                               }`}
                             >
-                              {savingPhaseSlug === cfg.slug ? 'Speichern…' : 'Speichern'}
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      );
-    },
-    [
-      phaseConfigs,
-      phaseConfigsLoading,
-      savingPhaseSlug,
-      changedPhaseSlugs,
-      updatePhaseConfigValue,
-      openPromptEditor,
-      handleSavePhaseRow,
-    ],
-  );
+                              {cfg.isSystemPrompt ? 'System' : 'Custom'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="self-start text-xs font-semibold text-amber-600 hover:text-amber-500"
+                            onClick={() => openPromptEditor(cfg.slug)}
+                            disabled={rowDisabled}
+                          >
+                            Prompt {cfg.isSystemPrompt ? 'ansehen' : 'bearbeiten'}
+                          </button>
+                        </div>
+                      </td>
+                      {isDetails && (
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSavePhaseRow(cfg.slug)}
+                            disabled={!hasChanges || rowDisabled}
+                            className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${
+                              !hasChanges || rowDisabled
+                                ? 'bg-slate-400 dark:bg-slate-600'
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            }`}
+                          >
+                            {savingPhaseSlug === cfg.slug ? 'Speichern…' : 'Speichern'}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   /**
    * Speichert die Konfiguration einer einzelnen Phase,
