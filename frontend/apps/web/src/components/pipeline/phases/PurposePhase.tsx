@@ -88,10 +88,13 @@ function storeUserPhaseDefaults(configs: PhaseConfig[]) {
 function hasConfigDiff(current: PhaseConfig, base: PhaseConfig): boolean {
   const modelCurrent = (current.model || '').trim();
   const modelBase = (base.model || '').trim();
+  const agentCurrent = (current.agentRole || '').trim();
+  const agentBase = (base.agentRole || '').trim();
   const promptCurrent = (current.prompt || '').trim();
   const promptBase = (base.prompt || '').trim();
   if (modelCurrent !== modelBase) return true;
   if ((current.tokens ?? 0) !== (base.tokens ?? 0)) return true;
+  if (agentCurrent !== agentBase) return true;
   if (promptCurrent !== promptBase) return true;
   return false;
 }
@@ -289,6 +292,12 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         updates.tokens_plan_default = sanitizedTokens;
       }
 
+      const agentCurrent = (config.agentRole || '').trim();
+      const agentBase = (baseConfig.agentRole || '').trim();
+      if (agentCurrent !== agentBase) {
+        updates.agent_role = agentCurrent || null;
+      }
+
       const promptCurrent = (config.prompt || '').trim();
       const promptBase = (baseConfig.prompt || '').trim();
       let promptTemplateId: string | null | undefined = baseConfig.promptTemplateId ?? null;
@@ -311,7 +320,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
           const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
             phase_slug: config.slug,
             content: promptCurrent,
-            agent: config.agentRole ?? null,
+            agent: agentCurrent || null,
           });
           promptTemplateId = created?.id ?? null;
         }
@@ -735,6 +744,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                     <th className="px-3 py-2 text-left font-semibold">Phase</th>
                     <th className="px-3 py-2 text-left font-semibold">Modell</th>
                     <th className="px-3 py-2 text-left font-semibold">Token-Limit</th>
+                    <th className="px-3 py-2 text-left font-semibold">Agent-Rolle(n)</th>
                     <th className="px-3 py-2 text-left font-semibold">Prompt</th>
                     {isDetails && (
                       <th className="px-3 py-2 text-left font-semibold">Aktionen</th>
@@ -775,6 +785,17 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                               const next = Math.max(0, Math.trunc(Number(e.target.value) || 0));
                               updatePhaseConfigValue(cfg.slug, { tokens: next });
                             }}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            value={cfg.agentRole || ''}
+                            disabled={rowDisabled}
+                            onChange={(e) =>
+                              updatePhaseConfigValue(cfg.slug, { agentRole: e.target.value })
+                            }
                           />
                         </td>
                         <td className="px-3 py-2">
