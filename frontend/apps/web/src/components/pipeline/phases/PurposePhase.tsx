@@ -364,6 +364,54 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     [],
   );
 
+  const savePhaseConfig = useCallback(
+    async (
+      purposeId: string,
+      config: PhaseConfig,
+      baseConfig: PhaseConfig,
+    ) => {
+      const result = await persistPhaseConfiguration(
+        purposeId,
+        config,
+        baseConfig,
+      );
+      let promptList: PromptTemplateRecord[] | undefined;
+      if (result.promptChanged) {
+        promptList = await refreshPromptTemplates();
+      }
+
+      const nextConfig = result.phase
+        ? convertPhaseDefinitionToConfig(
+            result.phase,
+            { id: config.slug, title: config.name },
+            promptList ?? promptTemplates,
+          )
+        : {
+            ...config,
+            promptTemplateId: result.promptTemplateId,
+          };
+
+      setPhaseConfigs((prev) =>
+        prev.map((entry) => (entry.slug === config.slug ? nextConfig : entry)),
+      );
+      setInitialPhaseConfigs((prev) =>
+        prev.map((entry) => (entry.slug === config.slug ? nextConfig : entry)),
+      );
+
+      await fetchGraphAndStatus(purposeId);
+      await fetchBacklog();
+
+      return nextConfig;
+    },
+    [
+      persistPhaseConfiguration,
+      refreshPromptTemplates,
+      promptTemplates,
+      fetchGraphAndStatus,
+      fetchBacklog,
+    ],
+  );
+
   const selectedPurpose =
     purposes.find((p: any) => p.id === selectedPurposeId) ?? null;
 
@@ -861,6 +909,10 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     ],
   );
 
+  /**
+   * Speichert die Konfiguration einer einzelnen Phase,
+   * falls sich Änderungen gegenüber dem initialen Wert ergeben haben.
+   */
   const handleSavePhaseRow = useCallback(
     async (slug: string) => {
       if (!selectedPurposeId) return;
@@ -875,33 +927,8 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       maybeOfferUserDefaults();
       setSavingPhaseSlug(slug);
       try {
-        const result = await persistPhaseConfiguration(selectedPurposeId, config, base);
-        let promptList: PromptTemplateRecord[] | undefined;
-        if (result.promptChanged) {
-          promptList = await refreshPromptTemplates();
-        }
-        let nextConfig: PhaseConfig;
-        if (result.phase) {
-          nextConfig = convertPhaseDefinitionToConfig(
-            result.phase,
-            { id: config.slug, title: config.name },
-            promptList ?? promptTemplates,
-          );
-        } else {
-          nextConfig = {
-            ...config,
-            promptTemplateId: result.promptTemplateId,
-          };
-        }
-        setPhaseConfigs((prev) =>
-          prev.map((entry) => (entry.slug === slug ? nextConfig : entry)),
-        );
-        setInitialPhaseConfigs((prev) =>
-          prev.map((entry) => (entry.slug === slug ? nextConfig : entry)),
-        );
-        await fetchGraphAndStatus(selectedPurposeId);
-        await fetchBacklog();
-        toast.success('Phase aktualisiert.');
+        await savePhaseConfig(selectedPurposeId, config, base);
+        toast.success(`Phase "${config.name}" gespeichert.`);
       } catch (error) {
         console.error('Failed to save phase configuration', error);
         toast.error('Phase konnte nicht aktualisiert werden.');
@@ -914,11 +941,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       phaseConfigs,
       initialPhaseConfigs,
       maybeOfferUserDefaults,
-      persistPhaseConfiguration,
-      refreshPromptTemplates,
-      promptTemplates,
-      fetchGraphAndStatus,
-      fetchBacklog,
+      savePhaseConfig,
     ],
   );
 
