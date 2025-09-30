@@ -40,7 +40,9 @@ export interface PipelineTemplateSummary {
 export interface PromptTemplateRecord {
   id: string;
   phase_slug: string;
+  /** optionale Metadaten für feinere Auswahl */
   agent?: string | null;
+  name?: string | null;
   default_path?: string | null;
   content: string;
   tenant_id?: string | null;
@@ -55,6 +57,9 @@ export interface PromptAssignmentSummary {
   id: string;
   phase_slug: string;
   prompt_template_id: string;
+  /** wenn Backend dies liefert: */
+  agent?: string | null;
+  purpose_id?: string | null;
   created_at?: string | null;
 }
 
