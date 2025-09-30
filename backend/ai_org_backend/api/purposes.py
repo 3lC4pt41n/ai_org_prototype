@@ -1,9 +1,7 @@
 import logging
-import shutil
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import and_, update
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant
@@ -12,9 +10,7 @@ from ai_org_backend.models import Artifact, Purpose, Task, TaskOwner, Tenant
 from ai_org_backend.redis_client import pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.scripts.seed_graph import ingest
-from ai_org_backend.services import graph_sync
-from ai_org_backend.services.storage import register_artefact, retract_artifact
-from ai_org_backend.settings import settings
+from ai_org_backend.services.storage import register_artefact
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
 
@@ -141,92 +137,3 @@ def update_purpose(
         session.commit()
         session.refresh(purpose)
     return {"purpose_id": purpose.id, "mode": purpose.mode}
-
-
-@router.delete("/{purpose_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_purpose(
-    purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)
-) -> Response:
-    tenant_id = current_tenant.id
-
-    with Session(engine) as session:
-        purpose = session.get(Purpose, purpose_id)
-        if not purpose or purpose.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Purpose not found")
-
-        # collect related tasks and artifacts before deletion
-        task_ids = session.exec(
-            select(Task.id).where(
-                Task.tenant_id == tenant_id,
-                Task.purpose_id == purpose_id,
-            )
-        ).all()
-        artifact_ids = session.exec(
-            select(Artifact.id).where(
-                Artifact.task.has(
-                    and_(Task.purpose_id == purpose_id, Task.tenant_id == tenant_id)
-                )
-            )
-        ).all()
-
-        # retract artifacts from vector store / graph (best-effort)
-        for artifact_id in artifact_ids:
-            try:
-                retract_artifact(artifact_id, remove_from_neo4j=True)
-            except Exception as exc:  # pragma: no cover - cleanup best effort
-                logging.error(
-                    "Failed to retract artifact %s for purpose %s: %s",
-                    artifact_id,
-                    purpose_id,
-                    exc,
-                )
-
-        # delete tasks and purpose from SQL
-        if task_ids:
-            for task in session.exec(
-                select(Task).where(Task.id.in_(task_ids))
-            ).all():
-                session.delete(task)
-        session.delete(purpose)
-        session.commit()
-
-    # cleanup redis keys (best-effort)
-    try:
-        if pool is not None:
-            pool.delete(f"pause:{tenant_id}:{purpose_id}")
-            pool.delete(f"budget:{tenant_id}:{purpose_id}")
-    except Exception as exc:  # pragma: no cover - cache cleanup best effort
-        logging.error(
-            "Failed to remove redis keys for purpose %s (tenant %s): %s",
-            purpose_id,
-            tenant_id,
-            exc,
-        )
-
-    # remove nodes from graph database (best-effort)
-    try:
-        graph_sync.remove_tasks(task_ids)
-        graph_sync.remove_purpose(purpose_id)
-    except Exception as exc:  # pragma: no cover - best effort cleanup
-        logging.error(
-            "Failed to remove tasks or purpose from graph for %s: %s",
-            purpose_id,
-            exc,
-        )
-
-    # safe workspace cleanup (best effort)
-    try:
-        root = Path(settings.workspace_dir).resolve()
-        candidate = (root / tenant_id / purpose_id).resolve()
-        candidate.relative_to(root)
-    except ValueError:
-        pass
-    except Exception as exc:  # pragma: no cover
-        logging.error("Failed to resolve workspace for purpose %s: %s", purpose_id, exc)
-    else:
-        try:
-            shutil.rmtree(candidate, ignore_errors=True)
-        except Exception as exc:  # pragma: no cover
-            logging.error("Failed to remove workspace for purpose %s: %s", purpose_id, exc)
-
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
