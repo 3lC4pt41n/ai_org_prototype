@@ -227,7 +227,12 @@ def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current
             session.exec(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
 
         session.exec(delete(ChatThreadContext).where(ChatThreadContext.purpose_id == purpose_id))
-        session.exec(delete(Feedback).where(Feedback.purpose_id == purpose_id))
+        try:
+            session.exec(delete(Feedback).where(Feedback.purpose_id == purpose_id))
+        except Exception as exc:  # pragma: no cover - defensive against missing tables
+            logging.warning(
+                "Skipping Feedback cleanup for purpose %s due to error: %s", purpose_id, exc
+            )
 
         if artifact_ids:
             session.exec(
@@ -246,13 +251,14 @@ def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current
             )
             session.exec(delete(Task).where(Task.id.in_(task_ids)))
 
-        session.delete(purpose)
+        session.exec(delete(Purpose).where(Purpose.id == purpose_id))
         session.commit()
 
     try:
         if pool is not None:
             pool.delete(f"pause:{tenant_id}:{purpose_id}")
             pool.delete(f"budget:{tenant_id}:{purpose_id}")
+            pool.delete(f"tokens:{tenant_id}:{purpose_id}")
     except Exception as exc:  # pragma: no cover - redis best effort
         logging.error("Failed to clear Redis keys for purpose %s: %s", purpose_id, exc)
 
