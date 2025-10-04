@@ -26,6 +26,7 @@ import PurposeSelector from '../components/PurposeSelector';
 import ArtifactSection from '../components/ArtifactSection';
 import GraphSection from '../components/GraphSection';
 import { API_BASE, getJson, postJson, putJson } from '../lib/api';
+import { normalizeAgentValue, normalizePromptContent } from '../lib/prompts';
 import { PIPELINE_PHASES, PHASE_DESCRIPTIONS, type PhaseId } from '../components/pipeline/phaseConfig';
 import PhaseNavigation from '../components/pipeline/PhaseNavigation';
 import type {
@@ -288,8 +289,17 @@ export default function PipelineView() {
         if (!active) return;
         const templateList = Array.isArray(data?.templates) ? data.templates : [];
         const assignmentList = Array.isArray(data?.assignments) ? data.assignments : [];
-        setPromptTemplates(templateList);
-        setPromptAssignments(assignmentList);
+        const normalizedTemplates = templateList.map((template) => ({
+          ...template,
+          agent: normalizeAgentValue(template?.agent) ?? null,
+          content: normalizePromptContent(template?.content),
+        }));
+        const normalizedAssignments = assignmentList.map((assignment) => ({
+          ...assignment,
+          agent: normalizeAgentValue(assignment?.agent) ?? null,
+        }));
+        setPromptTemplates(normalizedTemplates);
+        setPromptAssignments(normalizedAssignments);
       })
       .catch(() => {
         if (!active) return;
@@ -771,10 +781,16 @@ export default function PipelineView() {
     return currentPromptRecord;
   }, [currentPromptRecord, tenantDefaultTemplate]);
 
-  const basePromptContent = useMemo(
-    () => effectivePromptRecord?.content ?? currentPhaseDefaults?.prompt_template ?? '',
-    [effectivePromptRecord, currentPhaseDefaults],
-  );
+  const basePromptContent = useMemo<string>(() => {
+    if (
+      effectivePromptRecord &&
+      effectivePromptRecord.content !== undefined &&
+      effectivePromptRecord.content !== null
+    ) {
+      return normalizePromptContent(effectivePromptRecord.content);
+    }
+    return normalizePromptContent(currentPhaseDefaults?.prompt_template);
+  }, [effectivePromptRecord, currentPhaseDefaults]);
 
   const handlePhaseSettingsSave = useCallback(async () => {
     if (!selectedPurposeId || !currentPhaseDefaults) return;
