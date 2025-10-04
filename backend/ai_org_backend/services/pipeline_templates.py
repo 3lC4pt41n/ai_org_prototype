@@ -492,7 +492,7 @@ def instantiate_pipeline_for_purpose(
     overrides = overrides or {}
     repo = Repo(purpose.tenant_id)
 
-    assignment_prompts: Dict[str, str] = {}
+    assignment_prompts: Dict[tuple[str, Optional[str]], str] = {}
 
     with Session(engine) as session:
         existing_tasks = session.exec(
@@ -505,7 +505,8 @@ def instantiate_pipeline_for_purpose(
                 )
             ).all()
             assignment_prompts = {
-                assignment.phase_slug: assignment.prompt_template_id
+                (assignment.phase_slug, (assignment.agent or None)):
+                assignment.prompt_template_id
                 for assignment in assignments
                 if assignment.prompt_template_id
             }
@@ -587,15 +588,18 @@ def instantiate_pipeline_for_purpose(
         desired_model = (
             override.get("model_name", phase.model_name) if override else phase.model_name
         )
-        assignment_prompt = assignment_prompts.get(phase_slug)
+        desired_role = (
+            override.get("agent_role", phase.agent_role) if override else phase.agent_role
+        )
+        role_key = desired_role or None
+        assignment_prompt = assignment_prompts.get((phase_slug, role_key))
+        if assignment_prompt is None:
+            assignment_prompt = assignment_prompts.get((phase_slug, None))
         desired_prompt = phase.prompt_template
         if override and "prompt_template" in override:
             desired_prompt = str(override.get("prompt_template") or "") or None
         elif assignment_prompt is not None:
             desired_prompt = assignment_prompt or None
-        desired_role = (
-            override.get("agent_role", phase.agent_role) if override else phase.agent_role
-        )
         desired_requires_approval = bool(
             override.get("requires_approval", phase.requires_approval)
             if override

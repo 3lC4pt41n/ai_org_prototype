@@ -106,13 +106,15 @@ def list_prompt_templates_endpoint(
             )
         ).all()
 
-    assignment_by_phase = {
-        assignment.phase_slug: assignment for assignment in assignments
+    assignment_by_key = {
+        (assignment.phase_slug, getattr(assignment, "agent", None)): assignment
+        for assignment in assignments
     }
 
     template_payload = []
     for template in templates:
-        assignment = assignment_by_phase.get(template.phase_slug)
+        key = (template.phase_slug, getattr(template, "agent", None))
+        assignment = assignment_by_key.get(key)
         is_default = bool(
             assignment and assignment.prompt_template_id == template.id
         )
@@ -141,6 +143,7 @@ def list_prompt_templates_endpoint(
         {
             "id": assignment.id,
             "phase_slug": assignment.phase_slug,
+            "agent": getattr(assignment, "agent", None),
             "prompt_template_id": assignment.prompt_template_id,
             "created_at": assignment.created_at.isoformat()
             if assignment.created_at
@@ -188,6 +191,7 @@ def create_prompt_template(
                 select(TenantPromptAssignment).where(
                     TenantPromptAssignment.tenant_id == current_tenant.id,
                     TenantPromptAssignment.phase_slug == phase_slug,
+                    TenantPromptAssignment.agent == agent,
                 )
             ).first()
             if assignment_record:
@@ -196,6 +200,7 @@ def create_prompt_template(
                 assignment_record = TenantPromptAssignment(
                     tenant_id=current_tenant.id,
                     phase_slug=phase_slug,
+                    agent=agent,
                     prompt_template_id=template.id,
                 )
             session.add(assignment_record)
@@ -238,6 +243,7 @@ def create_prompt_template(
             response["assignment"] = {
                 "id": assignment_record.id,
                 "phase_slug": assignment_record.phase_slug,
+                "agent": assignment_record.agent,
                 "prompt_template_id": assignment_record.prompt_template_id,
                 "created_at": assignment_record.created_at.isoformat()
                 if assignment_record.created_at
@@ -276,9 +282,28 @@ def assign_prompt_template(
 ):
     phase_slug = (payload.get("phase_slug") or "").strip()
     template_id = payload.get("prompt_template_id")
+    agent = (payload.get("agent") or "").strip()
     purpose_id = payload.get("purpose_id")
-    if not phase_slug or not template_id:
-        raise HTTPException(status_code=400, detail="phase_slug and prompt_template_id are required")
+
+    if not phase_slug:
+        raise HTTPException(status_code=400, detail="phase_slug is required")
+
+    agent_value = agent or None
+
+    if template_id in (None, ""):
+        # Unassign prompt template for this phase/agent if exists
+        with Session(engine) as session:
+            assignment = session.exec(
+                select(TenantPromptAssignment).where(
+                    TenantPromptAssignment.tenant_id == current_tenant.id,
+                    TenantPromptAssignment.phase_slug == phase_slug,
+                    TenantPromptAssignment.agent == agent_value,
+                )
+            ).first()
+            if assignment:
+                session.delete(assignment)
+                session.commit()
+        return {"assigned": True}
 
     with Session(engine) as session:
         template = session.exec(
@@ -295,6 +320,7 @@ def assign_prompt_template(
             select(TenantPromptAssignment).where(
                 TenantPromptAssignment.tenant_id == current_tenant.id,
                 TenantPromptAssignment.phase_slug == phase_slug,
+                TenantPromptAssignment.agent == agent_value,
             )
         ).first()
         if assignment:
@@ -303,6 +329,7 @@ def assign_prompt_template(
             assignment = TenantPromptAssignment(
                 tenant_id=current_tenant.id,
                 phase_slug=phase_slug,
+                agent=agent_value,
                 prompt_template_id=template.id,
             )
         session.add(assignment)
