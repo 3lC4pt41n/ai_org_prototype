@@ -57,7 +57,7 @@ export interface PromptAssignmentSummary {
   id: string;
   phase_slug: string;
   prompt_template_id: string;
-  /** wenn Backend dies liefert: */
+  /** falls vom Backend mitgeliefert: zugehöriger Agent bzw. Zweck */
   agent?: string | null;
   purpose_id?: string | null;
   created_at?: string | null;

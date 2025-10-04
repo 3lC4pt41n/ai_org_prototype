@@ -279,10 +279,11 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       return templatesList;
     } catch (error) {
       console.error('Failed to refresh prompt templates', error);
+      setPromptTemplates([]);
       setPromptAssignments([]);
-      return promptTemplates;
+      return [];
     }
-  }, [promptTemplates]);
+  }, []);
 
   const changedPhaseConfigs = useMemo(
     () =>
