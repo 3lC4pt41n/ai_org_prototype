@@ -69,6 +69,44 @@ def _template_accessible(template: PromptTemplate, tenant_id: str) -> bool:
     )
 
 
+def _normalize_agent(agent: str | None) -> str | None:
+    """Return a stripped agent identifier or ``None`` for empty values."""
+
+    if agent is None:
+        return None
+    normalized = agent.strip()
+    return normalized or None
+
+
+def _agent_match_clause(agent: str | None):
+    """Return a SQLAlchemy clause that matches the provided agent value."""
+
+    normalized = _normalize_agent(agent)
+    if normalized is None:
+        return or_(
+            TenantPromptAssignment.agent.is_(None),
+            TenantPromptAssignment.agent == "",
+        )
+    return TenantPromptAssignment.agent == normalized
+
+
+def _normalize_prompt_content(content: Any) -> str:
+    """Ensure prompt content is returned as a plain string."""
+
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict) and "content" in content:
+        value = content.get("content")
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return str(value)
+    return str(content)
+
+
 @router.get("/pipeline/templates", tags=["pipeline"])
 def list_pipeline_templates_endpoint(
     current_tenant: Tenant = Depends(get_current_tenant),
@@ -107,13 +145,19 @@ def list_prompt_templates_endpoint(
         ).all()
 
     assignment_by_key = {
-        (assignment.phase_slug, getattr(assignment, "agent", None)): assignment
+        (
+            assignment.phase_slug,
+            _normalize_agent(getattr(assignment, "agent", None)),
+        ): assignment
         for assignment in assignments
     }
 
     template_payload = []
     for template in templates:
-        key = (template.phase_slug, getattr(template, "agent", None))
+        key = (
+            template.phase_slug,
+            _normalize_agent(getattr(template, "agent", None)),
+        )
         assignment = assignment_by_key.get(key)
         is_default = bool(
             assignment and assignment.prompt_template_id == template.id
@@ -123,9 +167,9 @@ def list_prompt_templates_endpoint(
             {
                 "id": template.id,
                 "phase_slug": template.phase_slug,
-                "agent": template.agent,
+                "agent": _normalize_agent(getattr(template, "agent", None)),
                 "default_path": template.default_path,
-                "content": template.content,
+                "content": _normalize_prompt_content(getattr(template, "content", None)),
                 "tenant_id": current_tenant.id if tenant_specific else None,
                 "created_by": template.created_by,
                 "created_at": template.created_at.isoformat()
@@ -143,7 +187,7 @@ def list_prompt_templates_endpoint(
         {
             "id": assignment.id,
             "phase_slug": assignment.phase_slug,
-            "agent": getattr(assignment, "agent", None),
+            "agent": _normalize_agent(getattr(assignment, "agent", None)),
             "prompt_template_id": assignment.prompt_template_id,
             "created_at": assignment.created_at.isoformat()
             if assignment.created_at
@@ -163,9 +207,11 @@ def create_prompt_template(
     if not phase_slug:
         raise HTTPException(status_code=400, detail="phase_slug is required")
 
-    content = str(payload.get("content") or "")
-    agent_value = payload.get("agent")
-    agent = str(agent_value).strip() if agent_value else None
+    content = _normalize_prompt_content(payload.get("content"))
+    agent_raw = payload.get("agent")
+    agent = (
+        _normalize_agent(str(agent_raw)) if agent_raw is not None else None
+    )
     set_default = bool(payload.get("set_default"))
     purpose_id = payload.get("purpose_id")
 
@@ -191,11 +237,12 @@ def create_prompt_template(
                 select(TenantPromptAssignment).where(
                     TenantPromptAssignment.tenant_id == current_tenant.id,
                     TenantPromptAssignment.phase_slug == phase_slug,
-                    TenantPromptAssignment.agent == agent,
+                    _agent_match_clause(agent),
                 )
             ).first()
             if assignment_record:
                 assignment_record.prompt_template_id = template.id
+                assignment_record.agent = agent
             else:
                 assignment_record = TenantPromptAssignment(
                     tenant_id=current_tenant.id,
@@ -224,9 +271,9 @@ def create_prompt_template(
             "prompt_template": {
                 "id": template.id,
                 "phase_slug": template.phase_slug,
-                "agent": template.agent,
+                "agent": _normalize_agent(getattr(template, "agent", None)),
                 "default_path": template.default_path,
-                "content": template.content,
+                "content": _normalize_prompt_content(getattr(template, "content", None)),
                 "tenant_id": current_tenant.id
                 if _template_owned_by(template, current_tenant.id)
                 else None,
@@ -243,7 +290,7 @@ def create_prompt_template(
             response["assignment"] = {
                 "id": assignment_record.id,
                 "phase_slug": assignment_record.phase_slug,
-                "agent": assignment_record.agent,
+                "agent": _normalize_agent(getattr(assignment_record, "agent", None)),
                 "prompt_template_id": assignment_record.prompt_template_id,
                 "created_at": assignment_record.created_at.isoformat()
                 if assignment_record.created_at
@@ -256,7 +303,7 @@ def create_prompt_template(
 def update_prompt_template(
     template_id: str, payload: dict, current_tenant: Tenant = Depends(get_current_tenant)
 ):
-    content = str(payload.get("content") or "")
+    content = _normalize_prompt_content(payload.get("content"))
     with Session(engine) as session:
         template = session.exec(
             select(PromptTemplate)
@@ -282,13 +329,15 @@ def assign_prompt_template(
 ):
     phase_slug = (payload.get("phase_slug") or "").strip()
     template_id = payload.get("prompt_template_id")
-    agent = (payload.get("agent") or "").strip()
+    agent_raw = payload.get("agent")
     purpose_id = payload.get("purpose_id")
 
     if not phase_slug:
         raise HTTPException(status_code=400, detail="phase_slug is required")
 
-    agent_value = agent or None
+    agent_value = (
+        _normalize_agent(str(agent_raw)) if agent_raw is not None else None
+    )
 
     if template_id in (None, ""):
         # Unassign prompt template for this phase/agent if exists
@@ -297,7 +346,7 @@ def assign_prompt_template(
                 select(TenantPromptAssignment).where(
                     TenantPromptAssignment.tenant_id == current_tenant.id,
                     TenantPromptAssignment.phase_slug == phase_slug,
-                    TenantPromptAssignment.agent == agent_value,
+                    _agent_match_clause(agent_value),
                 )
             ).first()
             if assignment:
@@ -320,11 +369,12 @@ def assign_prompt_template(
             select(TenantPromptAssignment).where(
                 TenantPromptAssignment.tenant_id == current_tenant.id,
                 TenantPromptAssignment.phase_slug == phase_slug,
-                TenantPromptAssignment.agent == agent_value,
+                _agent_match_clause(agent_value),
             )
         ).first()
         if assignment:
             assignment.prompt_template_id = template.id
+            assignment.agent = agent_value
         else:
             assignment = TenantPromptAssignment(
                 tenant_id=current_tenant.id,
