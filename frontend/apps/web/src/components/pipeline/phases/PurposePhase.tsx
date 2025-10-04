@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { PlayCircle, PauseCircle, Trash2, ChevronRight } from 'lucide-react';
 import usePipelineStore from '../../../store/pipelineStore';
 import { API_BASE, getJson, postJson, putJson } from '../../../lib/api';
+import { normalizePromptContent } from '../../../lib/prompts';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import { PIPELINE_PHASES } from '../phaseConfig';
 import type {
@@ -181,8 +182,9 @@ function convertPhaseDefinitionToConfig(
   const promptIsTenantDefault = Boolean(promptRecord?.is_tenant_default);
   // Falls der PromptRecord (noch) nicht geladen ist, bleibt der Content leer.
   // Der Editor lädt ihn ggf. on-demand über /templates/{default_path}.
-  const promptContent =
-    typeof promptRecord?.content === 'string' ? promptRecord.content : '';
+  const promptContent = promptRecord
+    ? normalizePromptContent(promptRecord.content)
+    : '';
   const isSystemPrompt = !promptTenantId && Boolean(promptTemplateId || promptDefaultPath);
 
   const tokensValue = Number(phase.tokens_plan_default ?? 0);
