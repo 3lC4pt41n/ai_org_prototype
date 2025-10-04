@@ -42,6 +42,7 @@ class TenantPromptAssignment(SQLModel, table=True):  # type: ignore[call-arg]
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8], primary_key=True)
     tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
     phase_slug: str = Field(nullable=False, max_length=64)
+    agent: Optional[str] = Field(default=None, max_length=100)
     prompt_template_id: str = Field(foreign_key="prompt_template.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

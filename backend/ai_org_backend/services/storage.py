@@ -103,7 +103,22 @@ def _git_commit(rel_path: str, message: str) -> None:
             log.info("Removed stale Git index.lock")
         except Exception as e:
             log.warning("Failed to remove Git index.lock: %s", e)
-    subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)  # nosec B603 B607
+    try:
+        subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)  # nosec B603 B607
+    except subprocess.CalledProcessError as e:
+        err_msg = getattr(e, "stderr", None) or str(e)
+        if "index file smaller than expected" in err_msg.lower():
+            idx_file = WORKSPACE / ".git" / "index"
+            if idx_file.exists():
+                try:
+                    idx_file.unlink()
+                    log.warning("Removed corrupt Git index")
+                except Exception as ex:
+                    log.error("Failed to remove corrupt index: %s", ex)
+            subprocess.run(["git", "-C", str(WORKSPACE), "reset", "--mixed"], check=False)
+            subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
+        else:
+            raise
     status = subprocess.run(
         ["git", "-C", str(WORKSPACE), "status", "--porcelain"],
         capture_output=True,
@@ -126,7 +141,23 @@ def _git_commit(rel_path: str, message: str) -> None:
         message,
         "--quiet",
     ]
-    subprocess.run(commit_cmd, check=True)  # nosec B603 B607
+    try:
+        subprocess.run(commit_cmd, check=True)  # nosec B603 B607
+    except subprocess.CalledProcessError as e:
+        err_msg = getattr(e, "stderr", None) or str(e)
+        if "index file smaller than expected" in err_msg.lower():
+            idx_file = WORKSPACE / ".git" / "index"
+            if idx_file.exists():
+                try:
+                    idx_file.unlink()
+                    log.warning("Removed corrupt Git index before commit")
+                except Exception as ex:
+                    log.error("Failed to remove corrupt index: %s", ex)
+            subprocess.run(["git", "-C", str(WORKSPACE), "reset", "--mixed"], check=False)
+            subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
+            subprocess.run(commit_cmd, check=True)
+        else:
+            raise
 
 
 def resolve_for_read(repo_path: str) -> Path:
