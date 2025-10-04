@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { PlayCircle, PauseCircle, Trash2, ChevronRight } from 'lucide-react';
 import usePipelineStore from '../../../store/pipelineStore';
 import { API_BASE, getJson, postJson, putJson } from '../../../lib/api';
+import MarkdownRenderer from '../../MarkdownRenderer';
 import { PIPELINE_PHASES } from '../phaseConfig';
 import type {
   PhaseViewContext,
@@ -343,12 +344,11 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
 
   const getAssignedTemplateId = useCallback(
     (slug: string, agent: string): string | null => {
+      const normalizedAgent = agent ?? '';
       const hit = promptAssignments.find(
         (assignment) =>
           assignment.phase_slug === slug &&
-          (typeof assignment.agent === 'string'
-            ? assignment.agent === agent
-            : true) &&
+          (assignment.agent ?? '') === normalizedAgent &&
           (selectedPurposeId
             ? assignment.purpose_id === selectedPurposeId
             : true),
@@ -388,8 +388,32 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       const isSystem = template ? !template.tenant_id : true;
       const defaultPath = template?.default_path ?? null;
       let promptText = typeof template?.content === 'string' ? template.content : '';
+      if (promptText) {
+        try {
+          const parsed = JSON.parse(promptText);
+          if (typeof parsed === 'string') {
+            promptText = parsed;
+          } else if (parsed && typeof parsed.content === 'string') {
+            promptText = parsed.content;
+          }
+        } catch {
+          // promptText is not JSON, use as-is
+        }
+      }
       if (!promptText && defaultPath) {
         promptText = await fetchTemplateText(defaultPath);
+        if (promptText) {
+          try {
+            const parsed = JSON.parse(promptText);
+            if (typeof parsed === 'string') {
+              promptText = parsed;
+            } else if (parsed && typeof parsed.content === 'string') {
+              promptText = parsed.content;
+            }
+          } catch {
+            // promptText is not JSON, use as-is
+          }
+        }
       }
 
       setAgentEditor({
@@ -1591,15 +1615,20 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                 </button>
               </div>
             )}
-            <textarea
-              rows={14}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={agentEditor.prompt}
-              onChange={(event) =>
-                setAgentEditor({ ...agentEditor, prompt: event.target.value })
-              }
-              readOnly={agentEditor.isSystem}
-            />
+            {agentEditor.isSystem ? (
+              <div className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                <MarkdownRenderer content={agentEditor.prompt} className="prose-sm" />
+              </div>
+            ) : (
+              <textarea
+                rows={14}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={agentEditor.prompt}
+                onChange={(event) =>
+                  setAgentEditor({ ...agentEditor, prompt: event.target.value })
+                }
+              />
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
