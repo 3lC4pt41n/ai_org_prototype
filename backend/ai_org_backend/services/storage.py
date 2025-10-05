@@ -104,7 +104,12 @@ def _git_commit(rel_path: str, message: str) -> None:
         except Exception as e:
             log.warning("Failed to remove Git index.lock: %s", e)
     try:
-        subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)  # nosec B603 B607
+        subprocess.run(
+            ["git", "-C", str(WORKSPACE), "add", "-A"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )  # nosec B603 B607
     except subprocess.CalledProcessError as e:
         err_msg = getattr(e, "stderr", None) or str(e)
         if "index file smaller than expected" in err_msg.lower():
@@ -116,7 +121,12 @@ def _git_commit(rel_path: str, message: str) -> None:
                 except Exception as ex:
                     log.error("Failed to remove corrupt index: %s", ex)
             subprocess.run(["git", "-C", str(WORKSPACE), "reset", "--mixed"], check=False)
-            subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(WORKSPACE), "add", "-A"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
         else:
             raise
     status = subprocess.run(
@@ -142,7 +152,12 @@ def _git_commit(rel_path: str, message: str) -> None:
         "--quiet",
     ]
     try:
-        subprocess.run(commit_cmd, check=True)  # nosec B603 B607
+        subprocess.run(
+            commit_cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )  # nosec B603 B607
     except subprocess.CalledProcessError as e:
         err_msg = getattr(e, "stderr", None) or str(e)
         if "index file smaller than expected" in err_msg.lower():
@@ -154,8 +169,18 @@ def _git_commit(rel_path: str, message: str) -> None:
                 except Exception as ex:
                     log.error("Failed to remove corrupt index: %s", ex)
             subprocess.run(["git", "-C", str(WORKSPACE), "reset", "--mixed"], check=False)
-            subprocess.run(["git", "-C", str(WORKSPACE), "add", "-A"], check=True)
-            subprocess.run(commit_cmd, check=True)
+            subprocess.run(
+                ["git", "-C", str(WORKSPACE), "add", "-A"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                commit_cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
         else:
             raise
 
