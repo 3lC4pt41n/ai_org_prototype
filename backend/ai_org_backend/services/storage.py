@@ -390,7 +390,11 @@ def register_artefact(
             )
 
     action = "update" if original_exists and allow_overwrite else "add"
-    _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
+    try:
+        _git_commit(artefact.repo_path, f"{task_id}: {action} artefact {artefact.sha256[:8]}")
+    except Exception as e:  # pragma: no cover - defensive
+        # Artefact wurde bereits gespeichert; Git-Fehler sollten den Request nicht brechen
+        log.error("storage: git commit failed (continuing without crash): %s", e)
     if original_exists and allow_overwrite:
         ARTIFACT_UPDATES.inc()
     try:
