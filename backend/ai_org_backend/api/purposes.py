@@ -227,13 +227,6 @@ def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current
             session.exec(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
 
         session.exec(delete(ChatThreadContext).where(ChatThreadContext.purpose_id == purpose_id))
-        try:
-            session.exec(delete(Feedback).where(Feedback.purpose_id == purpose_id))
-        except Exception as exc:  # pragma: no cover - defensive against missing tables
-            logging.warning(
-                "Skipping Feedback cleanup for purpose %s due to error: %s", purpose_id, exc
-            )
-
         if artifact_ids:
             session.exec(
                 delete(ArtifactFeedback).where(ArtifactFeedback.artifact_id.in_(artifact_ids))

@@ -112,6 +112,7 @@ class Repo:
                 for pid in depends_on:
                     s.add(TaskDependency(from_id=pid, to_id=t.id, dependency_type="FINISH_START"))
                 s.commit()
+                s.refresh(t)
 
         # Graph upserts (best-effort)
         try:
