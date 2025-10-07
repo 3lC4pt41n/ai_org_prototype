@@ -157,7 +157,7 @@ def architect_task(tenant_id: str, task_id: str, *args, **kwargs) -> None:
     register_artefact(
         task_id,
         blueprint.encode("utf-8"),
-        filename="architecture_blueprint.md",
+        filename="blueprints/architecture_blueprint.md",
         media_type="text/markdown",
     )
     Repo(tenant_id).update(

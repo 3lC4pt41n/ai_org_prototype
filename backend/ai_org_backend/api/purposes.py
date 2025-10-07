@@ -11,7 +11,6 @@ from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.db import engine
 from ai_org_backend.models import (
     Artifact,
-    ArtifactFeedback,
     ChatMessage,
     ChatMessageArtifact,
     ChatThreadContext,
@@ -228,9 +227,6 @@ def delete_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current
 
         session.exec(delete(ChatThreadContext).where(ChatThreadContext.purpose_id == purpose_id))
         if artifact_ids:
-            session.exec(
-                delete(ArtifactFeedback).where(ArtifactFeedback.artifact_id.in_(artifact_ids))
-            )
             session.exec(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
 
         if task_ids:

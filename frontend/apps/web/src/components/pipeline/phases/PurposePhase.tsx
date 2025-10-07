@@ -335,12 +335,16 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
     (slug: string, agent: string) =>
       promptTemplates
         .filter((t) => t.phase_slug === slug && (t.agent ?? '') === agent)
-        .map((t) => ({
-          id: t.id,
-          label: t.name || t.id,
-          isSystem: !t.tenant_id,
-          defaultPath: t.default_path ?? null,
-        })),
+        .map((t) => {
+          const derivedName = t.name || t.default_path || t.id;
+          const isSystem = typeof t.is_system === 'boolean' ? t.is_system : !t.tenant_id;
+          return {
+            id: t.id,
+            label: derivedName,
+            isSystem,
+            defaultPath: t.default_path ?? null,
+          };
+        }),
     [promptTemplates],
   );
 
@@ -425,7 +429,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         prompt: promptText,
         isSystem,
         defaultPath,
-        templateName: template?.name ?? null,
+        templateName: template?.name ?? template?.default_path ?? null,
         workingId: template?.id ?? null,
       });
     },
@@ -434,11 +438,20 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
 
   const makeAgentPromptEditable = useCallback(async () => {
     if (!agentEditor) return;
+    const proposedTitle = window.prompt(
+      'Titel für das neue Prompt eingeben:',
+      agentEditor.templateName || ''
+    );
+    if (!proposedTitle || !proposedTitle.trim()) {
+      return;
+    }
+    const title = proposedTitle.trim();
     try {
       const created = await postJson<{ id: string }>('/pipeline/prompts/create', {
         phase_slug: agentEditor.phaseSlug,
         agent: agentEditor.agent,
         content: agentEditor.prompt || '',
+        default_path: title,
       });
       const newId = created?.id ?? null;
       setAgentEditor({
@@ -446,6 +459,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
         isSystem: false,
         templateId: newId,
         workingId: newId,
+        templateName: title,
       });
       await refreshPromptsAndAssignments();
       toast.success('Kopie erstellt – jetzt editierbar.');
@@ -457,6 +471,11 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
 
   const saveAgentEditor = useCallback(async () => {
     if (!agentEditor) return;
+    const trimmedName = agentEditor.templateName?.trim();
+    if (!trimmedName) {
+      toast.error('Bitte einen Namen für den Custom-Prompt angeben.');
+      return;
+    }
     try {
       let templateId = agentEditor.templateId;
       if (!templateId) {
@@ -464,11 +483,13 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
           phase_slug: agentEditor.phaseSlug,
           agent: agentEditor.agent,
           content: agentEditor.prompt || '',
+          default_path: trimmedName,
         });
         templateId = created?.id ?? null;
       } else {
         await putJson(`/pipeline/prompts/update/${templateId}`, {
           content: agentEditor.prompt || '',
+          default_path: trimmedName,
         });
       }
 
@@ -1136,6 +1157,8 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                                 {getAgentsForPhase(cfg.slug).map((agent) => {
                                   const options = getTemplatesForPhaseAgent(cfg.slug, agent);
                                   const assigned = getAssignedTemplateId(cfg.slug, agent);
+                                  const systemOptions = options.filter((option) => option.isSystem);
+                                  const customOptions = options.filter((option) => !option.isSystem);
                                   return (
                                     <li key={`${cfg.slug}:${agent}`} className="flex flex-col gap-1">
                                       <div className="flex items-center justify-between gap-2">
@@ -1155,11 +1178,24 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                                             }
                                           >
                                             <option value="">— keine Zuweisung —</option>
-                                            {options.map((option) => (
-                                              <option key={option.id} value={option.id}>
-                                                {option.label}
-                                              </option>
-                                            ))}
+                                            {systemOptions.length > 0 && (
+                                              <optgroup label="Standard Prompts">
+                                                {systemOptions.map((option) => (
+                                                  <option key={option.id} value={option.id}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </optgroup>
+                                            )}
+                                            {customOptions.length > 0 && (
+                                              <optgroup label="Custom Prompts">
+                                                {customOptions.map((option) => (
+                                                  <option key={option.id} value={option.id}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </optgroup>
+                                            )}
                                           </select>
                                           <button
                                             type="button"
@@ -1593,13 +1629,29 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       {agentEditor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                Prompt · {agentEditor.agent} · {agentEditor.phaseSlug}
-              </h3>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                  Prompt · {agentEditor.agent} · {agentEditor.phaseSlug}
+                </h3>
+                {!agentEditor.isSystem && (
+                  <input
+                    type="text"
+                    className="w-full rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 md:w-64"
+                    placeholder="Name des Custom-Prompts"
+                    value={agentEditor.templateName ?? ''}
+                    onChange={(event) =>
+                      setAgentEditor({
+                        ...agentEditor,
+                        templateName: event.target.value,
+                      })
+                    }
+                  />
+                )}
+              </div>
               <button
                 type="button"
-                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                className="self-start text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 onClick={() => setAgentEditor(null)}
               >
                 ×
@@ -1640,11 +1692,13 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
               </button>
               <button
                 className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
-                  agentEditor.isSystem
+                  agentEditor.isSystem || !(agentEditor.templateName ?? '').trim()
                     ? 'bg-slate-400 dark:bg-slate-600'
                     : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
-                disabled={agentEditor.isSystem}
+                disabled={
+                  agentEditor.isSystem || !(agentEditor.templateName ?? '').trim()
+                }
                 onClick={saveAgentEditor}
               >
                 Übernehmen &amp; zuweisen

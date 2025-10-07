@@ -10,7 +10,6 @@ from .chat import ChatMessage, ChatMessageArtifact
 from ai_org_backend.settings import settings
 
 if TYPE_CHECKING:
-    from .artifact_feedback import ArtifactFeedback
     from .task import Task
 
 
@@ -22,7 +21,6 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
     task_id: str = Field(foreign_key="task.id", nullable=False)
 
     task: "Task" = Relationship(back_populates="artifacts")
-    feedback: List["ArtifactFeedback"] = Relationship(back_populates="artifact")
     messages: List["ChatMessage"] = Relationship(
         back_populates="artifacts", link_model=ChatMessageArtifact
     )
