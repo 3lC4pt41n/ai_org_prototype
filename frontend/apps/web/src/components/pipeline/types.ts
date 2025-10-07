@@ -51,6 +51,7 @@ export interface PromptTemplateRecord {
   updated_at?: string | null;
   is_tenant_default?: boolean;
   assignment_id?: string | null;
+  is_system?: boolean;
 }
 
 export interface PromptAssignmentSummary {
