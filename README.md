@@ -16,6 +16,7 @@ Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware
 |**Monitoring‑Stack** | Prometheus :8000 (FastAPI) + Celery exporter; fertig provisionierte Grafana‑Dashboards |
 |**React Admin‑Dashboard** | Budget‑Gauge, Backlog‑Table, React‑Flow‑Graph (Bubble‑Size = Value, Color = Status) |
 |**Monorepo** | Frontend‑Workspaces (`apps/web`, `packages/ui`, `packages/api-client`), Backend `ai_org_backend` |
+|**Feedback-Verlauf** | Artifact-Kommentare liegen als ChatMessages (Intent `feedback`) inkl. Versions- & Autoren-Metadaten; Migration `20251006` backfillt bestehende `ArtifactFeedback`-Einträge |
 
 ---
 
@@ -206,7 +207,7 @@ PostgreSQL wird sowohl in Entwicklung als auch Produktion eingesetzt und mittels
 
 **Datenmodelle & Beziehungen:** Das Backend nutzt SQLModel (SQLAlchemy) auf PostgreSQL mit den Haupt-Entitäten **Tenant**, **Purpose**, **Task**, **TaskDependency** und **Artifact** (zusätzlich existieren Feedback-Modelle). Ein *Tenant* (Mandant) kann mehrere **Purposes** (Projekte) besitzen. Jede *Purpose* gehört zu genau einem Tenant und bildet einen Backlog (Sammlung von Tasks) für dieses Projekt. Die einzelnen *Tasks* sind über `tenant_id` und `purpose_id` einem Tenant bzw. Purpose zugeordnet. Tasks können Abhängigkeiten untereinander haben: die Tabelle **TaskDependency** verknüpft Tasks als gerichtete Kanten (von Vorgänger-Task zu Nachfolger-Task), um Ablaufreihenfolgen (z. B. "finish-to-start") im Pipeline-Graph abzubilden. Jeder Task kann zudem mehrere **Artifacts** erzeugen – Artefakte sind Dateien oder Ergebnisse eines Tasks (z. B. Code oder Dokumentation), verknüpft über das Feld `task_id`.
 
-**ArtifactFeedback** speichert Review-Einträge (Versionen, Kommentare) zu einem Artefakt, während **Feedback** auf Purpose-Ebene Freigaben für zentrale Artefakte (etwa PRD oder Architektur-Blueprint) mit Versionsstand und Status festhält.
+**Feedback** speichert auf Purpose-Ebene Freigaben für zentrale Artefakte (etwa PRD oder Architektur-Blueprint) inklusive Versionsstand und Status. Detailkommentare zu Artefakten werden als Chat-Verlaufseinträge mit Feedback-Intent gespeichert und sind damit direkt dem jeweiligen Artefakt zugeordnet.
 
 ## 🔌 4 | API-Schnittstelle
 In der FastAPI-Backend-API sind folgende zentrale Endpunkte definiert. *(Hinweis: Alle unten aufgeführten Routen unter `/api` erfordern einen gültigen Bearer-Token im `Authorization`-Header, sofern nicht anders angegeben.)*

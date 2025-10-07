@@ -99,12 +99,16 @@ def test_artifact_feedback_flow(monkeypatch):
     qa_payload = {"answers": [{"question": "Q1?", "answer": "A1."}]}
     r = client.post(f"/api/artifacts/{artifact_id}/feedback", json=qa_payload)
     assert r.status_code == 200
-    assert r.json()["version"] == 3
+    assert r.json()["version"] == 2
 
     r = client.get(f"/api/artifacts/{artifact_id}/feedback")
     data = r.json()
     assert len(data) == 4
     assert data[0]["content"] == "ok"
+    assert data[0]["version"] == 1
+    assert data[1]["version"] == 1
+    assert data[2]["version"] == 2
+    assert data[3]["version"] == 2
     assert data[2]["content"] == json.dumps(qa_payload["answers"], ensure_ascii=False)
 
 

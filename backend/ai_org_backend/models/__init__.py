@@ -1,5 +1,4 @@
 from .artifact import Artifact
-from .artifact_feedback import ArtifactFeedback
 from .chat import ChatMessage, ChatMessageArtifact, ChatThreadContext
 from .feedback import Feedback, FeedbackType
 from .pipeline import PipelinePhase, PipelineTemplate
@@ -24,7 +23,6 @@ __all__ = [
     "Artifact",
     "Feedback",
     "FeedbackType",
-    "ArtifactFeedback",
     "ChatMessage",
     "ChatThreadContext",
     "ChatMessageArtifact",

@@ -39,7 +39,6 @@ def _override_tenant(app, tenant, dependencies):
 def _prepare_data(engine, *, include_feedback: bool = True):
     from ai_org_backend.models import (
         Artifact,
-        ArtifactFeedback,
         Feedback,
         FeedbackType,
         Purpose,
@@ -83,13 +82,6 @@ def _prepare_data(engine, *, include_feedback: bool = True):
         size=0,
         sha256="0" * 64,
     )
-    artifact_feedback = ArtifactFeedback(
-        id="fb1",
-        artifact_id=artifact.id,
-        tenant_id=tenant.id,
-        content="Looks good",
-    )
-
     chat_message = ChatMessage(
         id="chat1",
         tenant_id=tenant.id,
@@ -119,7 +111,6 @@ def _prepare_data(engine, *, include_feedback: bool = True):
         session.add(task2)
         session.add(dependency)
         session.add(artifact)
-        session.add(artifact_feedback)
         session.add(chat_message)
         session.add(chat_link)
         session.add(thread_context)
@@ -189,7 +180,6 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
     with Session(db.engine) as session:
         from ai_org_backend.models import (
             Artifact,
-            ArtifactFeedback,
             ChatMessage,
             ChatMessageArtifact,
             ChatThreadContext,
@@ -203,7 +193,6 @@ def test_delete_purpose_removes_related_records(monkeypatch, tmp_path):
         assert session.exec(select(Task).where(Task.purpose_id == purpose.id)).all() == []
         assert session.exec(select(TaskDependency)).all() == []
         assert session.exec(select(Artifact).where(Artifact.task_id.in_(task_ids))).all() == []
-        assert session.exec(select(ArtifactFeedback)).all() == []
         assert session.exec(select(ChatMessage)).all() == []
         assert session.exec(select(ChatMessageArtifact)).all() == []
         assert session.exec(select(ChatThreadContext)).all() == []
@@ -298,7 +287,6 @@ def test_delete_purpose_handles_missing_feedback_table(monkeypatch, tmp_path):
     with Session(db.engine) as session:
         from ai_org_backend.models import (
             Artifact,
-            ArtifactFeedback,
             ChatMessage,
             ChatMessageArtifact,
             ChatThreadContext,
@@ -311,7 +299,6 @@ def test_delete_purpose_handles_missing_feedback_table(monkeypatch, tmp_path):
         assert session.exec(select(Task).where(Task.purpose_id == purpose.id)).all() == []
         assert session.exec(select(TaskDependency)).all() == []
         assert session.exec(select(Artifact).where(Artifact.task_id.in_(task_ids))).all() == []
-        assert session.exec(select(ArtifactFeedback)).all() == []
         assert session.exec(select(ChatMessage)).all() == []
         assert session.exec(select(ChatMessageArtifact)).all() == []
         assert session.exec(select(ChatThreadContext)).all() == []

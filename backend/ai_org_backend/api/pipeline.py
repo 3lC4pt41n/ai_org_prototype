@@ -8,14 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import asc, desc, exists, or_
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql import func
 from sqlmodel import Session, select
 
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
 from ai_org_backend.models import (
     Artifact,
-    ArtifactFeedback,
     PromptTemplate,
     Purpose,
     Task,
@@ -24,7 +22,13 @@ from ai_org_backend.models import (
     Tenant,
     TenantPromptAssignment,
 )
-from ai_org_backend.models.chat import ChatMessage, ChatRole
+from ai_org_backend.models.chat import (
+    ChatIntent,
+    ChatMessage,
+    ChatMessageArtifact,
+    ChatRole,
+    ChatScope,
+)
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
@@ -46,6 +50,38 @@ from ai_org_backend.services.storage import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+
+
+_SYSTEM_PROMPT_LABELS = {
+    "vision": "Vision Document",
+    "requirements": "Product Requirements Document",
+    "architect": "Architecture Blueprint",
+    "architect_feedback": "Architecture Blueprint Update",
+    "review": "Architecture & Domain Review",
+    "planner": "Implementation Plan",
+}
+
+
+def _clean_template_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = Path(value).name
+    if candidate.lower().endswith(".j2"):
+        candidate = candidate[:-3]
+    return candidate or None
+
+
+def _derive_template_name(template: PromptTemplate) -> str:
+    default_name = _clean_template_name(template.default_path)
+    if default_name:
+        mapped = _SYSTEM_PROMPT_LABELS.get(default_name.lower())
+        return mapped or default_name
+    if template.created_by is None:
+        fallback = _SYSTEM_PROMPT_LABELS.get(template.phase_slug.lower())
+        if fallback:
+            return fallback
+        return template.phase_slug.replace("_", " ").title()
+    return template.id
 
 
 def _template_owned_by(template: PromptTemplate, tenant_id: str) -> bool:
@@ -180,6 +216,8 @@ def list_prompt_templates_endpoint(
                 else None,
                 "is_tenant_default": is_default,
                 "assignment_id": assignment.id if is_default else None,
+                "name": _derive_template_name(template),
+                "is_system": not tenant_specific,
             }
         )
 
@@ -220,10 +258,16 @@ def create_prompt_template(
         created_by = (
             str(created_by_value).strip() if created_by_value else current_tenant.id
         )
+        raw_default_path = payload.get("default_path")
+        default_path = None
+        if raw_default_path is not None:
+            candidate = str(raw_default_path).strip()
+            if candidate:
+                default_path = candidate
         template = PromptTemplate(
             phase_slug=phase_slug,
             agent=agent,
-            default_path=payload.get("default_path"),
+            default_path=default_path,
             created_by=created_by,
             content=content,
         )
@@ -284,6 +328,8 @@ def create_prompt_template(
                 "updated_at": template.updated_at.isoformat()
                 if template.updated_at
                 else None,
+                "name": _derive_template_name(template),
+                "is_system": _template_owned_by(template, current_tenant.id) is False,
             },
         }
         if assignment_record:
@@ -316,6 +362,9 @@ def update_prompt_template(
             raise HTTPException(status_code=403, detail="Forbidden for this template")
 
         template.content = content
+        if "default_path" in payload:
+            raw_name = payload.get("default_path")
+            template.default_path = (str(raw_name).strip() or None) if raw_name is not None else None
         template.updated_at = datetime.utcnow()
         session.add(template)
         session.commit()
@@ -1027,25 +1076,57 @@ def get_artifact_feedback(
     if not task or task.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Forbidden for this tenant")
 
-    rows = session.exec(
-        select(ArtifactFeedback)
-        .where(ArtifactFeedback.artifact_id == artifact_id)
-        .order_by(asc(ArtifactFeedback.version))
-    ).all()
+    stmt = (
+        select(ChatMessage)
+        .outerjoin(
+            ChatMessageArtifact,
+            ChatMessageArtifact.chat_message_id == ChatMessage.id,
+        )
+        .where(ChatMessage.tenant_id == tenant_id)
+        .where(ChatMessage.intent == ChatIntent.FEEDBACK)
+        .where(
+            or_(
+                ChatMessage.artifact_id == artifact_id,
+                ChatMessageArtifact.artifact_id == artifact_id,
+            )
+        )
+        .order_by(asc(ChatMessage.created_at), asc(ChatMessage.id))
+    )
+    rows = session.exec(stmt).unique().all()
 
-    # Return plain dicts – avoids Pydantic/ORM serialization surprises
-    return [
-        {
-            "id": f.id,
-            "artifact_id": f.artifact_id,
-            "tenant_id": f.tenant_id,
-            "author": f.author,
-            "version": f.version,
-            "content": f.content,
-            "created_at": getattr(f, "created_at", None),
-        }
-        for f in rows
-    ]
+    items: list[dict[str, Any]] = []
+    for index, message in enumerate(rows, start=1):
+        metadata = getattr(message, "metadata_", None)
+        if not isinstance(metadata, dict):
+            metadata = {}
+        author = metadata.get("author")
+        version_meta: int | None = None
+        if "version" in metadata:
+            try:
+                version_meta = int(metadata.get("version"))
+            except (TypeError, ValueError):
+                version_meta = None
+        version = version_meta or index
+        if not author:
+            if message.role == ChatRole.AGENT:
+                author = "Product Owner (AI)"
+            elif message.role == ChatRole.USER:
+                author = current_tenant.name
+            else:
+                author = message.role.value.title()
+        created_at = getattr(message, "created_at", None)
+        items.append(
+            {
+                "id": message.id,
+                "artifact_id": artifact_id,
+                "tenant_id": message.tenant_id,
+                "author": author,
+                "version": version,
+                "content": message.content,
+                "created_at": created_at.isoformat() if created_at else None,
+            }
+        )
+    return items
 
 
 def consistency_check(artifact: Artifact, session: Session) -> dict | None:
@@ -1169,27 +1250,62 @@ def post_artifact_feedback(
         raise HTTPException(status_code=403, detail="Forbidden for this tenant")
     purpose = session.get(Purpose, task.purpose_id)
 
-    # robust scalar max() to avoid row/tuple surprises
-    last_version = session.exec(
-        select(func.max(ArtifactFeedback.version)).where(
-            ArtifactFeedback.artifact_id == artifact_id
+    existing_messages = session.exec(
+        select(ChatMessage)
+        .outerjoin(
+            ChatMessageArtifact,
+            ChatMessageArtifact.chat_message_id == ChatMessage.id,
         )
-    ).first()
-    version = (last_version or 0) + 1
+        .where(ChatMessage.tenant_id == tenant_id)
+        .where(ChatMessage.intent == ChatIntent.FEEDBACK)
+        .where(
+            or_(
+                ChatMessage.artifact_id == artifact_id,
+                ChatMessageArtifact.artifact_id == artifact_id,
+            )
+        )
+    ).unique().all()
+    max_version = 0
+    fallback_messages = 0
+    for existing in existing_messages:
+        metadata_existing = getattr(existing, "metadata_", None)
+        if isinstance(metadata_existing, dict) and "version" in metadata_existing:
+            try:
+                value = int(metadata_existing.get("version"))
+            except (TypeError, ValueError):
+                continue
+            if value > max_version:
+                max_version = value
+        else:
+            fallback_messages += 1
+    if max_version == 0 and fallback_messages:
+        max_version = (fallback_messages + 1) // 2
+    version = max_version + 1
 
-    fb = ArtifactFeedback(
-        artifact_id=artifact_id,
+    feedback_message = ChatMessage(
         tenant_id=tenant_id,
-        author=author,
-        version=version,
+        purpose_id=purpose.id if purpose else None,
+        artifact_id=artifact_id,
+        task_id=artifact.task_id,
+        role=ChatRole.USER,
+        scope=ChatScope.ARTIFACT,
+        intent=ChatIntent.FEEDBACK,
         content=text,
+        metadata={"author": author, "version": version},
     )
     try:
-        session.add(fb)
+        session.add(feedback_message)
+        session.flush()
+        session.add(
+            ChatMessageArtifact(
+                chat_message_id=feedback_message.id,
+                artifact_id=artifact_id,
+            )
+        )
         session.commit()
-    except Exception as e:
+    except Exception as exc:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Failed to save feedback: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to save feedback: {exc}")
 
     trivial = {"ok", "fine", "okay", "thanks", "passt", "danke"}
     if text.lower() in trivial:
@@ -1219,14 +1335,25 @@ def post_artifact_feedback(
             logger.error("PRD update failed: %s", e)
         ai_reply = "Ich arbeite das ein."
 
-    ai_fb = ArtifactFeedback(
-        artifact_id=artifact_id,
+    ai_message = ChatMessage(
         tenant_id=tenant_id,
-        author="Product Owner (AI)",
+        purpose_id=purpose.id if purpose else None,
+        artifact_id=artifact_id,
+        task_id=artifact.task_id,
+        role=ChatRole.AGENT,
+        scope=ChatScope.ARTIFACT,
+        intent=ChatIntent.FEEDBACK,
         content=ai_reply,
-        version=version + 1,
+        metadata={"author": "Product Owner (AI)", "version": version},
     )
-    session.add(ai_fb)
+    session.add(ai_message)
+    session.flush()
+    session.add(
+        ChatMessageArtifact(
+            chat_message_id=ai_message.id,
+            artifact_id=artifact_id,
+        )
+    )
     session.commit()
     # Trigger consistency check for potentially impacted artifacts
     try:
