@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 
 revision: str = "20251006_migrate_artifactfeedback_to_chat"
-down_revision: Union[str, Sequence[str], None] = "20251004_artifact_release_flag"
+down_revision: Union[str, Sequence[str], None] = "20250928_add_agent_to_prompt_assignment"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
