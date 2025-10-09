@@ -10,6 +10,8 @@ from sqlalchemy import asc, desc, exists, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
+from ai_org_backend.api.chat import get_chat_messages as chat_get_messages
+from ai_org_backend.api.chat import post_chat as chat_post_message
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.db import engine
 from ai_org_backend.models import (
@@ -22,16 +24,11 @@ from ai_org_backend.models import (
     Tenant,
     TenantPromptAssignment,
 )
-from ai_org_backend.models.chat import (
-    ChatIntent,
-    ChatMessage,
-    ChatMessageArtifact,
-    ChatRole,
-    ChatScope,
-)
+from ai_org_backend.models.chat import ChatIntent
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
+from ai_org_backend.services.artifact_workflow import generate_prd_artifact
 from ai_org_backend.services.pipeline_templates import (
     ensure_template_for_purpose,
     instantiate_pipeline_for_purpose,
@@ -616,148 +613,6 @@ def _generate_vision_artifact(
     return vision_task, vision_content, artifact
 
 
-def _generate_prd_artifact(
-    purpose: Purpose, existing_task: Task | None = None
-) -> tuple[Task, str, Artifact | None]:
-    from ai_org_backend.agents.product_owner import run_requirements
-
-    tenant_id = purpose.tenant_id
-    logger.info(
-        "Starting PRD artefact generation for purpose %s (mode=%s)",
-        purpose.id,
-        purpose.mode,
-    )
-
-    with Session(engine) as session:
-        if existing_task:
-            prd_task = session.get(Task, existing_task.id) or existing_task
-        else:
-            prd_task = Task(
-                tenant_id=tenant_id,
-                purpose_id=purpose.id,
-                description="Product Requirements Document",
-                business_value=0.0,
-                tokens_plan=0,
-                purpose_relevance=1.0,
-            )
-            session.add(prd_task)
-            session.commit()
-            session.refresh(prd_task)
-
-    repo = Repo(tenant_id)
-    try:
-        prd_task = repo.update(
-            prd_task.id,
-            status="doing",
-            owner=TaskOwner.PRODUCT_OWNER,
-            notes="PRD in progress",
-        )
-    except Exception:
-        logger.exception("Failed to mark PRD task %s as in progress", prd_task.id)
-    prd_content = ""
-    try:
-        prd_content = run_requirements(purpose)
-    except Exception as exc:
-        logger.error("PRD agent failed for purpose %s: %s", purpose.id, exc)
-        try:
-            repo.update(
-                prd_task.id,
-                status="failed",
-                owner=TaskOwner.PRODUCT_OWNER,
-                notes=f"PRD agent error: {exc}",
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record PRD task failure for task %s", prd_task.id
-            )
-        raise
-
-    artifact: Artifact | None = None
-    repo_rel = "requirements/product_requirements_document.md"
-    try:
-        artifact = register_artefact(
-            prd_task.id,
-            prd_content.encode("utf-8"),
-            filename=repo_rel,
-            media_type="text/markdown",
-            allow_overwrite=True,
-        )
-        logger.info(
-            "PRD artefact %s stored for purpose %s (path=%s)",
-            artifact.id,
-            purpose.id,
-            artifact.repo_path,
-        )
-    except Exception as exc:
-        logger.exception(
-            "failed to persist artefact to workspace (%s): %s",
-            repo_rel,
-            exc,
-        )
-        try:
-            repo.update(
-                prd_task.id,
-                status="failed",
-                owner=TaskOwner.PRODUCT_OWNER,
-                notes=f"PRD save failed: {exc}",
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record PRD save error for task %s", prd_task.id
-            )
-        raise
-
-    try:
-        token_guess = max(1, len(prd_content) // 4)
-        budget_svc.debit(
-            purpose_id=purpose.id,
-            amount=token_guess,
-            reason="artifact:requirements",
-        )
-    except Exception as exc:
-        logger.warning("budget debit failed (non-fatal): %s", exc)
-
-    try:
-        repo.update(
-            prd_task.id,
-            status="done",
-            owner=TaskOwner.PRODUCT_OWNER,
-            notes="PRD completed",
-        )
-    except Exception:
-        logger.exception("Failed to update PRD task %s to done", prd_task.id)
-
-    if purpose.mode == "auto" and artifact:
-        released = False
-        release_error = False
-        try:
-            with Session(engine) as session:
-                art = session.get(Artifact, artifact.id)
-                if art:
-                    art.released = True
-                    session.add(art)
-                    session.commit()
-                    released = True
-                    artifact.released = True
-        except Exception:
-            release_error = True
-            logger.exception(
-                "Auto-release of PRD artefact %s failed for purpose %s",
-                artifact.id,
-                purpose.id,
-            )
-        if released:
-            logger.info(
-                "Auto-released PRD artefact %s for purpose %s", artifact.id, purpose.id
-            )
-        elif not release_error:
-            logger.warning(
-                "PRD artefact %s for purpose %s not auto-released", artifact.id, purpose.id
-            )
-
-    return prd_task, prd_content, artifact
-
-
 @router.post("/pause")
 def pause_pipeline(current_tenant: Tenant = Depends(get_current_tenant)):
     tenant_id = current_tenant.id
@@ -995,14 +850,14 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
             prd_content = _read_artifact_text(prd_art)
         elif purpose.mode == "auto":
             try:
-                _, prd_content, _ = _generate_prd_artifact(purpose, existing_prd)
+                _, prd_content, _ = generate_prd_artifact(purpose, existing_prd)
             except Exception as exc:
                 raise HTTPException(
                     status_code=500, detail=f"Requirements gathering failed: {exc}"
                 )
     elif purpose.mode == "auto":
         try:
-            _, prd_content, _ = _generate_prd_artifact(purpose)
+            _, prd_content, _ = generate_prd_artifact(purpose)
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail=f"Requirements gathering failed: {exc}"
@@ -1076,135 +931,49 @@ def get_artifact_feedback(
     if not task or task.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Forbidden for this tenant")
 
-    stmt = (
-        select(ChatMessage)
-        .outerjoin(
-            ChatMessageArtifact,
-            ChatMessageArtifact.chat_message_id == ChatMessage.id,
-        )
-        .where(ChatMessage.tenant_id == tenant_id)
-        .where(ChatMessage.intent == ChatIntent.FEEDBACK)
-        .where(
-            or_(
-                ChatMessage.artifact_id == artifact_id,
-                ChatMessageArtifact.artifact_id == artifact_id,
-            )
-        )
-        .order_by(asc(ChatMessage.created_at), asc(ChatMessage.id))
+    chat_messages = chat_get_messages(
+        purpose_id=task.purpose_id,
+        artifact_id=[artifact_id],
+        session=session,
+        current_tenant=current_tenant,
     )
-    rows = session.exec(stmt).unique().all()
+
+    def _resolve_version(message: dict[str, Any], fallback: int) -> int:
+        metadata = message.get("metadata")
+        version_value: Any | None = None
+        if isinstance(metadata, dict):
+            version_value = metadata.get("version")
+            if version_value is None:
+                artifact_versions = metadata.get("artifact_versions")
+                if isinstance(artifact_versions, dict):
+                    version_value = artifact_versions.get(artifact_id) or artifact_versions.get(
+                        str(artifact_id)
+                    )
+        if version_value is None:
+            return fallback
+        try:
+            return int(version_value)
+        except (TypeError, ValueError):
+            return fallback
 
     items: list[dict[str, Any]] = []
-    for index, message in enumerate(rows, start=1):
-        metadata = getattr(message, "metadata_", None)
-        if not isinstance(metadata, dict):
-            metadata = {}
-        author = metadata.get("author")
-        version_meta: int | None = None
-        if "version" in metadata:
-            try:
-                version_meta = int(metadata.get("version"))
-            except (TypeError, ValueError):
-                version_meta = None
-        version = version_meta or index
-        if not author:
-            if message.role == ChatRole.AGENT:
-                author = "Product Owner (AI)"
-            elif message.role == ChatRole.USER:
-                author = current_tenant.name
-            else:
-                author = message.role.value.title()
-        created_at = getattr(message, "created_at", None)
+    for index, message in enumerate(chat_messages, start=1):
+        version_value = _resolve_version(message, index)
         items.append(
             {
-                "id": message.id,
+                "id": message.get("id"),
                 "artifact_id": artifact_id,
-                "tenant_id": message.tenant_id,
-                "author": author,
-                "version": version,
-                "content": message.content,
-                "created_at": created_at.isoformat() if created_at else None,
+                "tenant_id": tenant_id,
+                "author": message.get("author"),
+                "role": message.get("role"),
+                "intent": message.get("intent"),
+                "version": version_value,
+                "content": message.get("content"),
+                "created_at": message.get("created_at"),
+                "metadata": message.get("metadata"),
             }
         )
     return items
-
-
-def consistency_check(artifact: Artifact, session: Session) -> dict | None:
-    impacted_ids: list[str] = []
-    impact_level = "low"
-    change_type = "informational"
-    followup_suggestion: str | None = None
-    task_desc = (artifact.task.description if artifact.task else "").lower()
-    repo_path = artifact.repo_path.lower()
-    if "product requirements" in task_desc or "product_requirements" in repo_path:
-        impact_level = "high"
-        change_type = "followup_needed"
-        arch_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
-            .where(Artifact.repo_path.ilike("%architecture_blueprint.md"))
-            .order_by(desc(Artifact.created_at))
-        ).first()
-        if arch_artifact:
-            impacted_ids.append(arch_artifact.id)
-        test_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
-            .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(desc(Artifact.created_at))
-        ).first()
-        if test_artifact:
-            impacted_ids.append(test_artifact.id)
-        ui_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
-            .where(Artifact.repo_path.ilike("%ui%"))
-            .order_by(desc(Artifact.created_at))
-        ).first()
-        if ui_artifact:
-            impacted_ids.append(ui_artifact.id)
-        if arch_artifact:
-            followup_suggestion = "Update architecture"
-        else:
-            followup_suggestion = "Create architecture"
-    elif "blueprint" in task_desc or "architecture_blueprint" in repo_path:
-        impact_level = "medium"
-        change_type = "followup_needed"
-        test_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
-            .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(desc(Artifact.created_at))
-        ).first()
-        if test_artifact:
-            impacted_ids.append(test_artifact.id)
-        followup_suggestion = "Review test cases"
-    elif "ui" in task_desc or "ui" in repo_path:
-        impact_level = "medium"
-        change_type = "informational"
-        test_artifact = session.exec(
-            select(Artifact)
-            .where(Artifact.task.has(purpose_id=artifact.task.purpose_id))
-            .where(Artifact.repo_path.ilike("%test%"))
-            .order_by(desc(Artifact.created_at))
-        ).first()
-        if test_artifact:
-            impacted_ids.append(test_artifact.id)
-        followup_suggestion = "Update UI tests"
-    elif "test" in task_desc or "test" in repo_path:
-        impact_level = "low"
-        change_type = "informational"
-        followup_suggestion = "Code anpassen"
-    else:
-        return None
-    return {
-        "betroffene_artefakte": impacted_ids,
-        "impact_level": impact_level,
-        "change_type": change_type,
-        "followup_suggestion": followup_suggestion,
-    }
-
-
 @router.post("/artifacts/{artifact_id}/feedback", tags=["artifacts"])
 def post_artifact_feedback(
     artifact_id: str,
@@ -1240,7 +1009,6 @@ def post_artifact_feedback(
     if not text:
         raise HTTPException(status_code=400, detail="Feedback content required")
 
-    # 2) Persist
     artifact = session.get(Artifact, artifact_id)
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
@@ -1248,131 +1016,30 @@ def post_artifact_feedback(
     task = session.get(Task, artifact.task_id)
     if not task or task.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Forbidden for this tenant")
+
     purpose = session.get(Purpose, task.purpose_id)
+    if not purpose:
+        raise HTTPException(status_code=404, detail="Purpose not found")
 
-    existing_messages = session.exec(
-        select(ChatMessage)
-        .outerjoin(
-            ChatMessageArtifact,
-            ChatMessageArtifact.chat_message_id == ChatMessage.id,
-        )
-        .where(ChatMessage.tenant_id == tenant_id)
-        .where(ChatMessage.intent == ChatIntent.FEEDBACK)
-        .where(
-            or_(
-                ChatMessage.artifact_id == artifact_id,
-                ChatMessageArtifact.artifact_id == artifact_id,
-            )
-        )
-    ).unique().all()
-    max_version = 0
-    fallback_messages = 0
-    for existing in existing_messages:
-        metadata_existing = getattr(existing, "metadata_", None)
-        if isinstance(metadata_existing, dict) and "version" in metadata_existing:
-            try:
-                value = int(metadata_existing.get("version"))
-            except (TypeError, ValueError):
-                continue
-            if value > max_version:
-                max_version = value
-        else:
-            fallback_messages += 1
-    if max_version == 0 and fallback_messages:
-        max_version = (fallback_messages + 1) // 2
-    version = max_version + 1
-
-    feedback_message = ChatMessage(
-        tenant_id=tenant_id,
-        purpose_id=purpose.id if purpose else None,
-        artifact_id=artifact_id,
-        task_id=artifact.task_id,
-        role=ChatRole.USER,
-        scope=ChatScope.ARTIFACT,
-        intent=ChatIntent.FEEDBACK,
-        content=text,
-        metadata={"author": author, "version": version},
-    )
-    try:
-        session.add(feedback_message)
-        session.flush()
-        session.add(
-            ChatMessageArtifact(
-                chat_message_id=feedback_message.id,
-                artifact_id=artifact_id,
-            )
-        )
-        session.commit()
-    except Exception as exc:
-        session.rollback()
-        raise HTTPException(status_code=400, detail=f"Failed to save feedback: {exc}")
-
-    trivial = {"ok", "fine", "okay", "thanks", "passt", "danke"}
-    if text.lower() in trivial:
-        ai_reply = "Understood, will apply."
+    intent_input = (payload.get("intent") or "").lower()
+    if intent_input in ChatIntent._value2member_map_:
+        intent = ChatIntent(intent_input)
     else:
-        from ai_org_backend.agents.product_owner import run_requirements_feedback
+        intent = ChatIntent.QUESTION if text.endswith("?") else ChatIntent.FEEDBACK
 
-        current_prd = ""
-        try:
-            file_path = resolve_for_read(artifact.repo_path)
-            current_prd = file_path.read_text(encoding="utf-8")
-        except Exception as e:
-            logger.warning("Failed to read existing PRD file: %s", e)
-            current_prd = ""
-        try:
-            updated_prd_md = run_requirements_feedback(
-                purpose, feedback=text, current_prd=current_prd
-            )
-            register_artefact(
-                artifact.task_id,
-                updated_prd_md.encode("utf-8"),
-                filename=artifact.repo_path,
-                media_type=artifact.media_type,
-                allow_overwrite=True,
-            )
-        except Exception as e:  # pragma: no cover - logging only
-            logger.error("PRD update failed: %s", e)
-        ai_reply = "Ich arbeite das ein."
-
-    ai_message = ChatMessage(
-        tenant_id=tenant_id,
-        purpose_id=purpose.id if purpose else None,
-        artifact_id=artifact_id,
-        task_id=artifact.task_id,
-        role=ChatRole.AGENT,
-        scope=ChatScope.ARTIFACT,
-        intent=ChatIntent.FEEDBACK,
-        content=ai_reply,
-        metadata={"author": "Product Owner (AI)", "version": version},
+    chat_payload = {
+        "message": text,
+        "purpose_id": purpose.id,
+        "artifact_ids": [artifact_id],
+        "intent": intent.value,
+    }
+    response = chat_post_message(
+        chat_payload, session=session, current_tenant=current_tenant
     )
-    session.add(ai_message)
-    session.flush()
-    session.add(
-        ChatMessageArtifact(
-            chat_message_id=ai_message.id,
-            artifact_id=artifact_id,
-        )
-    )
-    session.commit()
-    # Trigger consistency check for potentially impacted artifacts
-    try:
-        impacted = consistency_check(artifact, session)
-        if impacted:
-            agent_msg = ChatMessage(
-                tenant_id=tenant_id,
-                purpose_id=purpose.id if purpose else None,
-                artifact_id=None,
-                task_id=artifact.task_id,
-                role=ChatRole.AGENT,
-                content=json.dumps(impacted, ensure_ascii=False),
-            )
-            session.add(agent_msg)
-            session.commit()
-    except Exception as e:
-        logger.error("Consistency check failed: %s", e)
-
-    return {"status": "saved", "version": version}
+    status = response.get("status")
+    if not status:
+        status = "saved" if intent == ChatIntent.FEEDBACK else "ok"
+    return {"status": status}
 
 
 @router.post("/artifacts/{artifact_id}/approve", tags=["artifacts"])
@@ -1391,35 +1058,26 @@ def approve_artifact(
     purpose_id = task.purpose_id
     if artifact.released:
         raise HTTPException(status_code=409, detail="Artifact already released")
-    task_desc = (task.description or "").lower()
-    repo_path = (artifact.repo_path or "").lower()
-    is_vision_artifact = "vision" in task_desc or "vision" in repo_path
-    response_payload: dict[str, Any] = {"status": "approved"}
-    # Mark artifact as released to signal the Orchestrator to continue planning
-    artifact.released = True
-    session.add(artifact)
-    session.commit()
-    if is_vision_artifact:
-        purpose = session.get(Purpose, purpose_id)
-        if purpose:
-            existing_prd = session.exec(
-                select(Task)
-                .where(Task.purpose_id == purpose_id)
-                .where(Task.description.ilike("%Product Requirements Document%"))
-            ).first()
-            if not existing_prd:
-                try:
-                    _, _, prd_artifact = _generate_prd_artifact(purpose)
-                    if prd_artifact:
-                        response_payload["artifact_redirect_id"] = prd_artifact.id
-                        response_payload["artifact_redirect_url"] = f"/api/artifact/{prd_artifact.id}"
-                except Exception as exc:
-                    logger.error("PRD generation after vision approval failed: %s", exc)
-    try:
-        pool.delete(f"pause:{tenant_id}:{purpose_id}")
-    except Exception:
-        logger.error("Redis delete failed: could not resume purpose %s", purpose_id)
-    return response_payload
+
+    chat_response = chat_post_message(
+        {
+            "message": "Approval confirmed",  # descriptive placeholder
+            "purpose_id": purpose_id,
+            "artifact_ids": [artifact_id],
+            "intent": ChatIntent.APPROVAL.value,
+        },
+        session=session,
+        current_tenant=current_tenant,
+    )
+
+    payload: dict[str, Any] = {
+        "status": chat_response.get("status", "approved")
+    }
+    if chat_response.get("artifact_redirect_id"):
+        payload["artifact_redirect_id"] = chat_response["artifact_redirect_id"]
+    if chat_response.get("artifact_redirect_url"):
+        payload["artifact_redirect_url"] = chat_response["artifact_redirect_url"]
+    return payload
 
 
 @router.get("/artifact/{artifact_id}", tags=["artifacts"])
