@@ -94,22 +94,31 @@ def test_artifact_feedback_flow(monkeypatch):
         json={"content": "ok"},
     )
     assert r.status_code == 200
-    assert r.json()["version"] == 1
+    assert r.json()["status"] == "saved"
 
     qa_payload = {"answers": [{"question": "Q1?", "answer": "A1."}]}
     r = client.post(f"/api/artifacts/{artifact_id}/feedback", json=qa_payload)
     assert r.status_code == 200
-    assert r.json()["version"] == 2
+    assert r.json()["status"] == "saved"
 
     r = client.get(f"/api/artifacts/{artifact_id}/feedback")
     data = r.json()
     assert len(data) == 4
+    assert [entry["role"] for entry in data] == ["user", "assistant", "user", "assistant"]
     assert data[0]["content"] == "ok"
+    assert data[0]["intent"] == "feedback"
     assert data[0]["version"] == 1
-    assert data[1]["version"] == 1
-    assert data[2]["version"] == 2
-    assert data[3]["version"] == 2
+    assert data[0]["metadata"]["version"] == 1
+    assert data[1]["intent"] == "note"
+    assert data[1]["version"] == 2
+    assert data[1]["metadata"]["version"] == 2
+    assert data[2]["intent"] == "feedback"
     assert data[2]["content"] == json.dumps(qa_payload["answers"], ensure_ascii=False)
+    assert data[2]["version"] == 3
+    assert data[2]["metadata"]["version"] == 3
+    assert data[3]["intent"] == "note"
+    assert data[3]["version"] == 4
+    assert data[3]["metadata"]["version"] == 4
 
 
 def test_approval_creates_blueprint(monkeypatch, tmp_path):
@@ -194,7 +203,7 @@ def test_approval_creates_blueprint(monkeypatch, tmp_path):
         json={"content": "ok"},
     )
     assert r.status_code == 200
-    assert r.json()["version"] == 1
+    assert r.json()["status"] == "saved"
 
     r = client.post(f"/api/artifacts/{artifact_id}/approve")
     assert r.status_code == 200

@@ -76,10 +76,3 @@ export async function putJson<T = any>(
   });
   return resp.data as T;
 }
-
-export function approveArtifact(
-  id: string,
-  opts?: { signal?: AbortSignal },
-): Promise<{ status: string }> {
-  return postJson<{ status: string }>(`/artifacts/${id}/approve`, undefined, opts);
-}
