@@ -13,11 +13,13 @@ interface Artifact {
 }
 
 interface FeedbackEntry {
-  id: string;
-  version: number;
+  id?: string;
   content: string;
   created_at?: string;
   author?: string;
+  role?: 'user' | 'assistant' | 'agent';
+  intent?: 'feedback' | 'note' | 'question' | 'approval';
+  metadata?: Record<string, unknown> | null;
 }
 
 interface Props {
@@ -163,8 +165,16 @@ export default function ArtifactSection({
   useEffect(() => {
     let alive = true;
     async function load() {
+      if (!selectedPurposeId) {
+        setHistory([]);
+        return;
+      }
       try {
-        const r = await api.get(`/artifacts/${artifact.id}/feedback`);
+        const params = new URLSearchParams({
+          purpose_id: selectedPurposeId,
+          artifact_id: artifact.id,
+        });
+        const r = await api.get(`/chat/messages?${params.toString()}`);
         const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
         if (!alive) return;
         setHistory(list);
@@ -177,7 +187,7 @@ export default function ArtifactSection({
     return () => {
       alive = false;
     };
-  }, [artifact.id]);
+  }, [artifact.id, selectedPurposeId]);
 
   useEffect(() => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -188,16 +198,31 @@ export default function ArtifactSection({
       toast.error('Bitte einen Korrekturvorschlag eingeben.');
       return;
     }
+    if (!selectedPurposeId) {
+      toast.error('Kein Projekt ausgewählt.');
+      return;
+    }
     setSubmitting(true);
     setSubmitState('idle');
     const tId = toast.loading('Korrektur wird gespeichert …');
     try {
-      await api.post(`/artifacts/${artifact.id}/feedback`, { content: draft.trim() });
+      const message = draft.trim();
+      const intent = /\?\s*$/.test(message) ? 'question' : 'feedback';
+      await postJson(`/chat/messages`, {
+        purpose_id: selectedPurposeId,
+        artifact_ids: [artifact.id],
+        message,
+        intent,
+      });
       setDraft('');
       setSubmitState('ok');
       toast.success('Korrekturvorschlag gespeichert – Product Owner aktualisiert das PRD.', { id: tId });
       // neu laden
-      const r = await api.get(`/artifacts/${artifact.id}/feedback`);
+      const params = new URLSearchParams({
+        purpose_id: selectedPurposeId,
+        artifact_id: artifact.id,
+      });
+      const r = await api.get(`/chat/messages?${params.toString()}`);
       const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
       setHistory(list);
       await fetchVersionContent(selectedArtifactId);
@@ -214,9 +239,19 @@ export default function ArtifactSection({
     setSubmitting(true);
     const tId = toast.loading('Freigabe wird verarbeitet …');
     try {
-      const resp = await postJson<{ status: string; artifact_redirect_id?: string; artifact_redirect_url?: string }>(
-        `/artifacts/${artifact.id}/approve`
-      );
+      if (!selectedPurposeId) {
+        throw new Error('purpose_missing');
+      }
+      const resp = await postJson<{
+        status?: string;
+        artifact_redirect_id?: string;
+        artifact_redirect_url?: string;
+      }>(`/chat/messages`, {
+        purpose_id: selectedPurposeId,
+        artifact_ids: [artifact.id],
+        intent: 'approval',
+        message: 'Approved',
+      });
       setDraft('');
       setSubmitState('ok');
       toast.success('Freigegeben – Architektur wird erstellt & Plan erzeugt.', { id: tId });
@@ -249,6 +284,9 @@ export default function ArtifactSection({
   }
 
   function renderFeedback(fb: FeedbackEntry) {
+    if (!fb.content) {
+      return <p className="text-sm text-gray-500 italic">(kein Inhalt)</p>;
+    }
     try {
       const parsed = JSON.parse(fb.content);
       if (Array.isArray(parsed)) {
@@ -366,17 +404,50 @@ export default function ArtifactSection({
       {/* Feedback-Historie */}
       {history.length > 0 && isLatestVersion && (
         <div className="mb-3 p-3 border rounded bg-white space-y-3 max-h-60 overflow-y-auto">
-          {history.map((fb) => (
-            <div key={fb.id} className="border-b pb-2 last:border-b-0">
-              <div className="text-xs text-gray-600 mb-1">
-                {fb.author || 'User'}
-                {fb.created_at && (
-                  <span className="ml-1">{new Date(fb.created_at).toLocaleString()}</span>
-                )}
+          {history.map((fb, idx) => {
+            const key = fb.id ?? `${idx}`;
+            const intentLabel =
+              fb.intent === 'feedback'
+                ? 'Feedback'
+                : fb.intent === 'question'
+                ? 'Frage'
+                : fb.intent === 'approval'
+                ? 'Freigabe'
+                : fb.intent === 'note'
+                ? 'Notiz'
+                : null;
+            const authorLabel =
+              fb.author ||
+              (fb.role === 'assistant'
+                ? 'Product Owner (AI)'
+                : fb.role === 'agent'
+                ? 'Agent'
+                : 'Du');
+            const createdLabel = fb.created_at
+              ? new Date(fb.created_at).toLocaleString('de-DE', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })
+              : null;
+            const bubbleClass =
+              fb.role === 'user'
+                ? 'border-blue-200 bg-blue-50'
+                : fb.role === 'assistant'
+                ? 'border-green-200 bg-green-50'
+                : 'border-slate-200 bg-slate-50';
+            return (
+              <div key={key} className={`rounded border ${bubbleClass} p-2`}>
+                <div className="text-xs text-gray-600 mb-1 flex flex-wrap items-center gap-1">
+                  <span className="font-medium">{authorLabel}</span>
+                  {intentLabel && (
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500">{intentLabel}</span>
+                  )}
+                  {createdLabel && <span className="text-[11px] text-gray-500">{createdLabel}</span>}
+                </div>
+                {renderFeedback(fb)}
               </div>
-              {renderFeedback(fb)}
-            </div>
-          ))}
+            );
+          })}
           <div ref={historyEndRef} />
         </div>
       )}

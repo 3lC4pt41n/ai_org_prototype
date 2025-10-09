@@ -379,7 +379,15 @@ export default function PipelineView() {
     async (artifactId: string) => {
       const toastId = toast.loading('Artefakt wird freigegeben …');
       try {
-        await postJson(`/artifacts/${artifactId}/approve`, {});
+        if (!selectedPurposeId) {
+          throw new Error('purpose_missing');
+        }
+        await postJson(`/chat/messages`, {
+          purpose_id: selectedPurposeId,
+          artifact_ids: [artifactId],
+          intent: 'approval',
+          message: 'Approved',
+        });
         if (selectedPurposeId) {
           await fetchGraphAndStatus(selectedPurposeId);
         }

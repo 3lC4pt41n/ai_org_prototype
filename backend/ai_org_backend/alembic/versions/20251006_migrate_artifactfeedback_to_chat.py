@@ -131,6 +131,16 @@ def upgrade() -> None:
                 continue
 
             message_id = uuid.uuid4().hex[:8]
+            author = (row.get("author") or "").strip()
+            role = "user"
+            intent = "feedback"
+            lowered = author.lower()
+            if "agent" in lowered:
+                role = "agent"
+                intent = "note"
+            elif "ai" in lowered:
+                role = "assistant"
+                intent = "note"
             session.execute(
                 chatmessage.insert().values(
                     id=message_id,
@@ -138,12 +148,12 @@ def upgrade() -> None:
                     purpose_id=row.get("purpose_id"),
                     artifact_id=artifact_id,
                     task_id=row.get("task_id"),
-                    role="user",
+                    role=role,
                     scope="artifact",
-                    intent="feedback",
+                    intent=intent,
                     content=content,
                     metadata={
-                        "author": row.get("author"),
+                        "author": author or None,
                         "version": desired_version,
                         "legacy_feedback_id": row.get("id"),
                     },
