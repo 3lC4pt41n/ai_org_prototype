@@ -16,6 +16,7 @@ from sqlmodel import SQLModel
 import ai_org_backend.hooks.review_hook  # noqa: F401
 import ai_org_backend.hooks.tests_hook  # noqa: F401
 from ai_org_backend.api.agents import router as agent_router
+from ai_org_backend.api.artifact_bridge import router as artifact_bridge_router
 from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.chat import router as chat_router
 from ai_org_backend.api.chat import ws_router as chat_ws_router
@@ -97,6 +98,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(tmpl_router)
 app.include_router(agent_router)
+app.include_router(artifact_bridge_router)
 app.include_router(pipeline_router)
 app.include_router(settings_router)
 app.include_router(reviews_router)
