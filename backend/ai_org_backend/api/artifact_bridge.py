@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from importlib import import_module
 from importlib.util import find_spec
-from typing import Callable, Dict, Iterable, TypedDict
+from typing import Callable, Dict, Iterable
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlmodel import Session
 
@@ -62,10 +63,13 @@ get_session = _resolve_session_dependency()
 # ---------------------------------------------------------------------------
 
 
-class FeedbackIn(TypedDict, total=False):
-    message: str
-    role: str
-    intent: str
+class FeedbackBody(BaseModel):
+    content: str = Field(..., alias="message")
+    role: str | None = "user"
+    intent: str | None = "feedback"
+    scope: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +82,22 @@ class FeedbackIn(TypedDict, total=False):
 def get_artifact_by_id(artifact_id: str, session: Session = Depends(get_session)) -> Dict:
     """Return the stored representation of an artifact."""
 
-    query = text("SELECT * FROM artifact WHERE id = :id LIMIT 1")
+    query = text(
+        """
+        SELECT a.id,
+               a.task_id,
+               a.filename,
+               a.mime,
+               a.sha256,
+               a.created_at,
+               t.purpose_id,
+               p.tenant_id
+        FROM artifact AS a
+        JOIN task AS t ON t.id = a.task_id
+        JOIN purpose AS p ON p.id = t.purpose_id
+        WHERE a.id = :id
+        """
+    )
     result = session.execute(query, {"id": artifact_id}).mappings().first()
     if result is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
@@ -108,27 +127,37 @@ def get_feedback_for_artifact(artifact_id: str, session: Session = Depends(get_s
 @router.post("/artifacts/{artifact_id}/feedback", status_code=201)
 def post_feedback_for_artifact(
     artifact_id: str,
-    payload: FeedbackIn = Body(...),
+    body: FeedbackBody = Body(...),
     session: Session = Depends(get_session),
 ) -> Dict:
     """Store a feedback chat message and link it to the artifact."""
 
-    artifact_query = text("SELECT id, purpose_id FROM artifact WHERE id = :id")
-    artifact = session.execute(artifact_query, {"id": artifact_id}).mappings().first()
-    if artifact is None:
+    meta_query = text(
+        """
+        SELECT t.purpose_id,
+               p.tenant_id
+        FROM artifact AS a
+        JOIN task AS t ON t.id = a.task_id
+        JOIN purpose AS p ON p.id = t.purpose_id
+        WHERE a.id = :id
+        """
+    )
+    meta = session.execute(meta_query, {"id": artifact_id}).mappings().first()
+    if meta is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    message = (payload.get("message") or "").strip()
+    message = (body.content or "").strip()
     if not message:
-        raise HTTPException(status_code=422, detail="'message' is required")
+        raise HTTPException(status_code=422, detail="'content' is required")
 
-    role = (payload.get("role") or "user").strip() or "user"
-    intent = (payload.get("intent") or "feedback").strip() or "feedback"
+    role = (body.role or "user").strip() or "user"
+    intent = (body.intent or "feedback").strip() or "feedback"
+    scope = (body.scope or "artifact").strip() or "artifact"
 
     insert_message = text(
         """
-        INSERT INTO chatmessage (purpose_id, role, content, intent, created_at)
-        VALUES (:pid, :role, :content, :intent, NOW())
+        INSERT INTO chatmessage (purpose_id, tenant_id, role, content, intent, scope, created_at)
+        VALUES (:pid, :tid, :role, :content, :intent, :scope, NOW())
         RETURNING id
         """
     )
@@ -137,10 +166,12 @@ def post_feedback_for_artifact(
         message_id = session.execute(
             insert_message,
             {
-                "pid": artifact["purpose_id"],
+                "pid": meta["purpose_id"],
+                "tid": meta["tenant_id"],
                 "role": role,
                 "content": message,
                 "intent": intent,
+                "scope": scope,
             },
         ).scalar_one()
     except Exception as exc:  # pragma: no cover - database schema mismatch
