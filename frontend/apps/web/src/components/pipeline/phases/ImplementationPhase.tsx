@@ -2,8 +2,6 @@ import GraphSection from '../../GraphSection';
 import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
-console.log("Loading ImplementationPhase module");
-
 const STATUS_ORDER = [
   'doing',
   'todo',
