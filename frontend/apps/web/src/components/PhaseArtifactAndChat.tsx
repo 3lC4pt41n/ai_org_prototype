@@ -1,279 +1,270 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'react-hot-toast';
 import {
-  listArtifactsByPurpose,
   getArtifactById,
-  getFeedbackForArtifact,
-  postFeedbackForArtifact,
+  listArtifactsByPurpose,
   type ArtifactDetails,
-  type ArtifactFeedbackMessage,
+  type ArtifactSummary,
 } from '../api/api.artifacts';
+import { extractCreatedAt } from '../lib/datetime';
+import { usePipelineCopy } from '../i18n/pipeline';
+import ChatPanelContainer from './pipeline/ChatPanelContainer';
+import { type ArtifactChatContext } from './AImarChatPanel';
+import PhaseArtifactPreview, {
+  type PhaseArtifactPreviewData,
+} from './pipeline/PhaseArtifactPreview';
 
-type PhaseArtifactAndChatProps = {
-  purposeId: string;
-  phaseKey?: string;
+export type PreviousArtifactConfig = {
+  id: string;
+  title: string;
+  phaseLabel?: string;
 };
 
-export default function PhaseArtifactAndChat({ purposeId, phaseKey }: PhaseArtifactAndChatProps) {
-  const [artifactId, setArtifactId] = useState<string | null>(null);
-  const [artifact, setArtifact] = useState<ArtifactDetails | null>(null);
-  const [messages, setMessages] = useState<ArtifactFeedbackMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingArtifact, setIsLoadingArtifact] = useState(false);
-  const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
-  const endRef = useRef<HTMLDivElement | null>(null);
+type PhaseArtifactAndChatProps = {
+  purposeId: string | null;
+  phaseKey: string;
+  phaseTitle: string;
+  artifactId?: string | null;
+  artifactName?: string | null;
+  paused?: boolean;
+  previousArtifacts?: PreviousArtifactConfig[];
+  emptyMessage?: string;
+  onApproved?: () => void;
+};
 
-  // Wähle automatisch das relevante Artefakt der Phase (oder neuestes als Fallback)
+function normalizeArtifact(details: ArtifactDetails | null): PhaseArtifactPreviewData | null {
+  if (!details) return null;
+  return {
+    id: details.id,
+    name: details.name ?? null,
+    path: details.path ?? null,
+    content: details.content ?? null,
+    text: details.text ?? null,
+    markdown: details.markdown ?? null,
+    url: details.url ?? null,
+    media_type: (details as any).media_type ?? null,
+    released: details.released ?? false,
+    created_at: details.created_at ?? null,
+  };
+}
+
+function buildArtifactTitle(
+  explicitName: string | null | undefined,
+  artifact: PhaseArtifactPreviewData | null,
+  phaseTitle: string,
+): string {
+  if (explicitName && explicitName.trim().length > 0) return explicitName;
+  if (artifact?.name && artifact.name.trim().length > 0) return artifact.name;
+  if (artifact?.path) {
+    const filename = artifact.path.split('/').pop();
+    if (filename) return filename;
+  }
+  return `${phaseTitle}-Artefakt`;
+}
+
+export default function PhaseArtifactAndChat({
+  purposeId,
+  phaseKey,
+  phaseTitle,
+  artifactId,
+  artifactName,
+  paused = false,
+  previousArtifacts = [],
+  emptyMessage = 'Noch kein Artefakt für diese Phase vorhanden.',
+  onApproved,
+}: PhaseArtifactAndChatProps) {
+  const { artifactPreview, chat } = usePipelineCopy();
+  const [resolvedArtifactId, setResolvedArtifactId] = useState<string | null>(artifactId ?? null);
+  const [currentDetails, setCurrentDetails] = useState<ArtifactDetails | null>(null);
+  const [isLoadingCurrent, setIsLoadingCurrent] = useState<boolean>(false);
+  const [autoSelectLoading, setAutoSelectLoading] = useState<boolean>(false);
+  const [prevDetails, setPrevDetails] = useState<
+    Array<{ config: PreviousArtifactConfig; details: ArtifactDetails | null; loading: boolean }>
+  >([]);
+
   useEffect(() => {
+    setResolvedArtifactId(artifactId ?? null);
+  }, [artifactId]);
+
+  useEffect(() => {
+    if (artifactId || !purposeId) return;
     let canceled = false;
-    setIsLoadingArtifact(true);
-    setIsLoadingFeedback(true);
-    async function selectArtifact() {
+    setAutoSelectLoading(true);
+    async function pickLatestArtifact() {
       try {
         const list = await listArtifactsByPurpose(purposeId);
         if (canceled) return;
         if (!list.length) {
-          setArtifactId(null);
-          setIsLoadingArtifact(false);
-          setIsLoadingFeedback(false);
+          setResolvedArtifactId(null);
           return;
         }
-        const toTimestamp = (value?: string | null) => {
-          if (!value) return -Infinity;
-          const ts = new Date(value).getTime();
-          return Number.isNaN(ts) ? -Infinity : ts;
-        };
-        const sorted = [...list].sort((a, b) => toTimestamp(a.created_at ?? a.createdAt) - toTimestamp(b.created_at ?? b.createdAt));
-        // Finde Artefakt mit passendem Namen zum Phasenschlüssel
-        let best = sorted[sorted.length - 1];
-        if (phaseKey) {
-          const phaseNeedle = phaseKey.toLowerCase();
-          const match = sorted.find(a => (a.name || a.path || '').toLowerCase().includes(phaseNeedle));
-          if (match) best = match;
-        }
-        setArtifactId((prev) => {
-          if (prev === best.id) {
-            setIsLoadingArtifact(false);
-            setIsLoadingFeedback(false);
-            return prev;
-          }
-          return best.id;
+        const sorted = [...list].sort((a, b) => {
+          const aTs = new Date(extractCreatedAt(a) ?? 0).getTime();
+          const bTs = new Date(extractCreatedAt(b) ?? 0).getTime();
+          return aTs - bTs;
         });
+        const phaseNeedle = phaseKey.toLowerCase();
+        const match = sorted.find((item) => {
+          const candidate = (item.name || (item as ArtifactSummary).path || '').toLowerCase();
+          return candidate.includes(phaseNeedle);
+        });
+        const best = match ?? sorted[sorted.length - 1];
+        setResolvedArtifactId(best.id);
       } catch (error) {
-        console.error('Unable to select artifact', error);
+        console.error('Unable to auto-select artifact', error);
         if (!canceled) {
-          setArtifactId(null);
-          setIsLoadingArtifact(false);
-          setIsLoadingFeedback(false);
-        }
-      }
-    }
-    selectArtifact();
-    return () => { canceled = true; };
-  }, [purposeId, phaseKey]);
-
-  // Lade Artefakt-Details und zugehörige Chat-Verlauf
-  useEffect(() => {
-    if (!artifactId) {
-      setArtifact(null);
-      setMessages([]);
-      setIsLoadingArtifact(false);
-      setIsLoadingFeedback(false);
-      return;
-    }
-    let canceled = false;
-    setIsLoadingArtifact(true);
-    setIsLoadingFeedback(true);
-    async function loadArtifactAndFeedback() {
-      try {
-        const [artifactDetails, feedback] = await Promise.all([
-          getArtifactById(artifactId),
-          getFeedbackForArtifact(artifactId),
-        ]);
-        if (canceled) return;
-        setArtifact(artifactDetails);
-        setMessages(feedback);
-      } catch (error) {
-        console.error('Fehler beim Laden des Artefakts oder Feedbacks', error);
-        if (!canceled) {
-          setArtifact(null);
-          setMessages([]);
+          toast.error(artifactPreview.loadError);
+          setResolvedArtifactId(null);
         }
       } finally {
         if (!canceled) {
-          setIsLoadingArtifact(false);
-          setIsLoadingFeedback(false);
+          setAutoSelectLoading(false);
         }
       }
     }
-    loadArtifactAndFeedback();
-    return () => { canceled = true; };
-  }, [artifactId]);
-
-  // Automatisch ans Ende scrollen, wenn neue Nachrichten eintreffen
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
-
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || !artifactId) return;
-    setIsSubmitting(true);
-    const optimisticId = `temp-${Date.now()}`;
-    const optimisticMessage: ArtifactFeedbackMessage = {
-      id: optimisticId,
-      intent: 'feedback',
-      content: text,
-      created_at: new Date().toISOString(),
-      role: 'user',
+    void pickLatestArtifact();
+    return () => {
+      canceled = true;
     };
-    setMessages((prev) => [...prev, optimisticMessage]);
+  }, [artifactId, purposeId, phaseKey]);
+
+  useEffect(() => {
+    if (!resolvedArtifactId) {
+      setCurrentDetails(null);
+      setIsLoadingCurrent(false);
+      return;
+    }
+    let canceled = false;
+    setIsLoadingCurrent(true);
+    async function loadDetails() {
+      try {
+        const details = await getArtifactById(resolvedArtifactId);
+        if (!canceled) {
+          setCurrentDetails(details);
+        }
+      } catch (error) {
+        console.error('Unable to load artifact details', error);
+        if (!canceled) {
+          toast.error(artifactPreview.loadError);
+          setCurrentDetails(null);
+        }
+      } finally {
+        if (!canceled) {
+          setIsLoadingCurrent(false);
+        }
+      }
+    }
+    void loadDetails();
+    return () => {
+      canceled = true;
+    };
+  }, [resolvedArtifactId]);
+
+  useEffect(() => {
+    if (!previousArtifacts.length) {
+      setPrevDetails([]);
+      return;
+    }
+    let canceled = false;
+    setPrevDetails(previousArtifacts.map((config) => ({ config, details: null, loading: true })));
+    async function loadPrevious() {
+      try {
+        const results = await Promise.all(
+          previousArtifacts.map(async (config) => {
+            try {
+              const details = await getArtifactById(config.id);
+              return { config, details, loading: false } as const;
+            } catch (error) {
+              console.error('Unable to load referenced artifact', error);
+              toast.error(artifactPreview.previousLoadError);
+              return { config, details: null, loading: false } as const;
+            }
+          }),
+        );
+        if (!canceled) {
+          setPrevDetails(results);
+        }
+      } catch (error) {
+        console.error('Unable to load previous artifacts', error);
+        if (!canceled) {
+          toast.error(artifactPreview.previousLoadError);
+          setPrevDetails(previousArtifacts.map((config) => ({ config, details: null, loading: false })));
+        }
+      }
+    }
+    void loadPrevious();
+    return () => {
+      canceled = true;
+    };
+  }, [
+    JSON.stringify(
+      previousArtifacts.map((item) => ({
+        id: item.id,
+        title: item.title,
+        phaseLabel: item.phaseLabel ?? '',
+      })),
+    ),
+  ]);
+
+  const normalizedCurrent = useMemo(() => normalizeArtifact(currentDetails), [currentDetails]);
+  const artifactTitle = useMemo(
+    () => buildArtifactTitle(artifactName, normalizedCurrent, phaseTitle),
+    [artifactName, normalizedCurrent, phaseTitle],
+  );
+  const resolvedEmptyMessage = emptyMessage ?? artifactPreview.defaultEmptyMessage;
+
+  async function refreshCurrentArtifact() {
+    if (!resolvedArtifactId) return;
     try {
-      setInput('');
-      setIsLoadingFeedback(true);
-      await postFeedbackForArtifact(artifactId, text);
-      const [feedback, updatedArtifact] = await Promise.all([
-        getFeedbackForArtifact(artifactId),
-        getArtifactById(artifactId),
-      ]);
-      setMessages(feedback);
-      setArtifact(prev => updatedArtifact ?? prev);
+      const details = await getArtifactById(resolvedArtifactId);
+      setCurrentDetails(details);
     } catch (error) {
-      console.error('Fehler beim Senden der Rückmeldung', error);
-      setMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
-      setInput(text);
-    } finally {
-      setIsSubmitting(false);
-      setIsLoadingFeedback(false);
+      console.error('Unable to refresh artifact', error);
+      toast.error(artifactPreview.refreshError);
     }
   }
 
-  async function handleApprove() {
-    if (!artifactId) return;
-    setIsSubmitting(true);
-    try {
-      setIsLoadingFeedback(true);
-      await postFeedbackForArtifact(artifactId, 'Approved', 'approval');
-      const [feedback, updatedArtifact] = await Promise.all([
-        getFeedbackForArtifact(artifactId),
-        getArtifactById(artifactId),
-      ]);
-      setMessages(feedback);
-      setArtifact(prev => updatedArtifact ?? (prev ? { ...prev, released: true } : prev));
-    } catch (error) {
-      console.error('Fehler bei Freigabe', error);
-    } finally {
-      setIsSubmitting(false);
-      setIsLoadingFeedback(false);
-    }
-  }
-
-  function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      void handleSend();
-    }
-  }
-
-  const hasMessages = messages.length > 0;
+  const artifactContext: ArtifactChatContext | null = resolvedArtifactId
+    ? {
+        artifactId: resolvedArtifactId,
+        artifactTitle,
+        phaseLabel: `Phase: ${phaseTitle}`,
+        phaseKey,
+        artifactReleased: normalizedCurrent?.released,
+      }
+    : null;
 
   return (
-    <div className="mb-6">
-      {isLoadingArtifact ? (
-        <p className="mb-4 text-sm text-gray-500 flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
-          Artefakt wird geladen…
-        </p>
-      ) : artifact ? (
-        <>
-          <h2 className="text-base font-semibold mb-2">
-            {artifact.name || artifact.path || 'Artefakt'}
-          </h2>
-          {(artifact.content || artifact.text || artifact.markdown) ? (
-            <pre className="mb-4 p-3 border rounded bg-gray-50 overflow-x-auto whitespace-pre-wrap">
-              {artifact.content || artifact.text || artifact.markdown}
-            </pre>
-          ) : (
-            <p className="mb-4 italic text-sm text-gray-500">Kein Artefakt-Inhalt verfügbar.</p>
-          )}
-        </>
-      ) : (
-        <p className="mb-4 text-sm text-gray-500">Kein Artefakt verfügbar.</p>
-      )}
+    <div className="space-y-6">
+      {prevDetails.map(({ config, details, loading }) => (
+        <PhaseArtifactPreview
+          key={config.id}
+          title={config.title}
+          phaseLabel={config.phaseLabel ?? `Phase: ${config.title}`}
+          artifact={normalizeArtifact(details)}
+          isLoading={loading}
+          readOnly
+          emptyMessage={artifactPreview.previousLoadError}
+        />
+      ))}
 
-      {artifact && (
-        <div className="mb-4">
-          <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
-            <span>Chat-Verlauf</span>
-            {isLoadingFeedback && (
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
-                Lädt…
-              </span>
-            )}
-          </div>
-          <div className="p-3 border rounded bg-white max-h-60 overflow-y-auto">
-            {hasMessages ? (
-              messages.map((msg, idx) => {
-                const timestamp = msg.created_at ?? msg.createdAt ?? null;
-                const body = msg.content ?? msg.text ?? msg.markdown ?? '';
-                return (
-                  <div key={msg.id ?? `msg-${idx}`} className="mb-2 last:mb-0">
-                    <div className="text-xs text-gray-600 mb-1">
-                      {msg.intent === 'question' ? '[Frage]' : msg.intent === 'approval' ? '[Freigabe]' : '[Feedback]'}
-                      {timestamp && (
-                        <> – {new Date(timestamp).toLocaleString('de-DE')}</>
-                      )}
-                    </div>
-                    <div className="whitespace-pre-wrap text-sm">
-                      {body || <span className="italic text-gray-500">(kein Inhalt)</span>}
-                    </div>
-                  </div>
-                );
-              })
-            ) : isLoadingFeedback ? (
-              <p className="text-sm text-gray-500">Nachrichten werden geladen…</p>
-            ) : (
-              <p className="text-sm text-gray-500">Noch keine Nachrichten für diese Phase.</p>
-            )}
-            <div ref={endRef} />
-          </div>
-        </div>
-      )}
+      <PhaseArtifactPreview
+        title={artifactTitle}
+        phaseLabel={`Phase: ${phaseTitle}`}
+        artifact={normalizedCurrent}
+        isLoading={isLoadingCurrent || autoSelectLoading}
+        emptyMessage={resolvedEmptyMessage}
+      />
 
-      {artifact && !artifact.released && (
-        <div className="p-3 border rounded bg-white">
-          <label className="block text-sm font-medium mb-1">Feedback / Rückfrage</label>
-          <textarea
-            rows={3}
-            className="w-full p-2 border rounded text-sm"
-            placeholder="Schreibe eine Rückmeldung oder Frage zur Phase…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleInputKeyDown}
-          />
-          <div className="mt-2 flex gap-2">
-            <button
-              className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
-              onClick={handleSend}
-              disabled={isSubmitting || !input.trim()}
-            >
-              Senden
-            </button>
-            <button
-              className="px-3 py-1 bg-green-600 text-white rounded text-sm disabled:opacity-50"
-              onClick={handleApprove}
-              disabled={isSubmitting}
-            >
-              Freigeben
-            </button>
-          </div>
-        </div>
-      )}
-
-      {artifact?.released && (
-        <p className="p-3 mt-2 border rounded bg-green-50 text-green-700 text-sm">Phase wurde freigegeben.</p>
-      )}
+      <ChatPanelContainer
+        title={chat.heading}
+        description={chat.description}
+        purposeId={purposeId}
+        paused={paused}
+        artifactContext={artifactContext}
+        onFeedbackSubmitted={refreshCurrentArtifact}
+        onArtifactApproved={onApproved}
+      />
     </div>
   );
 }
