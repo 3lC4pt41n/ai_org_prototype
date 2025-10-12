@@ -3,7 +3,6 @@ import type { PhaseViewContext } from '../types';
 
 export function PrdPhaseContent({
   prdArtifact,
-  prdAwaitingApproval,
   onPrdApproved,
   selectedPurposeId,
   paused,
@@ -29,7 +28,7 @@ export function PrdPhaseContent({
         paused={paused}
         previousArtifacts={previousArtifacts}
         emptyMessage="Die Produktanforderung ist noch nicht verfügbar. Sobald AImar das Artefakt erstellt hat, erscheint es hier vollständig."
-        onApproved={prdAwaitingApproval ? onPrdApproved : undefined}
+        onApproved={() => onPrdApproved?.({})}
       />
     </div>
   );
