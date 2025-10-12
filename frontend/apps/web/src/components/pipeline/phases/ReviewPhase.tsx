@@ -16,7 +16,7 @@ export function ReviewPhaseContent(ctx: PhaseViewContext) {
       purposeId={selectedPurposeId}
       phaseKey="review"
       phaseTitle="Review"
-      artifactId={archArtifact?.id}
+      artifact={archArtifact}
       artifactName={archArtifact ? 'Architektur-Blueprint' : undefined}
       paused={paused}
       previousArtifacts={previousArtifacts}
