@@ -32,7 +32,7 @@ export function ArchitecturePhaseContent({
         purposeId={selectedPurposeId}
         phaseKey="architecture"
         phaseTitle="Architektur"
-        artifactId={archArtifact?.id}
+        artifact={archArtifact}
         artifactName={archArtifact ? 'Architektur-Blueprint' : undefined}
         paused={paused}
         previousArtifacts={previousArtifacts}

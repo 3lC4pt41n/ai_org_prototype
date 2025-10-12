@@ -29,7 +29,7 @@ export function VisionPhaseContent({
         purposeId={selectedPurposeId}
         phaseKey="vision"
         phaseTitle="Vision"
-        artifactId={visionArtifact?.id}
+        artifact={visionArtifact}
         artifactName={visionArtifact ? 'Projektvision' : undefined}
         paused={paused}
         emptyMessage="Die Vision ist noch in Arbeit. Sobald ein Artefakt erstellt wurde, erscheint es hier vollständig."
