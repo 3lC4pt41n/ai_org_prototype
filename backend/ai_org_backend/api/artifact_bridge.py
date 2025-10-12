@@ -86,8 +86,8 @@ def get_artifact_by_id(artifact_id: str, session: Session = Depends(get_session)
         """
         SELECT a.id,
                a.task_id,
-               a.filename,
-               a.mime,
+               a.repo_path AS filename,
+               a.media_type AS mime,
                a.sha256,
                a.created_at,
                t.purpose_id,

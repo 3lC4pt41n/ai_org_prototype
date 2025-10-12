@@ -165,7 +165,7 @@ export default function ArtifactSection({
   useEffect(() => {
     let alive = true;
     async function load() {
-      if (!selectedPurposeId) {
+      if (!selectedPurposeId || !showFeedback) {
         setHistory([]);
         return;
       }
@@ -187,7 +187,7 @@ export default function ArtifactSection({
     return () => {
       alive = false;
     };
-  }, [artifact.id, selectedPurposeId]);
+  }, [artifact.id, selectedPurposeId, showFeedback]);
 
   useEffect(() => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -402,7 +402,7 @@ export default function ArtifactSection({
       </div>
 
       {/* Feedback-Historie */}
-      {history.length > 0 && isLatestVersion && (
+      {showFeedback && history.length > 0 && isLatestVersion && (
         <div className="mb-3 p-3 border rounded bg-white space-y-3 max-h-60 overflow-y-auto">
           {history.map((fb, idx) => {
             const key = fb.id ?? `${idx}`;
