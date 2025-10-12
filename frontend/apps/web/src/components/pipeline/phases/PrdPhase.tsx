@@ -1,4 +1,4 @@
-import PhaseArtifactAndChat, { type PreviousArtifactConfig } from '../../PhaseArtifactAndChat';
+import PhaseArtifactAndChat from '../../PhaseArtifactAndChat';
 import type { PhaseViewContext } from '../types';
 
 export function PrdPhaseContent({
@@ -7,27 +7,17 @@ export function PrdPhaseContent({
   onPrdApproved,
   selectedPurposeId,
   paused,
-  visionArtifact,
 }: PhaseViewContext) {
-  const previousArtifacts: PreviousArtifactConfig[] = [];
-  if (visionArtifact?.id) {
-    previousArtifacts.push({
-      id: visionArtifact.id,
-      title: 'Projektvision',
-      phaseLabel: 'Phase: Vision',
-    });
-  }
-
   return (
     <div className="space-y-6">
       <PhaseArtifactAndChat
         purposeId={selectedPurposeId}
         phaseKey="prd"
         phaseTitle="Produktanforderung"
-        artifactId={prdArtifact?.id}
+        artifact={prdArtifact}
         artifactName={prdArtifact ? 'Produktanforderung' : undefined}
         paused={paused}
-        previousArtifacts={previousArtifacts}
+        hidePrevious
         emptyMessage="Die Produktanforderung ist noch nicht verfügbar. Sobald AImar das Artefakt erstellt hat, erscheint es hier vollständig."
         onApproved={prdAwaitingApproval ? onPrdApproved : undefined}
       />

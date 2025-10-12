@@ -23,7 +23,7 @@ export function ArchitectureReviewPhaseContent(ctx: PhaseViewContext) {
       purposeId={selectedPurposeId}
       phaseKey="architecture_review"
       phaseTitle="Architektur-Review"
-      artifactId={architectureReviewArtifact?.id}
+      artifact={architectureReviewArtifact}
       artifactName={architectureReviewArtifact ? 'Architektur & Domain Review' : undefined}
       paused={paused}
       previousArtifacts={previousArtifacts}
