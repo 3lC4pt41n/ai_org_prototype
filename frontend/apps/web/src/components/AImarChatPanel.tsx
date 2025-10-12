@@ -50,11 +50,13 @@ function ArtifactChatPanel({
   paused = false,
   onFeedbackSubmitted,
   onArtifactApproved,
+  purposeId,
 }: {
   context: ArtifactChatContext;
   paused?: boolean;
   onFeedbackSubmitted?: () => void;
   onArtifactApproved?: () => void;
+  purposeId: string;
 }) {
   const { artifactId, artifactTitle, phaseLabel, artifactReleased } = context;
   const { chat } = usePipelineCopy();
@@ -144,6 +146,23 @@ function ArtifactChatPanel({
         await postFeedbackForArtifact(artifactId, text || 'Approved', 'approval');
       } else {
         await postFeedbackForArtifact(artifactId, text, intent);
+      }
+
+      if (intent === 'approval') {
+        await postJson('/chat/messages', {
+          purpose_id: purposeId,
+          artifact_ids: [artifactId],
+          intent: 'approval',
+          message: text || 'Approved',
+        });
+      } else {
+        const messageIntent = /\?\s*$/.test(text) ? 'question' : intent;
+        await postJson('/chat/messages', {
+          purpose_id: purposeId,
+          artifact_ids: [artifactId],
+          intent: messageIntent,
+          message: text,
+        });
       }
       setInput('');
       shouldAutoScrollRef.current = true;
@@ -740,6 +759,7 @@ export default function AImarChatPanel(props: ChatPanelProps) {
         paused={props.paused}
         onFeedbackSubmitted={props.onFeedbackSubmitted}
         onArtifactApproved={props.onArtifactApproved}
+        purposeId={purposeId}
       />
     );
   }
