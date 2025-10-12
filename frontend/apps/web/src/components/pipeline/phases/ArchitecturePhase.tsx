@@ -1,34 +1,48 @@
-import PhaseArtifactAndChat, { type PreviousArtifactConfig } from '../../PhaseArtifactAndChat';
+import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function ArchitecturePhaseContent({
   archArtifact,
+  archStatusIcon,
+  architectureAwaitingApproval,
   onArchitectureApproved,
   prdArtifact,
   selectedPurposeId,
   paused,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
-  const previousArtifacts: PreviousArtifactConfig[] = [];
-  if (prdArtifact?.id) {
-    previousArtifacts.push({
-      id: prdArtifact.id,
-      title: 'Produktanforderung',
-      phaseLabel: 'Phase: Produktanforderung',
-    });
-  }
-
   return (
     <div className="space-y-6">
-      <PhaseArtifactAndChat
+      {archArtifact ? (
+        <ArtifactSection
+          title="Architektur"
+          artifact={archArtifact}
+          statusIcon={archStatusIcon}
+          showFeedback={architectureAwaitingApproval}
+          onApproved={onArchitectureApproved}
+        />
+      ) : (
+        <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Architektur in Vorbereitung</h3>
+          <p className="mt-2">
+            Das Architektur-Blueprint ist noch nicht verfügbar. Sobald die Modellierung abgeschlossen ist, kannst du hier Feedback geben.
+          </p>
+          {prdArtifact && (
+            <p className="mt-2">
+              Die Produktanforderung liegt bereits vor und dient als Grundlage für die Architekturphase.
+            </p>
+          )}
+        </section>
+      )}
+      <ChatPanelContainer
+        title="Rückfragen zur Architektur"
+        description="Besprich technische Annahmen oder kläre Änderungswünsche. Der Chat bleibt verfügbar, auch wenn der Fokus auf dem Blueprint liegt."
         purposeId={selectedPurposeId}
-        phaseKey="architecture"
-        phaseTitle="Architektur"
-        artifactId={archArtifact?.id}
-        artifactName={archArtifact ? 'Architektur-Blueprint' : undefined}
         paused={paused}
-        previousArtifacts={previousArtifacts}
-        emptyMessage="Der Architekturentwurf ist noch in Arbeit. Sobald ein Artefakt vorliegt, wird der vollständige Inhalt hier angezeigt."
-        onApproved={() => onArchitectureApproved?.({})}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
       />
     </div>
   );

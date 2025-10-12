@@ -1,24 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson, API_BASE } from '../lib/api';
 import usePipelineStore from '../store/pipelineStore';
-import {
-  getFeedbackForArtifact,
-  postFeedbackForArtifact,
-  type ArtifactFeedbackMessage,
-} from '../api/api.artifacts';
-import { formatDateTime } from '../lib/datetime';
-import { usePipelineCopy } from '../i18n/pipeline';
-
-export interface ArtifactChatContext {
-  artifactId: string;
-  artifactTitle: string;
-  phaseLabel?: string;
-  phaseKey?: string;
-  artifactReleased?: boolean;
-}
 
 enum ChatRole {
   USER = 'user',
@@ -35,253 +20,14 @@ interface Message {
   artifact_ids?: string[];
 }
 
-export interface ChatPanelProps {
-  purposeId: string | null;
+interface ChatPanelProps {
+  purposeId: string;
   paused?: boolean;
   filterValue?: string;
   onFilterValueChange?: (value: string) => void;
-  artifactContext?: ArtifactChatContext | null;
-  onFeedbackSubmitted?: () => void;
-  onArtifactApproved?: () => void;
 }
 
-function ArtifactChatPanel({
-  context,
-  paused = false,
-  onFeedbackSubmitted,
-  onArtifactApproved,
-}: {
-  context: ArtifactChatContext;
-  paused?: boolean;
-  onFeedbackSubmitted?: () => void;
-  onArtifactApproved?: () => void;
-}) {
-  const { artifactId, artifactTitle, phaseLabel, artifactReleased } = context;
-  const { chat } = usePipelineCopy();
-  const [messages, setMessages] = useState<ArtifactFeedbackMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [input, setInput] = useState('');
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const shouldAutoScrollRef = useRef(true);
-  const lastMessageCountRef = useRef(0);
-  const INITIAL_VISIBLE = 30;
-  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_VISIBLE);
-
-  useEffect(() => {
-    let canceled = false;
-    setIsLoading(true);
-    shouldAutoScrollRef.current = true;
-    lastMessageCountRef.current = 0;
-    setVisibleCount(INITIAL_VISIBLE);
-    async function load() {
-      try {
-        const list = await getFeedbackForArtifact(artifactId);
-        if (!canceled) {
-          setMessages(list);
-          setVisibleCount((prev) => {
-            if (!list.length) return INITIAL_VISIBLE;
-            const baseline = Math.max(prev, INITIAL_VISIBLE);
-            return Math.min(list.length, baseline);
-          });
-        }
-      } catch (error) {
-        console.error('Artifact feedback could not be loaded', error);
-        if (!canceled) {
-          toast.error(chat.loadError);
-          setMessages([]);
-        }
-      } finally {
-        if (!canceled) {
-          setIsLoading(false);
-        }
-      }
-    }
-    void load();
-    return () => {
-      canceled = true;
-    };
-  }, [artifactId]);
-
-  useEffect(() => {
-    if (!messages.length) {
-      lastMessageCountRef.current = 0;
-      return;
-    }
-    const previousCount = lastMessageCountRef.current;
-    const added = messages.length - previousCount;
-    if (added > 0 && shouldAutoScrollRef.current) {
-      endRef.current?.scrollIntoView({ behavior: previousCount === 0 ? 'auto' : 'smooth' });
-    }
-    lastMessageCountRef.current = messages.length;
-    shouldAutoScrollRef.current = false;
-  }, [messages]);
-
-  async function refreshMessages() {
-    try {
-      const list = await getFeedbackForArtifact(artifactId);
-      setMessages(list);
-      setVisibleCount((prev) => {
-        if (!list.length) return INITIAL_VISIBLE;
-        const baseline = Math.max(prev, INITIAL_VISIBLE);
-        return Math.min(list.length, baseline);
-      });
-      shouldAutoScrollRef.current = true;
-    } catch (error) {
-      console.error('Unable to refresh artifact feedback', error);
-      toast.error(chat.refreshError);
-    }
-  }
-
-  async function handleSend(intent: 'feedback' | 'question' | 'note' | 'approval' = 'feedback') {
-    const text = input.trim();
-    if (!text && intent !== 'approval') return;
-    if (isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      if (intent === 'approval') {
-        await postFeedbackForArtifact(artifactId, text || 'Approved', 'approval');
-      } else {
-        await postFeedbackForArtifact(artifactId, text, intent);
-      }
-      setInput('');
-      shouldAutoScrollRef.current = true;
-      await refreshMessages();
-      onFeedbackSubmitted?.();
-      if (intent === 'approval') {
-        toast.success(chat.approveSuccess);
-        onArtifactApproved?.();
-      }
-    } catch (error) {
-      console.error('Unable to send feedback', error);
-      toast.error(chat.submitError);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      void handleSend();
-    }
-  }
-
-  const hasMessages = messages.length > 0;
-  const releaseDisabled = artifactReleased;
-  const hasMore = messages.length > visibleCount;
-  const visibleMessages = hasMore ? messages.slice(messages.length - visibleCount) : messages;
-
-  function handleLoadMore() {
-    setVisibleCount((prev) => Math.min(messages.length, prev + INITIAL_VISIBLE));
-    shouldAutoScrollRef.current = false;
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-        <div className="font-medium text-slate-700 dark:text-slate-200">{phaseLabel ?? 'Phase'}</div>
-        <div className="text-[11px] uppercase tracking-wide text-slate-500">
-          Artefakt: {artifactTitle}
-        </div>
-      </div>
-
-      <div className="flex-1 rounded-lg border border-slate-200 bg-white p-4 shadow-inner dark:border-slate-700 dark:bg-slate-900/60">
-        {isLoading ? (
-          <p className="text-sm text-slate-500">{chat.loading}</p>
-        ) : hasMessages ? (
-          <div className="space-y-3 overflow-y-auto pr-2 text-sm max-h-[320px]">
-            {hasMore && (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-slate-100"
-                  onClick={handleLoadMore}
-                  disabled={isLoading}
-                >
-                  {chat.loadMore}
-                </button>
-              </div>
-            )}
-            {visibleMessages.map((msg) => {
-              const timestamp = msg.created_at ?? msg.createdAt ?? null;
-              const body = msg.content ?? msg.text ?? msg.markdown ?? '';
-              const intent = msg.intent ?? 'feedback';
-              const isUser = msg.role === 'user';
-              const bubbleClasses = isUser
-                ? 'ml-auto max-w-[85%] rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white'
-                : 'mr-auto max-w-[85%] rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-800 dark:bg-slate-800/80 dark:text-slate-100';
-              return (
-                <div key={msg.id ?? `${timestamp}-${body.slice(0, 12)}`} className="flex flex-col">
-                  <div className={bubbleClasses}>
-                    <div className="text-[11px] font-medium uppercase tracking-wide text-white/80">
-                      {intent === 'approval'
-                        ? chat.intent.approval
-                        : intent === 'question'
-                          ? chat.intent.question
-                          : chat.intent.feedback}
-                    </div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
-                      {body || <span className="italic text-slate-200">(kein Inhalt)</span>}
-                    </div>
-                  </div>
-                  {timestamp && (
-                    <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {formatDateTime(timestamp) ?? ''}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-            <div ref={endRef} />
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">{chat.noMessages}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        {paused && (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{chat.pausedNotice}</p>
-        )}
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor={`feedback-${artifactId}`}>
-          {chat.textareaLabel}
-        </label>
-        <textarea
-          id={`feedback-${artifactId}`}
-          rows={3}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100"
-          placeholder={chat.textareaPlaceholder}
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isSubmitting}
-        />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void handleSend()}
-            disabled={isSubmitting || !input.trim()}
-          >
-            {chat.send}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void handleSend('approval')}
-            disabled={isSubmitting || releaseDisabled}
-          >
-            {chat.approve}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LegacyChatPanel({
+export default function AImarChatPanel({
   purposeId,
   paused = false,
   filterValue: controlledFilterValue,
@@ -442,7 +188,7 @@ function LegacyChatPanel({
   }, [purposeId]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || loading || !purposeId) return;
+    if (!text.trim() || loading) return;
     const userMsg: Message = {
       id: Math.random().toString(36).slice(2, 10),
       role: ChatRole.USER,
@@ -714,34 +460,18 @@ function LegacyChatPanel({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void sendMessage(draft);
+              sendMessage(draft);
             }
           }}
-          disabled={!purposeId}
         />
         <button
           className="bg-blue-600 text-white text-sm px-3 py-1 rounded disabled:opacity-50"
-          onClick={() => void sendMessage(draft)}
-          disabled={loading || !draft.trim() || !purposeId}
+          onClick={() => sendMessage(draft)}
+          disabled={loading || !draft.trim()}
         >
           Senden
         </button>
       </div>
     </div>
   );
-}
-
-export default function AImarChatPanel(props: ChatPanelProps) {
-  const { purposeId, artifactContext } = props;
-  if (artifactContext?.artifactId && purposeId) {
-    return (
-      <ArtifactChatPanel
-        context={artifactContext}
-        paused={props.paused}
-        onFeedbackSubmitted={props.onFeedbackSubmitted}
-        onArtifactApproved={props.onArtifactApproved}
-      />
-    );
-  }
-  return <LegacyChatPanel {...props} />;
 }
