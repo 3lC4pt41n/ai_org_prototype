@@ -4,7 +4,7 @@ from typing import Any, Iterable, Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from sqlalchemy import desc, not_, or_
+from sqlalchemy import desc, exists, not_, or_
 from sqlmodel import Session, delete, select
 from starlette.concurrency import run_in_threadpool
 
@@ -192,11 +192,11 @@ def get_chat_messages(
         ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
     )
     if artifact_id:
-        messages_query = (
-            messages_query.join(ChatMessageArtifact)
+        artifact_subquery = (
+            select(ChatMessageArtifact.chat_message_id)
             .where(ChatMessageArtifact.artifact_id.in_(artifact_id))  # type: ignore[attr-defined]
-            .distinct()
         )
+        messages_query = messages_query.where(ChatMessage.id.in_(artifact_subquery))
     elif scope:
         if scope == ChatScope.GLOBAL:
             subq = select(ChatMessageArtifact.chat_message_id)
@@ -204,11 +204,21 @@ def get_chat_messages(
                 not_(ChatMessage.id.in_(subq))  # type: ignore[attr-defined]
             )
         elif scope == ChatScope.ARTIFACT:
-            messages_query = messages_query.join(ChatMessageArtifact).distinct()
+            messages_query = messages_query.where(
+                exists(
+                    select(1).where(
+                        ChatMessageArtifact.chat_message_id == ChatMessage.id
+                    )
+                )
+            )
         elif scope == ChatScope.MIXED:
             messages_query = messages_query.where(ChatMessage.scope == ChatScope.MIXED)
 
-    messages = session.exec(messages_query.order_by(ChatMessage.created_at)).all()
+    messages_query = messages_query.order_by(
+        ChatMessage.created_at.asc(), ChatMessage.id.asc()
+    )
+
+    messages = session.exec(messages_query).all()
     out: list[dict] = []
     msg_ids = [m.id for m in messages]
     link_map: dict[str, list[str]] = {}
@@ -416,16 +426,21 @@ def post_chat(
                 ChatMessage.tenant_id == tenant_id, ChatMessage.purpose_id == purpose_id
             )
             if artifact_ids:
-                conv_query = (
-                    conv_query.join(ChatMessageArtifact)
-                    .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))  # type: ignore[attr-defined]
-                    .distinct()
+                artifact_subquery = (
+                    select(ChatMessageArtifact.chat_message_id)
+                    .where(
+                        ChatMessageArtifact.artifact_id.in_(artifact_ids)  # type: ignore[attr-defined]
+                    )
                 )
+                conv_query = conv_query.where(ChatMessage.id.in_(artifact_subquery))
             else:
                 conv_query = conv_query.where(
                     ChatMessage.artifact_id.is_(None)  # type: ignore[union-attr]
                 )
-            conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
+            conv_query = conv_query.order_by(
+                ChatMessage.created_at.asc(), ChatMessage.id.asc()
+            )
+            conv_history = session.exec(conv_query).all()
             if not artifact_ids:
                 chat_context = session.get(ChatThreadContext, purpose_id)
                 if chat_context:
@@ -860,16 +875,21 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         ChatMessage.purpose_id == purpose_id,
                     )
                     if artifact_ids:
-                        conv_query = (
-                            conv_query.join(ChatMessageArtifact)
-                            .where(ChatMessageArtifact.artifact_id.in_(artifact_ids))  # type: ignore[attr-defined]
-                            .distinct()
+                        artifact_subquery = (
+                            select(ChatMessageArtifact.chat_message_id)
+                            .where(
+                                ChatMessageArtifact.artifact_id.in_(artifact_ids)  # type: ignore[attr-defined]
+                            )
                         )
+                        conv_query = conv_query.where(ChatMessage.id.in_(artifact_subquery))
                     else:
                         conv_query = conv_query.where(
                             ChatMessage.artifact_id.is_(None)  # type: ignore[union-attr]
                         )
-                    conv_history = session.exec(conv_query.order_by(ChatMessage.created_at)).all()
+                    conv_query = conv_query.order_by(
+                        ChatMessage.created_at.asc(), ChatMessage.id.asc()
+                    )
+                    conv_history = session.exec(conv_query).all()
                     if not artifact_ids:
                         chat_context = session.get(ChatThreadContext, purpose_id)
                         if chat_context:
