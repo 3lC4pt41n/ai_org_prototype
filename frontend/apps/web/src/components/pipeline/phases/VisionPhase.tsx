@@ -1,17 +1,12 @@
-import ArtifactSection from '../../ArtifactSection';
-import ChatPanelContainer from '../ChatPanelContainer';
+import PhaseArtifactAndChat from '../../PhaseArtifactAndChat';
 import type { PhaseViewContext } from '../types';
 
 export function VisionPhaseContent({
   selectedPurpose,
   selectedPurposeId,
-  paused,
-  chatFilterValue,
-  setChatFilterValue,
   visionArtifact,
-  visionStatusIcon,
-  visionAwaitingApproval,
   onVisionApproved,
+  paused,
 }: PhaseViewContext) {
   return (
     <div className="space-y-6">
@@ -29,35 +24,16 @@ export function VisionPhaseContent({
           </p>
         )}
       </section>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <ChatPanelContainer
-          title="Vision mit AImar ausarbeiten"
-          description="Nutze den Dialog, um Stakeholder, Zielgruppen und Erfolgskriterien zu dokumentieren. Diese Inhalte dienen als Briefing für die nachfolgenden Phasen."
-          placeholderTitle="Vision noch nicht verfügbar"
-          placeholderDescription="Lege zunächst ein Projektziel an, um die Vision zu starten. Sobald ein Artefakt erstellt wurde, erscheint es hier zur Freigabe."
-          className="h-full"
-          purposeId={selectedPurposeId}
-          paused={paused}
-          filterValue={chatFilterValue}
-          onFilterValueChange={setChatFilterValue}
-        />
-        {visionArtifact ? (
-          <ArtifactSection
-            title="Vision"
-            artifact={visionArtifact}
-            statusIcon={visionStatusIcon}
-            showFeedback={visionAwaitingApproval}
-            onApproved={onVisionApproved}
-          />
-        ) : (
-          <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Vision in Erstellung</h3>
-            <p className="mt-2">
-              Sobald die Vision generiert wurde, erscheint sie hier zur Durchsicht und Freigabe. Nutze den Chat auf der linken Seite, um Kontext und Ziele zu definieren.
-            </p>
-          </section>
-        )}
-      </div>
+      <PhaseArtifactAndChat
+        purposeId={selectedPurposeId}
+        phaseKey="vision"
+        phaseTitle="Vision"
+        artifactId={visionArtifact?.id}
+        artifactName={visionArtifact ? 'Projektvision' : undefined}
+        paused={paused}
+        emptyMessage="Die Vision ist noch in Arbeit. Sobald ein Artefakt erstellt wurde, erscheint es hier vollständig."
+        onApproved={() => onVisionApproved?.({})}
+      />
     </div>
   );
 }
