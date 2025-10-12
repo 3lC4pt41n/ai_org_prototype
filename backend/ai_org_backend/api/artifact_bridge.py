@@ -113,7 +113,7 @@ def get_feedback_for_artifact(artifact_id: str, session: Session = Depends(get_s
         SELECT cm.*
         FROM chatmessage AS cm
         WHERE cm.id IN (
-            SELECT cma.chatmessage_id
+            SELECT cma.chat_message_id
             FROM chatmessageartifact AS cma
             WHERE cma.artifact_id = :aid
         )
@@ -186,7 +186,7 @@ def post_feedback_for_artifact(
     try:
         session.execute(
             text(
-                "INSERT INTO chatmessageartifact (chatmessage_id, artifact_id) "
+                "INSERT INTO chatmessageartifact (chat_message_id, artifact_id) "
                 "VALUES (:cmid, :aid)"
             ),
             {"cmid": message_id, "aid": artifact_id},
