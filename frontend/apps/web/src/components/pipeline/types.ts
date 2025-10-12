@@ -106,8 +106,6 @@ export interface PhaseViewContext {
   selectedPurpose: PurposeSummary | null;
   selectedPurposeId: string | null;
   paused: boolean;
-  chatFilterValue: string;
-  setChatFilterValue: (value: string) => void;
   onCreatePurpose?: (name: string, templateId?: string) => Promise<boolean>;
   creatingPurpose?: boolean;
   templates?: PipelineTemplateSummary[];
@@ -115,27 +113,19 @@ export interface PhaseViewContext {
   visionArtifact?: ArtifactItem;
   visionAwaitingApproval: boolean;
   visionStatusIcon: ReactNode;
-  onVisionApproved: (
-    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
-  ) => void;
+  onVisionApproved: () => void;
   prdArtifact?: ArtifactItem;
   prdAwaitingApproval: boolean;
   prdStatusIcon: ReactNode;
-  onPrdApproved: (
-    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
-  ) => void;
+  onPrdApproved: () => void;
   archArtifact?: ArtifactItem;
   architectureAwaitingApproval: boolean;
   archStatusIcon: ReactNode;
-  onArchitectureApproved: (
-    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
-  ) => void;
+  onArchitectureApproved: () => void;
   architectureReviewArtifact?: ArtifactItem;
   architectureReviewAwaitingApproval: boolean;
   architectureReviewStatusIcon: ReactNode;
-  onArchitectureReviewApproved: (
-    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
-  ) => void;
+  onArchitectureReviewApproved: () => void;
   graphNodes: PipelineGraphNode[];
   graphEdges: PipelineGraphEdge[];
   graphStatusIcon: ReactNode;
