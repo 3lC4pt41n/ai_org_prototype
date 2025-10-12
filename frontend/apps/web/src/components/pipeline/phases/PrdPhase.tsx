@@ -1,34 +1,57 @@
-import PhaseArtifactAndChat, { type PreviousArtifactConfig } from '../../PhaseArtifactAndChat';
+import ArtifactSection from '../../ArtifactSection';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function PrdPhaseContent({
   prdArtifact,
+  prdStatusIcon,
+  prdAwaitingApproval,
   onPrdApproved,
   selectedPurposeId,
   paused,
-  visionArtifact,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
-  const previousArtifacts: PreviousArtifactConfig[] = [];
-  if (visionArtifact?.id) {
-    previousArtifacts.push({
-      id: visionArtifact.id,
-      title: 'Projektvision',
-      phaseLabel: 'Phase: Vision',
-    });
-  }
-
   return (
     <div className="space-y-6">
-      <PhaseArtifactAndChat
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <ChatPanelContainer
+          title="Produkt-Owner-Dialog"
+          description="Verfeinere Anforderungen, beantworte Rückfragen und gib zusätzliche Kontexte, damit die Produktanforderung vollständig wird."
+          placeholderTitle="AImar-Dialog noch nicht verfügbar"
+          placeholderDescription="Wähle einen Purpose aus, um mit dem KI-Produkt Owner zu sprechen und die Produktanforderung vorzubereiten."
+          className="h-full"
+          purposeId={selectedPurposeId}
+          paused={paused}
+          filterValue={chatFilterValue}
+          onFilterValueChange={setChatFilterValue}
+        />
+        {prdArtifact ? (
+          <ArtifactSection
+            title="Produktanforderung"
+            artifact={prdArtifact}
+            statusIcon={prdStatusIcon}
+            showFeedback={prdAwaitingApproval}
+            onApproved={onPrdApproved}
+          />
+        ) : (
+          <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
+              Produktanforderung in Erstellung
+            </h3>
+            <p className="mt-2">
+              Sobald die Produktanforderung generiert wurde, erscheint sie hier zur Durchsicht und Kommentierung.
+            </p>
+          </section>
+        )}
+      </div>
+      <ChatPanelContainer
+        title="Abstimmung für Folgephasen"
+        description="Halte zusätzliche Annahmen oder Änderungswünsche fest. Sie fließen unmittelbar in die weiteren Phasen ein."
         purposeId={selectedPurposeId}
-        phaseKey="prd"
-        phaseTitle="Produktanforderung"
-        artifactId={prdArtifact?.id}
-        artifactName={prdArtifact ? 'Produktanforderung' : undefined}
         paused={paused}
-        previousArtifacts={previousArtifacts}
-        emptyMessage="Die Produktanforderung ist noch nicht verfügbar. Sobald AImar das Artefakt erstellt hat, erscheint es hier vollständig."
-        onApproved={() => onPrdApproved?.({})}
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
       />
     </div>
   );
