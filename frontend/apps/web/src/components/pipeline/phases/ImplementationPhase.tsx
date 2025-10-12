@@ -1,5 +1,9 @@
+import { useEffect, useState } from 'react';
+import { toast } from 'react-hot-toast';
 import GraphSection from '../../GraphSection';
 import ChatPanelContainer from '../ChatPanelContainer';
+import PhaseArtifactPreview from '../PhaseArtifactPreview';
+import { getArtifactById, type ArtifactDetails } from '../../../api/api.artifacts';
 import type { PhaseViewContext } from '../types';
 
 const STATUS_ORDER = [
@@ -12,16 +16,36 @@ const STATUS_ORDER = [
   'budget_exceeded',
 ] as const;
 
-export function ImplementationPhaseContent({
-  graphNodes,
-  graphEdges,
-  graphStatusIcon,
-  renderBacklogSection,
-  selectedPurposeId,
-  paused,
-  chatFilterValue,
-  setChatFilterValue,
-}: PhaseViewContext) {
+export function ImplementationPhaseContent(ctx: PhaseViewContext) {
+  const {
+    graphNodes,
+    graphEdges,
+    graphStatusIcon,
+    renderBacklogSection,
+    selectedPurposeId,
+    paused,
+    archArtifact,
+  } = ctx;
+  const [blueprintDetails, setBlueprintDetails] = useState<ArtifactDetails | null>(null);
+  const [loadingBlueprint, setLoadingBlueprint] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (archArtifact?.id) {
+      setLoadingBlueprint(true);
+      getArtifactById(archArtifact.id)
+        .then((details) => setBlueprintDetails(details))
+        .catch((error) => {
+          console.error('Blueprint-Details konnten nicht geladen werden.', error);
+          toast.error('Blueprint laden fehlgeschlagen');
+          setBlueprintDetails(null);
+        })
+        .finally(() => setLoadingBlueprint(false));
+    } else {
+      setBlueprintDetails(null);
+      setLoadingBlueprint(false);
+    }
+  }, [archArtifact?.id]);
+
   return (
     <div className="space-y-6">
       {graphNodes.length > 0 ? (
@@ -35,13 +59,32 @@ export function ImplementationPhaseContent({
         </section>
       )}
       {renderBacklogSection()}
+      {archArtifact && (
+        <PhaseArtifactPreview
+          title="Architektur-Blueprint"
+          phaseLabel="Phase: Architektur"
+          artifact={blueprintDetails}
+          isLoading={loadingBlueprint}
+          readOnly
+          emptyMessage="Der Architektur-Blueprint ist noch nicht verfügbar."
+        />
+      )}
       <ChatPanelContainer
         title="Synchronisation mit AImar"
         description="Nutze den Chat, um Blocker, Testabdeckung oder Learnings zu dokumentieren. So bleibt das Delivery-Team auf Kurs."
         purposeId={selectedPurposeId}
         paused={paused}
-        filterValue={chatFilterValue}
-        onFilterValueChange={setChatFilterValue}
+        artifactContext={
+          archArtifact
+            ? {
+                artifactId: archArtifact.id,
+                artifactTitle: 'Architektur-Blueprint',
+                phaseLabel: 'Phase: Architektur',
+                phaseKey: 'architecture',
+                artifactReleased: archArtifact.released,
+              }
+            : null
+        }
       />
     </div>
   );
