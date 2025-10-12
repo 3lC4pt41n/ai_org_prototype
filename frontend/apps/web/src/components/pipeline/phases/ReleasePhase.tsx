@@ -1,4 +1,4 @@
-import PhaseArtifactAndChat, { type PreviousArtifactConfig } from '../../PhaseArtifactAndChat';
+import ChatPanelContainer from '../ChatPanelContainer';
 import type { PhaseViewContext } from '../types';
 
 export function ReleasePhaseContent({
@@ -8,22 +8,14 @@ export function ReleasePhaseContent({
   releaseCompleted,
   selectedPurposeId,
   paused,
-  archArtifact,
+  chatFilterValue,
+  setChatFilterValue,
 }: PhaseViewContext) {
   const checklist = [
     { label: 'Aufgaben abgeschlossen', done: implementationCompleted },
     { label: 'Backlog leer', done: backlogEmpty },
     { label: 'Alle Artefakte freigegeben', done: allArtifactsReleased },
   ];
-
-  const previousArtifacts: PreviousArtifactConfig[] = [];
-  if (archArtifact?.id) {
-    previousArtifacts.push({
-      id: archArtifact.id,
-      title: 'Architektur-Blueprint',
-      phaseLabel: 'Phase: Architektur',
-    });
-  }
 
   return (
     <div className="space-y-6">
@@ -58,13 +50,13 @@ export function ReleasePhaseContent({
           </p>
         )}
       </section>
-      <PhaseArtifactAndChat
+      <ChatPanelContainer
+        title="Release-Kommunikation"
+        description="Nutze den Chat für Abstimmungen zum Go-Live, zur Dokumentation oder für Lessons Learned nach Abschluss."
         purposeId={selectedPurposeId}
-        phaseKey="release"
-        phaseTitle="Release"
         paused={paused}
-        previousArtifacts={previousArtifacts}
-        emptyMessage="Noch keine Release-Unterlagen vorhanden."
+        filterValue={chatFilterValue}
+        onFilterValueChange={setChatFilterValue}
       />
     </div>
   );
