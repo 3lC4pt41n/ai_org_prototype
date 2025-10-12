@@ -3,8 +3,10 @@ import type { PhaseViewContext } from '../types';
 
 export function ArchitecturePhaseContent({
   archArtifact,
+  architectureAwaitingApproval,
   onArchitectureApproved,
   prdArtifact,
+  visionArtifact,
   selectedPurposeId,
   paused,
 }: PhaseViewContext) {
@@ -14,6 +16,13 @@ export function ArchitecturePhaseContent({
       id: prdArtifact.id,
       title: 'Produktanforderung',
       phaseLabel: 'Phase: Produktanforderung',
+    });
+  }
+  if (visionArtifact?.id) {
+    previousArtifacts.push({
+      id: visionArtifact.id,
+      title: 'Projektvision',
+      phaseLabel: 'Phase: Vision',
     });
   }
 
@@ -28,7 +37,7 @@ export function ArchitecturePhaseContent({
         paused={paused}
         previousArtifacts={previousArtifacts}
         emptyMessage="Der Architekturentwurf ist noch in Arbeit. Sobald ein Artefakt vorliegt, wird der vollständige Inhalt hier angezeigt."
-        onApproved={() => onArchitectureApproved?.({})}
+        onApproved={architectureAwaitingApproval ? onArchitectureApproved : undefined}
       />
     </div>
   );

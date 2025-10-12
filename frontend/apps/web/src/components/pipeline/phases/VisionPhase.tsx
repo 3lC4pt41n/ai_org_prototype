@@ -5,6 +5,7 @@ export function VisionPhaseContent({
   selectedPurpose,
   selectedPurposeId,
   visionArtifact,
+  visionAwaitingApproval,
   onVisionApproved,
   paused,
 }: PhaseViewContext) {
@@ -32,7 +33,7 @@ export function VisionPhaseContent({
         artifactName={visionArtifact ? 'Projektvision' : undefined}
         paused={paused}
         emptyMessage="Die Vision ist noch in Arbeit. Sobald ein Artefakt erstellt wurde, erscheint es hier vollständig."
-        onApproved={() => onVisionApproved?.({})}
+        onApproved={visionAwaitingApproval ? onVisionApproved : undefined}
       />
     </div>
   );
