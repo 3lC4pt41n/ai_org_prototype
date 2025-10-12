@@ -615,24 +615,53 @@ export default function PipelineView() {
   ]);
 
   const [currentPhase, setCurrentPhaseInternal] = useState<PhaseId>(recommendedPhase);
+  const [chatFilterValue, setChatFilterValue] = useState<string>('all');
   const userSelectedPhaseRef = useRef(false);
+
+  const applyChatFilterForPhase = useCallback(
+    (phase: PhaseId, options?: { redirectArtifactId?: string }) => {
+      if (phase === 'architecture' || phase === 'architecture_review') {
+        if (options?.redirectArtifactId) {
+          setChatFilterValue(options.redirectArtifactId);
+          return;
+        }
+        if (phase === 'architecture' && architectureArtifactId) {
+          setChatFilterValue(architectureArtifactId);
+          return;
+        }
+        if (phase === 'architecture_review' && architectureReviewArtifactId) {
+          setChatFilterValue(architectureReviewArtifactId);
+          return;
+        }
+      }
+      setChatFilterValue('all');
+    },
+    [architectureArtifactId, architectureReviewArtifactId],
+  );
 
   useEffect(() => {
     setCurrentPhaseInternal((prev) => {
       const prevIndex = PHASE_ORDER.indexOf(prev);
       const recommendedIndex = PHASE_ORDER.indexOf(recommendedPhase);
       if (!userSelectedPhaseRef.current || recommendedIndex > prevIndex) {
-        userSelectedPhaseRef.current = false;
+        if (recommendedIndex !== prevIndex) {
+          userSelectedPhaseRef.current = false;
+          applyChatFilterForPhase(recommendedPhase);
+        }
         return recommendedPhase;
       }
       return prev;
     });
-  }, [recommendedPhase]);
+  }, [recommendedPhase, applyChatFilterForPhase]);
 
-  const setPhase = useCallback((phase: PhaseId) => {
-    userSelectedPhaseRef.current = true;
-    setCurrentPhaseInternal(phase);
-  }, []);
+  const setPhase = useCallback(
+    (phase: PhaseId, options?: { redirectArtifactId?: string }) => {
+      userSelectedPhaseRef.current = true;
+      setCurrentPhaseInternal(phase);
+      applyChatFilterForPhase(phase, options);
+    },
+    [applyChatFilterForPhase],
+  );
 
   useEffect(() => {
     if (!autoPipeline) {
@@ -673,16 +702,18 @@ export default function PipelineView() {
     return PHASE_ORDER[index + 1];
   };
 
-  const handleArtifactApproved = (phase: PhaseId) => {
+  const handleArtifactApproved = (
+    phase: PhaseId,
+    info?: { redirectArtifactId?: string; redirectArtifactUrl?: string },
+  ) => {
     const nextPhase = getNextPhase(phase);
     if (!nextPhase) return;
-    setPhase(nextPhase);
-    const refreshPromises: Promise<unknown>[] = [fetchArtifacts(), fetchBacklog()];
-    if (selectedPurposeId) {
-      refreshPromises.push(fetchGraphAndStatus(selectedPurposeId));
-    }
-    void Promise.all(refreshPromises);
+    setPhase(nextPhase, { redirectArtifactId: info?.redirectArtifactId });
   };
+
+  useEffect(() => {
+    setChatFilterValue('all');
+  }, [selectedPurposeId]);
 
   const phases = useMemo<PhaseMeta[]>(() => {
     let previousCompleted = true;
@@ -1030,6 +1061,8 @@ export default function PipelineView() {
     selectedPurpose,
     selectedPurposeId,
     paused,
+    chatFilterValue,
+    setChatFilterValue,
     onCreatePurpose: handleCreatePurpose,
     creatingPurpose,
     templates,
@@ -1037,20 +1070,20 @@ export default function PipelineView() {
     visionArtifact,
     visionAwaitingApproval,
     visionStatusIcon,
-    onVisionApproved: () => handleArtifactApproved('vision'),
+    onVisionApproved: (info) => handleArtifactApproved('vision', info),
     prdArtifact,
     prdAwaitingApproval,
     prdStatusIcon,
-    onPrdApproved: () => handleArtifactApproved('prd'),
+    onPrdApproved: (info) => handleArtifactApproved('prd', info),
     archArtifact,
     architectureAwaitingApproval,
     archStatusIcon,
-    onArchitectureApproved: () => handleArtifactApproved('architecture'),
+    onArchitectureApproved: (info) => handleArtifactApproved('architecture', info),
     architectureReviewArtifact,
     architectureReviewAwaitingApproval,
     architectureReviewStatusIcon,
-    onArchitectureReviewApproved: () =>
-      handleArtifactApproved('architecture_review'),
+    onArchitectureReviewApproved: (info) =>
+      handleArtifactApproved('architecture_review', info),
     graphNodes,
     graphEdges,
     graphStatusIcon,

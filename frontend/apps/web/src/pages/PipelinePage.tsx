@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
+
+const AImarChatPanel = lazy(() => import('../components/AImarChatPanel'));
 
 const STEPS = ['Zweck', 'PRD', 'Architektur', 'Plan', 'Bericht'];
 
@@ -74,7 +76,17 @@ export default function PipelinePage() {
                 <li>Letzte Änderung: v1.1 am 12.09.2025</li>
               </ul>
             </div>
-            {/* Zentrale Chat-Komponente entfernt – kein separater Chat im Sidebar */}
+            <div className="flex-1 flex flex-col">
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
+                    Lade Chat …
+                  </div>
+                }
+              >
+                <AImarChatPanel purposeId="demo-purpose" paused={false} />
+              </Suspense>
+            </div>
           </aside>
         </div>
       </main>
