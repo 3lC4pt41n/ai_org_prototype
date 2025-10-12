@@ -1,50 +1,35 @@
-import ArtifactSection from '../../ArtifactSection';
-import ChatPanelContainer from '../ChatPanelContainer';
+import PhaseArtifactAndChat, { type PreviousArtifactConfig } from '../../PhaseArtifactAndChat';
 import type { PhaseViewContext } from '../types';
 
-export function ArchitectureReviewPhaseContent({
-  architectureReviewArtifact,
-  architectureReviewStatusIcon,
-  architectureReviewAwaitingApproval,
-  onArchitectureReviewApproved,
-  archArtifact,
-  selectedPurposeId,
-  paused,
-  chatFilterValue,
-  setChatFilterValue,
-}: PhaseViewContext) {
+export function ArchitectureReviewPhaseContent(ctx: PhaseViewContext) {
+  const {
+    archArtifact,
+    architectureReviewArtifact,
+    architectureReviewAwaitingApproval,
+    onArchitectureReviewApproved,
+    selectedPurposeId,
+    paused,
+  } = ctx;
+  const previousArtifacts: PreviousArtifactConfig[] = [];
+  if (archArtifact?.id) {
+    previousArtifacts.push({
+      id: archArtifact.id,
+      title: 'Architektur-Blueprint',
+      phaseLabel: 'Phase: Architektur',
+    });
+  }
   return (
-    <div className="space-y-6">
-      {architectureReviewArtifact ? (
-        <ArtifactSection
-          title="Architektur & Domain Review"
-          artifact={architectureReviewArtifact}
-          statusIcon={architectureReviewStatusIcon}
-          showFeedback={architectureReviewAwaitingApproval}
-          onApproved={onArchitectureReviewApproved}
-        />
-      ) : (
-        <section className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Review in Vorbereitung</h3>
-          <p className="mt-2">
-            Der Review-Bericht wird erstellt. Sobald die Domain-Expert*innen ihre Einschätzung abgegeben haben, erscheint das Dokument hier.
-          </p>
-          {archArtifact && (
-            <p className="mt-2">
-              Der Architektur-Entwurf wurde bereits erstellt und bildet die Grundlage für dieses Review.
-            </p>
-          )}
-        </section>
-      )}
-      <ChatPanelContainer
-        title="Abstimmung mit Reviewer*innen"
-        description="Dokumentiere Rückfragen, Freigaben oder benötigte Anpassungen, bevor die Implementierung weitergeht."
-        purposeId={selectedPurposeId}
-        paused={paused}
-        filterValue={chatFilterValue}
-        onFilterValueChange={setChatFilterValue}
-      />
-    </div>
+    <PhaseArtifactAndChat
+      purposeId={selectedPurposeId}
+      phaseKey="architecture_review"
+      phaseTitle="Architektur-Review"
+      artifactId={architectureReviewArtifact?.id}
+      artifactName={architectureReviewArtifact ? 'Architektur & Domain Review' : undefined}
+      paused={paused}
+      previousArtifacts={previousArtifacts}
+      emptyMessage="Der Review-Bericht wird vorbereitet. Sobald die Einschätzung vorliegt, erscheint das Dokument hier."
+      onApproved={architectureReviewAwaitingApproval ? onArchitectureReviewApproved : undefined}
+    />
   );
 }
 
