@@ -308,6 +308,7 @@ services:
         condition: service_started
     volumes:
       - ../workspace:/app/workspace
+
   celery-exporter:
     image: danihodovic/celery-exporter:latest
     restart: unless-stopped
