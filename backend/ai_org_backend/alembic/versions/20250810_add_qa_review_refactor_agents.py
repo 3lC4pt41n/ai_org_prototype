@@ -19,14 +19,17 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         'tenant',
-        sa.Column('enable_code_review', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('enable_code_review', sa.Boolean(), nullable=False, server_default=sa.true()),
     )
     op.add_column(
         'tenant',
-        sa.Column('enable_refactor', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('enable_refactor', sa.Boolean(), nullable=False, server_default=sa.true()),
     )
+
+    # remove server defaults after initial rows populated
     op.alter_column('tenant', 'enable_code_review', server_default=None)
     op.alter_column('tenant', 'enable_refactor', server_default=None)
+
     op.add_column(
         'task',
         sa.Column('issues_found', sa.Integer(), nullable=False, server_default=sa.text('0')),
