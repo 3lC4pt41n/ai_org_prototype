@@ -1,7 +1,7 @@
 """add allow_web_research to tenant
 
 Revision ID: 20250808_add_tenant_allow_web_research
-Revises: 1b8ce9772b4a
+Revises: 20250730_create_task_table
 Create Date: 2025-08-08 00:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20250808_add_tenant_allow_web_research"
-down_revision: Union[str, Sequence[str], None] = "1b8ce9772b4a"
+down_revision: Union[str, Sequence[str], None] = "20250730_create_task_table"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
