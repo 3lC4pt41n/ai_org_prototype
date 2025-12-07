@@ -4,7 +4,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20251011_pipeline_templates"
-down_revision = "20250927_cleanup_prompt_templates"
+down_revision = "20250927_fix_prd_phase_template"
 branch_labels = None
 depends_on = None
 
