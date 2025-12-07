@@ -9,7 +9,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251010_drop_legacy_feedback_tables"
-down_revision: Union[str, Sequence[str], None] = "20251007_remove_artifactfeedback"
+down_revision: Union[str, Sequence[str], None] = "20250729_create_artifact_table"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
