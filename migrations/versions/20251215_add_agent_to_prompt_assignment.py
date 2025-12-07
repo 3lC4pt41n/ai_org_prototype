@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20251215_add_agent_to_prompt_assignment"
-down_revision = "20251202_merge_templates"
+down_revision = "20250927_seed_default_prompts"
 branch_labels = None
 depends_on = None
 
