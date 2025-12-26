@@ -11,6 +11,7 @@ WORKDIR /app
 
 # -------- workspace -----------
 ENV WORKSPACE_DIR=/app/workspace
+ENV PYTHONPATH=/app
 RUN mkdir -p "$WORKSPACE_DIR"
 
 # -------- python deps ----------

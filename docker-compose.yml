@@ -103,10 +103,11 @@ services:
       dockerfile: backend/ai_org_backend/Dockerfile
       target: prod
     image: local/ai_backend:latest
-    working_dir: /app/backend/ai_org_backend  # <- Hinzufügen
+    working_dir: /app
     command: >
       /bin/sh -c "alembic upgrade head && python -m ai_org_backend.orchestrator.scheduler"
     environment:
+      - PYTHONPATH=/app
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - NEO4J_URL=bolt://neo4j:7687
@@ -128,6 +129,8 @@ services:
         condition: service_started
     volumes:
       - ../workspace:/app/workspace
+      - ../backend/ai_org_backend/alembic:/app/alembic
+      - ../backend/ai_org_backend/alembic.ini:/app/alembic.ini
 
   celery-architect:
     build:
