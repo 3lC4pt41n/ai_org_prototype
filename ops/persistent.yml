@@ -79,6 +79,8 @@ services:
 
     volumes:
       - ../workspace:/app/workspace
+      - ../backend/ai_org_backend/alembic:/app/alembic
+      - ../backend/ai_org_backend/alembic.ini:/app/alembic.ini
 
   celery-planner:
     build:

@@ -1,6 +1,7 @@
 # backend/ai_org_backend/alembic/env.py
 
 from logging.config import fileConfig
+import os
 
 from alembic import context
 from sqlmodel import SQLModel
@@ -21,6 +22,8 @@ target_metadata = SQLModel.metadata
 
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
+    if not url:
+        url = os.getenv("DATABASE_URL")
     context.configure(
         url=url,
         target_metadata=target_metadata,
