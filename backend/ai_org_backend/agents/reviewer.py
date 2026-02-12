@@ -14,6 +14,7 @@ from sqlalchemy import desc, func  # noqa: E402
 from sqlmodel import select  # noqa: E402
 
 from ai_org_backend.db import SessionLocal  # noqa: E402
+from ai_org_backend.redis_client import pool  # noqa: E402
 
 # Small metrics parity (keeps style with other agents)
 from ai_org_backend.metrics import prom_counter, prom_hist  # noqa: E402
@@ -202,4 +203,30 @@ def reviewer_task(
                 "[Reviewer] Failed to auto-approve review task %s: %s",
                 review_task_id,
                 e,
+            )
+    else:
+        # Manual mode: mark the task as done (artifact exists) and pause
+        # so the user can review before the scheduler runs the planner.
+        try:
+            Repo(tenant_id).update(
+                review_task_id,
+                status="done",
+                owner=TaskOwner.REVIEW,
+                notes="awaiting_approval",
+            )
+        except Exception as e:
+            logging.error(
+                "[Reviewer] Failed to mark review task %s as done: %s",
+                review_task_id,
+                e,
+            )
+        try:
+            pool.set(f"pause:{tenant_id}:{resolved_purpose_id}", "1")
+            logging.info(
+                "[Reviewer] Paused purpose %s after review generation (manual mode)",
+                resolved_purpose_id,
+            )
+        except Exception as e:
+            logging.error(
+                "[Reviewer] Failed to set pause flag after review: %s", e
             )

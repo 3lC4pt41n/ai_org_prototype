@@ -16,6 +16,7 @@ from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools
 from ai_org_backend.services.storage import resolve_for_read, register_artefact
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.metrics import TASK_CNT, TASK_LAT
+from ai_org_backend.redis_client import pool
 from ai_org_backend.services.repo import Repo, debit
 from ai_org_backend.settings import settings
 
@@ -220,6 +221,18 @@ def agent_po(tenant_id: str, task_id: str, purpose_id: str | None = None) -> Non
             notes="PRD completed",
             tokens_actual=tokens_used,
         )
+
+        # In manual mode: pause so the user can review the PRD
+        # before the scheduler progresses to architecture.
+        if purpose.mode == "manual":
+            try:
+                pool.set(f"pause:{tenant_id}:{purpose.id}", "1")
+                logger.info(
+                    "[ProductOwner] Paused purpose %s after PRD generation (manual mode)",
+                    purpose.id,
+                )
+            except Exception as exc:
+                logger.error("[ProductOwner] Failed to set pause flag: %s", exc)
 
         try:
             debit(

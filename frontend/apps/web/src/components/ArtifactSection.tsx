@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, type ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api, postJson } from '../lib/api';
+import { api, postJson, API_BASE } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import FileViewer from './FileViewer';
 import usePipelineStore from '../store/pipelineStore';
@@ -87,7 +87,15 @@ export default function ArtifactSection({
     setError(null);
     try {
       const artObj = artifactVersions.find((a) => a.id === artifactId);
-      const url = artObj?.url ? artObj.url : `/api/artifact/${artifactId}`;
+      // Build URL using API_BASE so it works both in dev (proxy) and production.
+      // The backend returns url as "/api/artifact/{id}" – strip the /api prefix to avoid duplication.
+      let url: string;
+      if (artObj?.url) {
+        const stripped = artObj.url.replace(/^\/api\//, '/');
+        url = `${API_BASE}${stripped.startsWith('/') ? stripped : `/${stripped}`}`;
+      } else {
+        url = `${API_BASE}/artifact/${artifactId}`;
+      }
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
         signal: controller.signal,

@@ -408,6 +408,18 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             notes="Blueprint completed",
         )
 
+    # In manual mode: pause so the user can review the architecture blueprint
+    # before the scheduler creates the review phase.
+    if purpose and purpose.mode == "manual":
+        try:
+            pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+            logging.info(
+                "[Orchestrator] Paused purpose %s after architecture generation (manual mode)",
+                purpose_id,
+            )
+        except Exception as e:
+            logging.error("Failed to set pause flag after architecture: %s", e)
+
     # Mark PRD artifact as released (safety check)
     with Session(engine) as db_session:
         prd_task = db_session.exec(
@@ -506,9 +518,11 @@ async def orchestrator() -> None:
                             if t.status != TaskStatus.DONE
                             and t.description
                             not in [
+                                "Vision Document",
                                 "Product Requirements Document",
                                 "Architecture Blueprint",
                                 "Architecture & Domain Review",
+                                "Implementation Plan",
                             ]
                         ),
                         None,
@@ -540,6 +554,17 @@ async def orchestrator() -> None:
                         and blueprint_task.status == TaskStatus.DONE
                         and not review_task
                     ):
+                        # In manual mode: only proceed to review if the
+                        # architecture blueprint artifact has been released
+                        # (approved by the user).
+                        if p.mode == "manual":
+                            bp_art = session.exec(
+                                select(Artifact).where(
+                                    Artifact.task_id == blueprint_task.id
+                                )
+                            ).first()
+                            if not bp_art or not bp_art.released:
+                                continue
                         purpose_to_process = (p, "review")
                         break
 
@@ -548,6 +573,16 @@ async def orchestrator() -> None:
                         and review_task.status == TaskStatus.DONE
                         and impl_todo is None
                     ):
+                        # In manual mode: only proceed to planner if the
+                        # review artifact has been released (approved).
+                        if p.mode == "manual":
+                            rev_art = session.exec(
+                                select(Artifact).where(
+                                    Artifact.task_id == review_task.id
+                                )
+                            ).first()
+                            if not rev_art or not rev_art.released:
+                                continue
                         purpose_to_process = (p, "planner")
                         break
         except Exception as e:

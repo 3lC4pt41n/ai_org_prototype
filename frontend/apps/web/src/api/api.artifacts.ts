@@ -35,8 +35,18 @@ export async function listArtifactsByPurpose(purposeId: string): Promise<Artifac
 }
 
 export async function getArtifactById(artifactId: string): Promise<ArtifactDetails | null> {
-  const resp = await api.get<ArtifactDetails | null>(`/artifact/${artifactId}`);
-  return resp.data ?? null;
+  const resp = await api.get(`/artifact/${artifactId}`, {
+    responseType: 'text',
+    transformResponse: [(data: unknown) => data],
+  });
+  const raw = resp.data;
+  // The backend returns a FileResponse (raw text), not a JSON object.
+  // Wrap the text content into an ArtifactDetails shape for callers.
+  if (typeof raw === 'string') {
+    return { id: artifactId, content: raw, text: raw, markdown: raw };
+  }
+  // Fallback: if the response was somehow parsed as JSON, return as-is
+  return (raw as ArtifactDetails) ?? null;
 }
 
 export async function getFeedbackForArtifact(artifactId: string): Promise<ArtifactFeedbackMessage[]> {

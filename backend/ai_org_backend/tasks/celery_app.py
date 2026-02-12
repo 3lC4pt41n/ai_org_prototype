@@ -25,6 +25,15 @@ celery.autodiscover_tasks(packages=["ai_org_backend.agents"])
 celery.conf.include = [
     "ai_org_backend.agents.architect",
     "ai_org_backend.agents.architect_feedback",
+    "ai_org_backend.agents.planner",
+    "ai_org_backend.agents.reviewer",
+    "ai_org_backend.agents.product_owner",
+    "ai_org_backend.agents.agent_dev",
+    "ai_org_backend.agents.agent_qa",
+    "ai_org_backend.agents.agent_ux_ui",
+    "ai_org_backend.agents.agent_insight",
+    "ai_org_backend.agents.agent_integration",
+    "ai_org_backend.agents.repo_composer",
     "ai_org_backend.tasks.llm_tasks",
 ]
 

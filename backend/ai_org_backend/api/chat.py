@@ -343,8 +343,9 @@ def post_chat(
             artifact.released = True
             session.add(artifact)
             task = session.get(Task, artifact.task_id)
-            if task and task.status != "done":
-                task.status = "done"
+            if task:
+                if task.status != "done":
+                    task.status = "done"
                 if task.notes:
                     task.notes = task.notes.replace("awaiting_approval", "approved")
                 else:
@@ -353,33 +354,73 @@ def post_chat(
             task_desc = (task.description or "").lower() if task else ""
             repo_path = (artifact.repo_path or "").lower()
             is_vision = "vision" in task_desc or "vision" in repo_path
-            if is_vision:
-                purpose_obj = session.get(Purpose, purpose_id)
-                if purpose_obj:
-                    existing_prd = session.exec(
-                        select(Task)
-                        .where(Task.purpose_id == purpose_id)
-                        .where(Task.description.ilike("%Product Requirements Document%"))
-                    ).first()
-                    if not existing_prd:
-                        try:
-                            _, _, prd_artifact = generate_prd_artifact(purpose_obj)
-                            if prd_artifact:
-                                artifact_redirect_id = prd_artifact.id
-                                artifact_redirect_url = f"/api/artifact/{prd_artifact.id}"
-                        except Exception as exc:  # pragma: no cover - logging only
-                            logger.error("PRD generation after vision approval failed: %s", exc)
+            is_prd = "product requirements" in task_desc or "requirements" in repo_path
+            is_architecture = (
+                "architecture blueprint" in task_desc
+                or "blueprints/" in repo_path
+            )
+            is_review = "architecture & domain review" in task_desc or "review" in repo_path
+
+            purpose_obj = session.get(Purpose, purpose_id) if purpose_id else None
+
+            # ── Vision approved → generate PRD ──
+            if is_vision and purpose_obj:
+                existing_prd = session.exec(
+                    select(Task)
+                    .where(Task.purpose_id == purpose_id)
+                    .where(Task.description.ilike("%Product Requirements Document%"))
+                ).first()
+                if not existing_prd:
+                    try:
+                        _, _, prd_artifact = generate_prd_artifact(purpose_obj)
+                        if prd_artifact:
+                            artifact_redirect_id = prd_artifact.id
+                            artifact_redirect_url = f"/api/artifact/{prd_artifact.id}"
+                            # In manual mode: re-pause so the user can review the PRD
+                            # before the scheduler progresses to architecture.
+                            if purpose_obj.mode == "manual":
+                                try:
+                                    pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
+                                except Exception:
+                                    logger.error("Failed to re-pause after PRD generation")
+                    except Exception as exc:  # pragma: no cover - logging only
+                        logger.error("PRD generation after vision approval failed: %s", exc)
+
+            # ── PRD approved → let scheduler pick up architecture ──
+            # (The scheduler will generate the architecture blueprint once the
+            # pause flag is cleared and it sees a released PRD artifact.)
+            if is_prd and purpose_obj:
+                logger.info(
+                    "PRD approved for purpose %s – scheduler will generate architecture",
+                    purpose_id,
+                )
+
+            # ── Architecture approved → let scheduler pick up review ──
+            if is_architecture and purpose_obj:
+                logger.info(
+                    "Architecture approved for purpose %s – scheduler will generate review",
+                    purpose_id,
+                )
+
+            # ── Review approved → let scheduler pick up planner ──
+            if is_review and purpose_obj:
+                logger.info(
+                    "Architecture Review approved for purpose %s – scheduler will run planner",
+                    purpose_id,
+                )
+
         try:
             session.commit()
         except Exception as e:
             session.rollback()
             logger.error("Failed to persist approval changes: %s", e)
             raise HTTPException(status_code=500, detail="Could not approve artifact")
+        # Clear the pause flag so the scheduler can proceed with the next phase.
         try:
             pool.delete(f"pause:{tenant_id}:{purpose_id}")
         except Exception as e:
             logger.error("Failed to clear pause flag: %s", e)
-        assistant_content = "Approval confirmed. Continuing with implementation."
+        assistant_content = "Freigabe bestätigt. Die nächste Phase wird vorbereitet."
         response_extras["status"] = "approved"
         if artifact_redirect_id:
             response_extras["artifact_redirect_id"] = artifact_redirect_id
@@ -762,15 +803,21 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                 if user_msg.intent == ChatIntent.APPROVAL:
                     for aid in artifact_ids:
                         artifact = session.get(Artifact, aid)
-                        if artifact:
-                            task = session.get(Task, artifact.task_id)
-                            if task and task.status != "done":
+                        if not artifact:
+                            continue
+                        if artifact.released:
+                            continue
+                        artifact.released = True
+                        session.add(artifact)
+                        task = session.get(Task, artifact.task_id)
+                        if task:
+                            if task.status != "done":
                                 task.status = "done"
-                                if task.notes:
-                                    task.notes = task.notes.replace("awaiting_approval", "approved")
-                                else:
-                                    task.notes = "approved via chat"
-                                session.add(task)
+                            if task.notes:
+                                task.notes = task.notes.replace("awaiting_approval", "approved")
+                            else:
+                                task.notes = "approved via chat"
+                            session.add(task)
                     try:
                         session.commit()
                     except Exception as e:

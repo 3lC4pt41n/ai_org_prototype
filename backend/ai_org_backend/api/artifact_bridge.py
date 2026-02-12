@@ -77,10 +77,17 @@ class FeedbackBody(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/artifact/{artifact_id}")
-@router.get("/artifacts/{artifact_id}")
+@router.get("/artifact/{artifact_id}/meta")
+@router.get("/artifacts/{artifact_id}/meta")
 def get_artifact_by_id(artifact_id: str, session: Session = Depends(get_session)) -> Dict:
-    """Return the stored representation of an artifact."""
+    """Return the stored metadata of an artifact (not the file content).
+
+    NOTE: The actual file content is served by the pipeline router at
+    ``GET /api/artifact/{artifact_id}`` which returns a ``FileResponse``.
+    This endpoint was previously registered under the same path and
+    shadowed the file-serving route, causing the frontend to receive
+    JSON metadata instead of the rendered markdown content.
+    """
 
     query = text(
         """

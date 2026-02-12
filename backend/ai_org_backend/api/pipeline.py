@@ -802,7 +802,11 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
                 session.commit()
                 session.refresh(purpose)
 
-    instantiate_pipeline_for_purpose(purpose, template)
+    # In auto mode: create all pipeline tasks upfront.
+    # In manual mode: only create tasks on-demand as each phase is approved,
+    # so the user can review and iterate before moving to the next phase.
+    if purpose.mode == "auto":
+        instantiate_pipeline_for_purpose(purpose, template)
 
     with Session(engine) as session:
         existing_tasks = session.exec(
@@ -842,26 +846,35 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Vision generation failed: {exc}")
 
+    # In manual mode: set pause flag so the scheduler waits for user approval
+    # before progressing beyond the vision phase.
+    if purpose.mode == "manual":
+        try:
+            pool.set(f"pause:{tenant_id}:{purpose.id}", "1")
+        except Exception as e:
+            logger.error("Failed to set pause flag for purpose %s: %s", purpose.id, e)
+
     prd_content = ""
-    if existing_prd:
-        prd_art = _latest_artifact_for_task(existing_prd.id)
-        if prd_art:
-            logger.info("Purpose %s already has a PRD artefact", purpose.id)
-            prd_content = _read_artifact_text(prd_art)
-        elif purpose.mode == "auto":
+    if purpose.mode == "auto":
+        if existing_prd:
+            prd_art = _latest_artifact_for_task(existing_prd.id)
+            if prd_art:
+                logger.info("Purpose %s already has a PRD artefact", purpose.id)
+                prd_content = _read_artifact_text(prd_art)
+            else:
+                try:
+                    _, prd_content, _ = generate_prd_artifact(purpose, existing_prd)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=500, detail=f"Requirements gathering failed: {exc}"
+                    )
+        else:
             try:
-                _, prd_content, _ = generate_prd_artifact(purpose, existing_prd)
+                _, prd_content, _ = generate_prd_artifact(purpose)
             except Exception as exc:
                 raise HTTPException(
                     status_code=500, detail=f"Requirements gathering failed: {exc}"
                 )
-    elif purpose.mode == "auto":
-        try:
-            _, prd_content, _ = generate_prd_artifact(purpose)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500, detail=f"Requirements gathering failed: {exc}"
-            )
 
     return {
         "purpose_id": purpose.id,

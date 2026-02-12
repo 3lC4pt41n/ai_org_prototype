@@ -235,8 +235,9 @@ const usePipelineStore = create<PipelineState>((set, get) => ({
   fetchArtifactContent: async (artifactId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await api.get(`/artifact/${artifactId}`);
-      set({ artifactContent: res.data.content });
+      const res = await api.get(`/artifact/${artifactId}`, { responseType: 'text', transformResponse: [(data: unknown) => data] });
+      const text = typeof res.data === 'string' ? res.data : '';
+      set({ artifactContent: text });
     } catch (err) {
       console.error('fetchArtifactContent failed', err);
       set({ artifactContent: '', error: err });
