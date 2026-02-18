@@ -164,11 +164,17 @@ def integrate_prd_feedback(
 
 
 def generate_prd_artifact(
-    purpose: Purpose, existing_task: Task | None = None
+    purpose: Purpose,
+    existing_task: Task | None = None,
+    vision_text: str | None = None,
 ) -> tuple[Task, str, Artifact | None]:
-    """Create or refresh the PRD artifact for a purpose."""
+    """Create or refresh the PRD artifact for a purpose.
 
-    from ai_org_backend.agents.product_owner import run_requirements
+    If *vision_text* is provided it is forwarded to the Product Owner agent so
+    the PRD is generated with full context of the approved vision document.
+    """
+
+    from ai_org_backend.agents.product_owner import generate_prd, run_requirements
 
     tenant_id = purpose.tenant_id
     logger.info(
@@ -206,7 +212,10 @@ def generate_prd_artifact(
 
     prd_content = ""
     try:
-        prd_content = run_requirements(purpose)
+        if vision_text:
+            prd_content, _ = generate_prd(purpose, vision=vision_text)
+        else:
+            prd_content = run_requirements(purpose)
     except Exception as exc:
         logger.error("PRD agent failed for purpose %s: %s", purpose.id, exc)
         try:

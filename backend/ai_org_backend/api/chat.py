@@ -346,9 +346,11 @@ def post_chat(
             if task:
                 if task.status != "done":
                     task.status = "done"
-                if task.notes:
+                if task.notes and "awaiting_approval" in task.notes:
                     task.notes = task.notes.replace("awaiting_approval", "approved")
-                else:
+                elif task.notes and "approved" not in task.notes.lower():
+                    task.notes = f"{task.notes} | approved via chat"
+                elif not task.notes:
                     task.notes = "approved via chat"
                 session.add(task)
             task_desc = (task.description or "").lower() if task else ""
@@ -372,7 +374,17 @@ def post_chat(
                 ).first()
                 if not existing_prd:
                     try:
-                        _, _, prd_artifact = generate_prd_artifact(purpose_obj)
+                        # Read the just-approved vision content so the PRD agent has full context.
+                        vision_content = ""
+                        try:
+                            from ai_org_backend.services.storage import resolve_for_read as _resolve
+                            vision_path = _resolve(artifact.repo_path)
+                            vision_content = vision_path.read_text(encoding="utf-8", errors="ignore")
+                        except Exception as _ve:
+                            logger.warning("Could not read vision for PRD context: %s", _ve)
+                        _, _, prd_artifact = generate_prd_artifact(
+                            purpose_obj, vision_text=vision_content or None,
+                        )
                         if prd_artifact:
                             artifact_redirect_id = prd_artifact.id
                             artifact_redirect_url = f"/api/artifact/{prd_artifact.id}"
@@ -460,7 +472,26 @@ def post_chat(
             response_extras.setdefault("status", "ok")
         if assistant_content is None:
             messages: list[dict] = []
-            sys_content = PROMPT_TEMPLATE.render(project=purpose.name, paused=paused)
+            # Load current artifact content so AImar can reference the document.
+            _artifact_title = ""
+            _artifact_content = ""
+            if artifact_ids:
+                _art = session.get(Artifact, artifact_ids[0])
+                if _art:
+                    _task = session.get(Task, _art.task_id) if _art.task_id else None
+                    _artifact_title = (_task.description if _task else "") or ""
+                    try:
+                        from ai_org_backend.services.storage import resolve_for_read as _rfr
+                        _fpath = _rfr(_art.repo_path)
+                        _artifact_content = _fpath.read_text(encoding="utf-8", errors="ignore")[:8000]
+                    except Exception:
+                        _artifact_content = ""
+            sys_content = PROMPT_TEMPLATE.render(
+                project=purpose.name,
+                paused=paused,
+                artifact_title=_artifact_title,
+                artifact_content=_artifact_content,
+            )
             messages.append({"role": "system", "content": sys_content})
 
             conv_query = select(ChatMessage).where(
@@ -813,9 +844,11 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                         if task:
                             if task.status != "done":
                                 task.status = "done"
-                            if task.notes:
+                            if task.notes and "awaiting_approval" in task.notes:
                                 task.notes = task.notes.replace("awaiting_approval", "approved")
-                            else:
+                            elif task.notes and "approved" not in task.notes.lower():
+                                task.notes = f"{task.notes} | approved via chat"
+                            elif not task.notes:
                                 task.notes = "approved via chat"
                             session.add(task)
                     try:
@@ -915,7 +948,26 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
 
                 if assistant_content is None:
                     messages: list[dict] = []
-                    sys_content = PROMPT_TEMPLATE.render(project=project_name, paused=paused)
+                    # Load artifact content for AImar context awareness.
+                    _ws_art_title = ""
+                    _ws_art_content = ""
+                    if artifact_ids:
+                        _ws_art = session.get(Artifact, artifact_ids[0])
+                        if _ws_art:
+                            _ws_task = session.get(Task, _ws_art.task_id) if _ws_art.task_id else None
+                            _ws_art_title = (_ws_task.description if _ws_task else "") or ""
+                            try:
+                                from ai_org_backend.services.storage import resolve_for_read as _rfr2
+                                _ws_fpath = _rfr2(_ws_art.repo_path)
+                                _ws_art_content = _ws_fpath.read_text(encoding="utf-8", errors="ignore")[:8000]
+                            except Exception:
+                                _ws_art_content = ""
+                    sys_content = PROMPT_TEMPLATE.render(
+                        project=project_name,
+                        paused=paused,
+                        artifact_title=_ws_art_title,
+                        artifact_content=_ws_art_content,
+                    )
                     messages.append({"role": "system", "content": sys_content})
                     conv_query = select(ChatMessage).where(
                         ChatMessage.tenant_id == tenant_id,

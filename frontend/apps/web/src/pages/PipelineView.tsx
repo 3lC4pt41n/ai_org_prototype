@@ -1217,41 +1217,6 @@ export default function PipelineView() {
             )}
             {isLoading && <p className="text-sm text-slate-500">Lade...</p>}
             {phaseContent}
-            {!autoPipeline && currentPhase === 'vision' && visionArtifact && !visionArtifact.released && (
-              <button
-                onClick={() => void approveArtifact(visionArtifact.id)}
-                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
-              >
-                Vision freigeben
-              </button>
-            )}
-            {!autoPipeline && currentPhase === 'prd' && prdArtifact && !prdArtifact.released && (
-              <button
-                onClick={() => void approveArtifact(prdArtifact.id)}
-                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
-              >
-                PRD freigeben
-              </button>
-            )}
-            {!autoPipeline && currentPhase === 'architecture' && archArtifact && !archArtifact.released && (
-              <button
-                onClick={() => void approveArtifact(archArtifact.id)}
-                className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
-              >
-                Architektur freigeben
-              </button>
-            )}
-            {!autoPipeline &&
-              currentPhase === 'architecture_review' &&
-              architectureReviewArtifact &&
-              !architectureReviewArtifact.released && (
-                <button
-                  onClick={() => void approveArtifact(architectureReviewArtifact.id)}
-                  className="mt-4 inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
-                >
-                  Review freigeben
-                </button>
-              )}
           </div>
         </div>
 

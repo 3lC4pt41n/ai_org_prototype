@@ -1,8 +1,5 @@
 import { useEffect, useState, useRef, useMemo, type ChangeEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { api, postJson, API_BASE } from '../lib/api';
-import { toast } from 'react-hot-toast';
+import { API_BASE } from '../lib/api';
 import FileViewer from './FileViewer';
 import usePipelineStore from '../store/pipelineStore';
 
@@ -12,15 +9,6 @@ interface Artifact {
   released?: boolean;
 }
 
-interface FeedbackEntry {
-  id?: string;
-  content: string;
-  created_at?: string;
-  author?: string;
-  role?: 'user' | 'assistant' | 'agent';
-  intent?: 'feedback' | 'note' | 'question' | 'approval';
-  metadata?: Record<string, unknown> | null;
-}
 
 interface Props {
   title: string;
@@ -36,7 +24,6 @@ export default function ArtifactSection({
   artifact,
   statusIcon,
   showFeedback = false,
-  onApproved,
 }: Props) {
   const [content, setContent] = useState<string>('');
   const [contentType, setContentType] = useState<string | null>(null);
@@ -44,16 +31,6 @@ export default function ArtifactSection({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [history, setHistory] = useState<FeedbackEntry[]>([]);
-  const [draft, setDraft] = useState<string>('');
-  const [submitState, setSubmitState] = useState<'idle' | 'ok' | 'err'>('idle');
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const historyEndRef = useRef<HTMLDivElement | null>(null);
-
-  const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
-  const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
-  const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
-  const selectedPurposeId = usePipelineStore((s) => s.selectedPurposeId);
   const allArtifacts = usePipelineStore((s) => s.artifacts);
   // Determine version history for this artifact (all artifacts of same task)
   interface ArtifactFull extends Artifact {
@@ -169,160 +146,6 @@ export default function ArtifactSection({
   const latestId =
     artifactVersions.length > 0 ? artifactVersions[artifactVersions.length - 1].id : null;
 
-  // Feedback-Historie laden (neueste zuletzt)
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      if (!selectedPurposeId || !showFeedback) {
-        setHistory([]);
-        return;
-      }
-      try {
-        const params = new URLSearchParams({
-          purpose_id: selectedPurposeId,
-          artifact_id: artifact.id,
-        });
-        const r = await api.get(`/chat/messages?${params.toString()}`);
-        const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
-        if (!alive) return;
-        setHistory(list);
-      } catch {
-        if (!alive) return;
-        setHistory([]);
-      }
-    }
-    load();
-    return () => {
-      alive = false;
-    };
-  }, [artifact.id, selectedPurposeId, showFeedback]);
-
-  useEffect(() => {
-    historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [history.length]);
-
-  async function sendFeedback() {
-    if (!draft.trim()) {
-      toast.error('Bitte einen Korrekturvorschlag eingeben.');
-      return;
-    }
-    if (!selectedPurposeId) {
-      toast.error('Kein Projekt ausgewählt.');
-      return;
-    }
-    setSubmitting(true);
-    setSubmitState('idle');
-    const tId = toast.loading('Korrektur wird gespeichert …');
-    try {
-      const message = draft.trim();
-      const intent = /\?\s*$/.test(message) ? 'question' : 'feedback';
-      await postJson(`/chat/messages`, {
-        purpose_id: selectedPurposeId,
-        artifact_ids: [artifact.id],
-        message,
-        intent,
-      });
-      setDraft('');
-      setSubmitState('ok');
-      toast.success('Korrekturvorschlag gespeichert – Product Owner aktualisiert das PRD.', { id: tId });
-      // neu laden
-      const params = new URLSearchParams({
-        purpose_id: selectedPurposeId,
-        artifact_id: artifact.id,
-      });
-      const r = await api.get(`/chat/messages?${params.toString()}`);
-      const list: FeedbackEntry[] = Array.isArray(r.data) ? r.data : [];
-      setHistory(list);
-      await fetchVersionContent(selectedArtifactId);
-    } catch {
-      setSubmitState('err');
-      toast.error('Speichern fehlgeschlagen.', { id: tId });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function approve() {
-    setSubmitState('idle');
-    setSubmitting(true);
-    const tId = toast.loading('Freigabe wird verarbeitet …');
-    try {
-      if (!selectedPurposeId) {
-        throw new Error('purpose_missing');
-      }
-      const resp = await postJson<{
-        status?: string;
-        artifact_redirect_id?: string;
-        artifact_redirect_url?: string;
-      }>(`/chat/messages`, {
-        purpose_id: selectedPurposeId,
-        artifact_ids: [artifact.id],
-        intent: 'approval',
-        message: 'Approved',
-      });
-      setDraft('');
-      setSubmitState('ok');
-      toast.success('Freigegeben – Architektur wird erstellt & Plan erzeugt.', { id: tId });
-      // Refresh lists
-      await fetchArtifacts();
-      await fetchBacklog();
-      if (selectedPurposeId) {
-        await fetchGraphAndStatus(selectedPurposeId);
-      }
-      const redirectArtifactId = resp?.artifact_redirect_id;
-      const redirectArtifactUrl = resp?.artifact_redirect_url;
-      onApproved?.({
-        redirectArtifactId: redirectArtifactId ?? undefined,
-        redirectArtifactUrl: redirectArtifactUrl ?? undefined,
-      });
-      if (redirectArtifactId) {
-        toast.success('Architekturvorschlag erstellt – Architekturphase geöffnet.');
-      }
-      try {
-        await fetchVersionContent(selectedArtifactId);
-      } catch {
-        /* ignore load error */
-      }
-    } catch {
-      setSubmitState('err');
-      toast.error('Freigabe fehlgeschlagen.', { id: tId });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function renderFeedback(fb: FeedbackEntry) {
-    if (!fb.content) {
-      return <p className="text-sm text-gray-500 italic">(kein Inhalt)</p>;
-    }
-    try {
-      const parsed = JSON.parse(fb.content);
-      if (Array.isArray(parsed)) {
-        return (
-          <ul className="list-disc ml-4 text-sm">
-            {parsed.map((qa: any, i: number) => (
-              <li key={i} className="mb-1">
-                <p>
-                  <b>Q:</b> {qa.question}
-                </p>
-                <p>
-                  <b>A:</b> {qa.answer}
-                </p>
-              </li>
-            ))}
-          </ul>
-        );
-      }
-    } catch {
-      /* ignore – treat as markdown */
-    }
-    return (
-      <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
-        {fb.content}
-      </ReactMarkdown>
-    );
-  }
-
   return (
     <section className="mb-6 pb-6 border-b">
       <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
@@ -409,92 +232,10 @@ export default function ArtifactSection({
         )}
       </div>
 
-      {/* Feedback-Historie */}
-      {showFeedback && history.length > 0 && isLatestVersion && (
-        <div className="mb-3 p-3 border rounded bg-white space-y-3 max-h-60 overflow-y-auto">
-          {history.map((fb, idx) => {
-            const key = fb.id ?? `${idx}`;
-            const intentLabel =
-              fb.intent === 'feedback'
-                ? 'Feedback'
-                : fb.intent === 'question'
-                ? 'Frage'
-                : fb.intent === 'approval'
-                ? 'Freigabe'
-                : fb.intent === 'note'
-                ? 'Notiz'
-                : null;
-            const authorLabel =
-              fb.author ||
-              (fb.role === 'assistant'
-                ? 'Product Owner (AI)'
-                : fb.role === 'agent'
-                ? 'Agent'
-                : 'Du');
-            const createdLabel = fb.created_at
-              ? new Date(fb.created_at).toLocaleString('de-DE', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })
-              : null;
-            const bubbleClass =
-              fb.role === 'user'
-                ? 'border-blue-200 bg-blue-50'
-                : fb.role === 'assistant'
-                ? 'border-green-200 bg-green-50'
-                : 'border-slate-200 bg-slate-50';
-            return (
-              <div key={key} className={`rounded border ${bubbleClass} p-2`}>
-                <div className="text-xs text-gray-600 mb-1 flex flex-wrap items-center gap-1">
-                  <span className="font-medium">{authorLabel}</span>
-                  {intentLabel && (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500">{intentLabel}</span>
-                  )}
-                  {createdLabel && <span className="text-[11px] text-gray-500">{createdLabel}</span>}
-                </div>
-                {renderFeedback(fb)}
-              </div>
-            );
-          })}
-          <div ref={historyEndRef} />
-        </div>
-      )}
-
-      {/* Eingabe (nur bei Pause) */}
-      {showFeedback && isLatestVersion && (
-        <div className="p-3 border rounded bg-white">
-          <label className="block text-sm font-medium mb-1">Dein Korrekturvorschlag</label>
-          <textarea
-            rows={4}
-            className="w-full p-2 border rounded text-sm"
-            placeholder="Schreibe einen Korrekturvorschlag oder eine Rückfrage…"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
-              onClick={sendFeedback}
-              disabled={!draft.trim() || submitting}
-            >
-              Korrektur anfordern
-            </button>
-            {!currentArtifact.released ? (
-              <button
-                className="px-3 py-1 bg-green-600 text-white rounded text-sm"
-                onClick={approve}
-                disabled={submitting}
-              >
-                Freigeben
-              </button>
-            ) : (
-              <span className="text-green-600 text-sm">Freigegeben</span>
-            )}
-            {submitState === 'ok' && <span className="text-green-600 text-xs">Gespeichert.</span>}
-            {submitState === 'err' && (
-              <span className="text-red-600 text-xs">Speichern fehlgeschlagen.</span>
-            )}
-          </div>
+      {/* Freigegeben-Status (nur Anzeige – Freigabe läuft über den Chat-Panel-Button) */}
+      {showFeedback && isLatestVersion && currentArtifact.released && (
+        <div className="p-3 border rounded bg-white flex items-center gap-2">
+          <span className="text-green-600 text-sm font-medium">✓ Freigegeben</span>
         </div>
       )}
     </section>

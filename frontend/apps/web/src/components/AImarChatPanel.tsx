@@ -4,11 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { toast } from 'react-hot-toast';
 import { getJson, postJson, API_BASE } from '../lib/api';
 import usePipelineStore from '../store/pipelineStore';
-import {
-  getFeedbackForArtifact,
-  postFeedbackForArtifact,
-  type ArtifactFeedbackMessage,
-} from '../api/api.artifacts';
+import type { ArtifactFeedbackMessage } from '../api/api.artifacts';
 import { formatDateTime } from '../lib/datetime';
 import { usePipelineCopy } from '../i18n/pipeline';
 
@@ -78,13 +74,19 @@ function ArtifactChatPanel({
     setVisibleCount(INITIAL_VISIBLE);
     async function load() {
       try {
-        const list = await getFeedbackForArtifact(artifactId);
+        const list = await getJson<ArtifactFeedbackMessage[]>(
+          `/chat/messages?purpose_id=${encodeURIComponent(purposeId)}&artifact_id=${encodeURIComponent(artifactId)}`,
+        );
+        const normalized = (Array.isArray(list) ? list : []).map((msg) => ({
+          ...msg,
+          id: msg.id ?? null,
+        }));
         if (!canceled) {
-          setMessages(list);
+          setMessages(normalized);
           setVisibleCount((prev) => {
-            if (!list.length) return INITIAL_VISIBLE;
+            if (!normalized.length) return INITIAL_VISIBLE;
             const baseline = Math.max(prev, INITIAL_VISIBLE);
-            return Math.min(list.length, baseline);
+            return Math.min(normalized.length, baseline);
           });
         }
       } catch (error) {
@@ -103,7 +105,7 @@ function ArtifactChatPanel({
     return () => {
       canceled = true;
     };
-  }, [artifactId]);
+  }, [artifactId, purposeId]);
 
   useEffect(() => {
     if (!messages.length) {
@@ -121,12 +123,18 @@ function ArtifactChatPanel({
 
   async function refreshMessages() {
     try {
-      const list = await getFeedbackForArtifact(artifactId);
-      setMessages(list);
+      const list = await getJson<ArtifactFeedbackMessage[]>(
+        `/chat/messages?purpose_id=${encodeURIComponent(purposeId)}&artifact_id=${encodeURIComponent(artifactId)}`,
+      );
+      const normalized = (Array.isArray(list) ? list : []).map((msg) => ({
+        ...msg,
+        id: msg.id ?? null,
+      }));
+      setMessages(normalized);
       setVisibleCount((prev) => {
-        if (!list.length) return INITIAL_VISIBLE;
+        if (!normalized.length) return INITIAL_VISIBLE;
         const baseline = Math.max(prev, INITIAL_VISIBLE);
-        return Math.min(list.length, baseline);
+        return Math.min(normalized.length, baseline);
       });
       shouldAutoScrollRef.current = true;
     } catch (error) {
@@ -142,28 +150,14 @@ function ArtifactChatPanel({
 
     setIsSubmitting(true);
     try {
-      if (intent === 'approval') {
-        await postFeedbackForArtifact(artifactId, text || 'Approved', 'approval');
-      } else {
-        await postFeedbackForArtifact(artifactId, text, intent);
-      }
-
-      if (intent === 'approval') {
-        await postJson('/chat/messages', {
-          purpose_id: purposeId,
-          artifact_ids: [artifactId],
-          intent: 'approval',
-          message: text || 'Approved',
-        });
-      } else {
-        const messageIntent = /\?\s*$/.test(text) ? 'question' : intent;
-        await postJson('/chat/messages', {
-          purpose_id: purposeId,
-          artifact_ids: [artifactId],
-          intent: messageIntent,
-          message: text,
-        });
-      }
+      const messageText = intent === 'approval' ? (text || 'Approved') : text;
+      const messageIntent = (intent !== 'approval' && /\?\s*$/.test(text)) ? 'question' : intent;
+      await postJson('/chat/messages', {
+        purpose_id: purposeId,
+        artifact_ids: [artifactId],
+        intent: messageIntent,
+        message: messageText,
+      });
       setInput('');
       shouldAutoScrollRef.current = true;
       await refreshMessages();
