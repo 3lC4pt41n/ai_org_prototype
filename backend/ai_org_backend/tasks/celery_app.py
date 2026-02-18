@@ -23,6 +23,7 @@ app = celery
 
 celery.autodiscover_tasks(packages=["ai_org_backend.agents"])
 celery.conf.include = [
+    "ai_org_backend.agents.vision",
     "ai_org_backend.agents.architect",
     "ai_org_backend.agents.architect_feedback",
     "ai_org_backend.agents.planner",

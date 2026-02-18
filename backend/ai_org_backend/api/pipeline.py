@@ -28,6 +28,7 @@ from ai_org_backend.models.chat import ChatIntent
 from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
+from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.services.artifact_workflow import generate_prd_artifact
 from ai_org_backend.services.pipeline_templates import (
     ensure_template_for_purpose,
@@ -830,32 +831,57 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         )
 
     vision_content = ""
+    vision_task_id = None
     if existing_vision:
         vision_art = _latest_artifact_for_task(existing_vision.id)
         if vision_art:
             logger.info("Purpose %s already has a Vision artefact", purpose.id)
             vision_content = _read_artifact_text(vision_art)
         else:
-            try:
-                _, vision_content, _ = _generate_vision_artifact(purpose, existing_vision)
-            except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"Vision generation failed: {exc}")
+            # Dispatch the vision agent asynchronously instead of blocking
+            vision_task_id = existing_vision.id
+            celery.send_task(
+                "agent.vision",
+                args=[tenant_id, existing_vision.id, purpose.id],
+                queue=f"{tenant_id}:vision",
+            )
+            logger.info(
+                "Dispatched async vision generation for existing task %s (purpose %s)",
+                existing_vision.id,
+                purpose.id,
+            )
     else:
-        try:
-            _, vision_content, _ = _generate_vision_artifact(purpose)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Vision generation failed: {exc}")
-
-    # In manual mode: set pause flag so the scheduler waits for user approval
-    # before progressing beyond the vision phase.
-    if purpose.mode == "manual":
-        try:
-            pool.set(f"pause:{tenant_id}:{purpose.id}", "1")
-        except Exception as e:
-            logger.error("Failed to set pause flag for purpose %s: %s", purpose.id, e)
+        # Create the task record first, then dispatch async
+        with Session(engine) as session:
+            vision_task = Task(
+                tenant_id=tenant_id,
+                purpose_id=purpose.id,
+                description="Vision Document",
+                business_value=0.0,
+                tokens_plan=0,
+                purpose_relevance=1.0,
+                status="doing",
+                owner=TaskOwner.VISION_AGENT,
+                notes="Vision in progress",
+            )
+            session.add(vision_task)
+            session.commit()
+            session.refresh(vision_task)
+            vision_task_id = vision_task.id
+        celery.send_task(
+            "agent.vision",
+            args=[tenant_id, vision_task_id, purpose.id],
+            queue=f"{tenant_id}:vision",
+        )
+        logger.info(
+            "Dispatched async vision generation for new task %s (purpose %s)",
+            vision_task_id,
+            purpose.id,
+        )
 
     prd_content = ""
-    if purpose.mode == "auto":
+    if purpose.mode == "auto" and vision_content:
+        # Auto mode with existing vision: generate PRD synchronously (already fast since vision exists)
         if existing_prd:
             prd_art = _latest_artifact_for_task(existing_prd.id)
             if prd_art:
@@ -880,6 +906,7 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
         "purpose_id": purpose.id,
         "vision": vision_content,
         "requirements": prd_content,
+        "vision_generating": bool(vision_task_id and not vision_content),
     }
 
 

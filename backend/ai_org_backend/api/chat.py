@@ -22,10 +22,7 @@ from ai_org_backend.models.chat import (
     ChatScope,
 )
 from ai_org_backend.redis_client import pool
-from ai_org_backend.services.artifact_workflow import (
-    generate_prd_artifact,
-    integrate_prd_feedback,
-)
+from ai_org_backend.services.artifact_workflow import integrate_prd_feedback
 from ai_org_backend.services.storage import resolve_for_read, register_artefact
 from ai_org_backend.services.vector_store import VectorStore
 from ai_org_backend.utils import llm
@@ -334,6 +331,7 @@ def post_chat(
     if user_msg.intent == ChatIntent.APPROVAL:
         artifact_redirect_id: str | None = None
         artifact_redirect_url: str | None = None
+        dispatched_followup = False  # Track whether an async follow-up task was dispatched
         for aid in artifact_ids:
             artifact = session.get(Artifact, aid)
             if not artifact:
@@ -365,7 +363,7 @@ def post_chat(
 
             purpose_obj = session.get(Purpose, purpose_id) if purpose_id else None
 
-            # ── Vision approved → generate PRD ──
+            # ── Vision approved → dispatch PRD generation asynchronously ──
             if is_vision and purpose_obj:
                 existing_prd = session.exec(
                     select(Task)
@@ -374,29 +372,34 @@ def post_chat(
                 ).first()
                 if not existing_prd:
                     try:
-                        # Read the just-approved vision content so the PRD agent has full context.
-                        vision_content = ""
-                        try:
-                            from ai_org_backend.services.storage import resolve_for_read as _resolve
-                            vision_path = _resolve(artifact.repo_path)
-                            vision_content = vision_path.read_text(encoding="utf-8", errors="ignore")
-                        except Exception as _ve:
-                            logger.warning("Could not read vision for PRD context: %s", _ve)
-                        _, _, prd_artifact = generate_prd_artifact(
-                            purpose_obj, vision_text=vision_content or None,
+                        prd_task = Task(
+                            tenant_id=tenant_id,
+                            purpose_id=purpose_id,
+                            description="Product Requirements Document",
+                            business_value=0.0,
+                            tokens_plan=0,
+                            purpose_relevance=1.0,
+                            status="doing",
+                            owner="PO",
+                            notes="PRD in progress",
                         )
-                        if prd_artifact:
-                            artifact_redirect_id = prd_artifact.id
-                            artifact_redirect_url = f"/api/artifact/{prd_artifact.id}"
-                            # In manual mode: re-pause so the user can review the PRD
-                            # before the scheduler progresses to architecture.
-                            if purpose_obj.mode == "manual":
-                                try:
-                                    pool.set(f"pause:{tenant_id}:{purpose_id}", "1")
-                                except Exception:
-                                    logger.error("Failed to re-pause after PRD generation")
+                        session.add(prd_task)
+                        session.flush()
+                        session.refresh(prd_task)
+                        from ai_org_backend.tasks.celery_app import celery as _celery
+                        _celery.send_task(
+                            "agent.po",
+                            args=[tenant_id, prd_task.id, purpose_id],
+                            queue=f"{tenant_id}:po",
+                        )
+                        dispatched_followup = True
+                        logger.info(
+                            "Dispatched async PRD generation for task %s (purpose %s)",
+                            prd_task.id,
+                            purpose_id,
+                        )
                     except Exception as exc:  # pragma: no cover - logging only
-                        logger.error("PRD generation after vision approval failed: %s", exc)
+                        logger.error("PRD task creation after vision approval failed: %s", exc)
 
             # ── PRD approved → let scheduler pick up architecture ──
             # (The scheduler will generate the architecture blueprint once the
@@ -428,10 +431,13 @@ def post_chat(
             logger.error("Failed to persist approval changes: %s", e)
             raise HTTPException(status_code=500, detail="Could not approve artifact")
         # Clear the pause flag so the scheduler can proceed with the next phase.
-        try:
-            pool.delete(f"pause:{tenant_id}:{purpose_id}")
-        except Exception as e:
-            logger.error("Failed to clear pause flag: %s", e)
+        # If we dispatched an async follow-up task (e.g. Vision→PRD), keep the pause
+        # because the follow-up agent will set its own pause when it finishes.
+        if not dispatched_followup:
+            try:
+                pool.delete(f"pause:{tenant_id}:{purpose_id}")
+            except Exception as e:
+                logger.error("Failed to clear pause flag: %s", e)
         assistant_content = "Freigabe bestätigt. Die nächste Phase wird vorbereitet."
         response_extras["status"] = "approved"
         if artifact_redirect_id:

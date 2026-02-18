@@ -192,7 +192,7 @@ const PHASE_SIDEBAR_COMPONENTS: Record<
 export default function PipelineView() {
   const artifacts = usePipelineStore((s) => s.artifacts) as ArtifactItem[];
   const backlog = usePipelineStore((s) => s.backlog);
-  const purposes = usePipelineStore((s) => (s as any).purposes ?? []);
+  const purposes = usePipelineStore((s) => s.purposes ?? []);
   const graphNodes = usePipelineStore((s) => s.graphNodes);
   const graphEdges = usePipelineStore((s) => s.graphEdges);
   const tasksStatus = usePipelineStore((s) => s.tasksStatus);
@@ -1175,7 +1175,7 @@ export default function PipelineView() {
         </div>
       </div>
 
-      {error && (
+      {error ? (
         <div className="px-4 py-2 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-500 border-b">
           {typeof error === 'string'
             ? error
@@ -1183,7 +1183,7 @@ export default function PipelineView() {
               ? error.message
               : String(error)}
         </div>
-      )}
+      ) : null}
 
       <div className="flex flex-1 overflow-hidden">
         <nav className="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 overflow-y-auto">

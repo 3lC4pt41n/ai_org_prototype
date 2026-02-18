@@ -2,7 +2,7 @@ import React from 'react';
 import ArtifactSection from './ArtifactSection';
 import ChatPanelContainer from './pipeline/ChatPanelContainer';
 import PhaseArtifactPreview, { type PhaseArtifactPreviewData } from './pipeline/PhaseArtifactPreview';
-import type { ArtifactItem } from '../api/api.artifacts';
+import type { ArtifactItem } from './pipeline/types';
 
 export type PreviousArtifactConfig = {
   id: string;
