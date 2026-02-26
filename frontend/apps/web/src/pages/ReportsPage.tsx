@@ -15,7 +15,7 @@ export default function ReportsPage() {
 
   function downloadArtifact(id: string, filename: string) {
     const token = localStorage.getItem("token");
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     fetch(`${API_BASE}/artifact/${id}`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error("Download fehlgeschlagen");

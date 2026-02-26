@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import ArtifactSection from './ArtifactSection';
 import ChatPanelContainer from './pipeline/ChatPanelContainer';
 import PhaseArtifactPreview, { type PhaseArtifactPreviewData } from './pipeline/PhaseArtifactPreview';
 import type { ArtifactItem } from './pipeline/types';
+import usePipelineStore from '../store/pipelineStore';
 
 export type PreviousArtifactConfig = {
   id: string;
   title: string;
   phaseLabel?: string;
+  artifact?: PhaseArtifactPreviewData;
 };
 
 type Props = {
@@ -45,8 +47,18 @@ export default function PhaseArtifactAndChat({
   onApproved,
   paused,
 }: Props) {
+  const fetchArtifacts = usePipelineStore((s) => s.fetchArtifacts);
+  const fetchBacklog = usePipelineStore((s) => s.fetchBacklog);
+  const fetchGraphAndStatus = usePipelineStore((s) => s.fetchGraphAndStatus);
   const effectiveArtifact = artifact ?? (artifactId ? ({ id: artifactId } as ArtifactItem) : null);
   const effectiveArtifactId = effectiveArtifact?.id ?? null;
+  const handleFeedbackSubmitted = useCallback(() => {
+    const refreshes: Promise<unknown>[] = [fetchArtifacts(), fetchBacklog()];
+    if (purposeId) {
+      refreshes.push(fetchGraphAndStatus(purposeId));
+    }
+    void Promise.allSettled(refreshes);
+  }, [fetchArtifacts, fetchBacklog, fetchGraphAndStatus, purposeId]);
 
   return (
     <div className="space-y-6">
@@ -74,7 +86,7 @@ export default function PhaseArtifactAndChat({
               key={p.id}
               title={p.title}
               phaseLabel={p.phaseLabel}
-              artifact={{ id: p.id } as PhaseArtifactPreviewData }
+              artifact={p.artifact ?? ({ id: p.id } as PhaseArtifactPreviewData)}
               readOnly
             />
           ))}
@@ -97,6 +109,8 @@ export default function PhaseArtifactAndChat({
               }
             : null
         }
+        onArtifactApproved={onApproved}
+        onFeedbackSubmitted={effectiveArtifactId ? handleFeedbackSubmitted : undefined}
       />
     </div>
   );

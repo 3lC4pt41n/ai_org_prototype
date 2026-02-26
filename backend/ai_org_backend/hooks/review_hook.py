@@ -17,7 +17,7 @@ from typing import Any, Optional, cast
 
 from ai_org_backend.agents.reviewer import reviewer_task
 from ai_org_backend.db import SessionLocal
-from ai_org_backend.models import Artifact, Task, TaskDependency, TaskOwner
+from ai_org_backend.models import Artifact, Purpose, Task, TaskDependency, TaskOwner
 from sqlmodel import select
 from ai_org_backend.services import storage as _storage
 
@@ -151,6 +151,24 @@ def _maybe_trigger_review(task_id: str, filename: str) -> None:
             return
         tenant_id = task.tenant_id
         purpose_id = task.purpose_id
+        purpose = s.get(Purpose, purpose_id) if purpose_id else None
+        purpose_mode = (getattr(purpose, "mode", None) or "manual").lower()
+        latest_blueprint_artifact = s.exec(
+            select(Artifact)
+            .where(Artifact.task_id == task_id)
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        blueprint_released = bool(
+            latest_blueprint_artifact and latest_blueprint_artifact.released
+        )
+
+    # Manual mode must wait for explicit architecture approval.
+    if purpose_mode == "manual" and not blueprint_released:
+        logging.info(
+            "[ReviewHook] Skip auto-review for purpose=%s (manual mode, blueprint not released)",
+            purpose_id,
+        )
+        return
 
     # Create or reuse review task
     review_task = _ensure_review_task(tenant_id, purpose_id)

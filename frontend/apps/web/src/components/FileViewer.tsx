@@ -21,7 +21,7 @@ function ext(filename?: string | null): string {
 }
 
 function isMarkdown(ct?: string | null, fn?: string | null) {
-  return ct?.includes("text/markdown") || ext(fn) === "md";
+  return ct?.includes("markdown") || ["md", "mdx"].includes(ext(fn));
 }
 
 function isHTML(ct?: string | null, fn?: string | null) {
@@ -84,7 +84,7 @@ export default function FileViewer({ text, blobUrl, contentType, filename, heigh
     return (
       <MarkdownRenderer
         content={text}
-        className="prose prose-slate max-h-96 overflow-y-auto p-4 border rounded bg-white"
+        className="prose prose-slate dark:prose-invert max-h-[70vh] overflow-auto rounded-md border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70"
       />
     );
   }

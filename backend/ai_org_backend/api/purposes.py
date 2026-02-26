@@ -18,14 +18,11 @@ from ai_org_backend.models import (
     Purpose,
     Task,
     TaskDependency,
-    TaskOwner,
     Tenant,
 )
 from ai_org_backend.redis_client import pool
-from ai_org_backend.repo import Repo
-from ai_org_backend.scripts.seed_graph import ingest
 from ai_org_backend.services import graph_sync
-from ai_org_backend.services.storage import register_artefact, retract_artifact
+from ai_org_backend.services.storage import retract_artifact
 from ai_org_backend.settings import settings
 
 router = APIRouter(prefix="/api/purposes", tags=["purposes"])
@@ -61,12 +58,7 @@ def pause_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
 
 @router.post("/{purpose_id}/start")
 def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_tenant)):
-    """
-    Start (or resume) a purpose.
-    - Idempotent: if the PRD already exists, no 400 is raised; the pause flag is
-      removed and 200 returned instead.
-    - If no PRD exists yet, it is created.
-    """
+    """Resume a paused purpose (idempotent)."""
 
     tenant_id = current_tenant.id
     with Session(engine) as session:
@@ -74,64 +66,11 @@ def start_purpose(purpose_id: str, current_tenant: Tenant = Depends(get_current_
         if not purpose or purpose.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Purpose not found")
 
-        prd_task = session.exec(
-            select(Task)
-            .where(Task.purpose_id == purpose_id)
-            .where(Task.description.ilike("%Product Requirements Document%"))
-        ).first()
-
-        prd_artifact = None
-        if prd_task:
-            prd_artifact = session.exec(
-                select(Artifact).where(Artifact.task_id == prd_task.id)
-            ).first()
-
-        if prd_artifact:
-            try:
-                pool.delete(f"pause:{tenant_id}:{purpose_id}")
-            except Exception as e:
-                logging.error("Failed to remove pause flag: %s", e)
-            return {"status": "resumed", "idempotent": True}
-
-        prd_task_obj = Task(
-            tenant_id=tenant_id,
-            purpose_id=purpose_id,
-            description="Product Requirements Document",
-            status="done",
-            owner=TaskOwner.PRODUCT_OWNER,
-        )
-        session.add(prd_task_obj)
-        session.commit()
-        session.refresh(prd_task_obj)
-
-        prd_md = (
-            f"# Product Requirements Document\n\n"
-            f"**Purpose:** {purpose.name}\n\n"
-            f"## Overview\n\nTBD\n"
-        )
-        register_artefact(
-            prd_task_obj.id,
-            prd_md.encode("utf-8"),
-            filename="requirements/product_requirements_document.md",
-            media_type="text/markdown",
-            allow_overwrite=True,
-        )
-        Repo(tenant_id).update(
-            prd_task_obj.id,
-            status="done",
-            owner=TaskOwner.PRODUCT_OWNER,
-            notes="PRD created",
-        )
-
     try:
         pool.delete(f"pause:{tenant_id}:{purpose_id}")
     except Exception as e:
         logging.error("Failed to remove pause flag: %s", e)
-    try:
-        ingest(tenant_id)
-    except Exception as e:
-        logging.error("Failed to ingest graph for tenant %s: %s", tenant_id, e)
-    return {"status": "started"}
+    return {"status": "resumed"}
 
 
 @router.patch("/{purpose_id}")

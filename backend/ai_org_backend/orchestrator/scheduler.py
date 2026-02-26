@@ -5,7 +5,6 @@ import logging
 import re
 import time
 
-from sqlalchemy import not_
 from typing import Optional
 
 from sqlmodel import Session, func, select
@@ -187,6 +186,41 @@ def _dispatch_task(
             )
             return False
 
+    phase_slug = (getattr(phase, "slug", None) or "").lower()
+    purpose = session.get(Purpose, task.purpose_id) if task.purpose_id else None
+    if purpose and purpose.mode == "manual":
+        approval_dependencies: dict[str, str] = {
+            "prd": "vision document",
+            "architecture": "product requirements document",
+            "architecture_review": "architecture blueprint",
+            "implementation": "architecture & domain review",
+        }
+        required_desc = approval_dependencies.get(phase_slug)
+        if required_desc:
+            required_task = session.exec(
+                select(Task).where(
+                    Task.purpose_id == task.purpose_id,
+                    func.lower(Task.description) == required_desc,
+                )
+            ).first()
+            required_artifact = (
+                session.exec(
+                    select(Artifact)
+                    .where(Artifact.task_id == required_task.id)
+                    .order_by(Artifact.created_at.desc())
+                ).first()
+                if required_task
+                else None
+            )
+            if not required_artifact or not required_artifact.released:
+                logging.info(
+                    "[Orchestrator] Skip %s, waiting for approval of %s in purpose %s",
+                    phase_slug or task.description or task.id,
+                    required_desc,
+                    task.purpose_id,
+                )
+                return False
+
     resolved_role = role or task.agent_role or getattr(phase, "agent_role", None)
     if not resolved_role:
         logging.warning(
@@ -230,6 +264,18 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             return
         tenant_id = purpose.tenant_id
         purpose_mode = purpose.mode
+        vision_task = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "vision document",
+            )
+        ).first()
+        po_task = db_session.exec(
+            select(Task).where(
+                Task.purpose_id == purpose_id,
+                func.lower(Task.description) == "product requirements document",
+            )
+        ).first()
         blueprint_task = db_session.exec(
             select(Task).where(
                 Task.purpose_id == purpose_id,
@@ -243,11 +289,77 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             )
         ).first()
 
+        def _latest_artifact_for(task_obj: Task | None) -> Artifact | None:
+            if not task_obj:
+                return None
+            return db_session.exec(
+                select(Artifact)
+                .where(Artifact.task_id == task_obj.id)
+                .order_by(Artifact.created_at.desc())
+            ).first()
+
+        vision_artifact = _latest_artifact_for(vision_task)
+        prd_artifact = _latest_artifact_for(po_task)
+        blueprint_artifact = _latest_artifact_for(blueprint_task)
+        review_artifact = _latest_artifact_for(review_task)
+
+        if vision_task and vision_task.status == TaskStatus.DONE and not po_task:
+            vision_approved = bool(
+                purpose_mode == "auto"
+                or (vision_artifact and vision_artifact.released)
+                or "approved" in (vision_task.notes or "").lower()
+            )
+            if vision_approved:
+                new_task = Task(
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    description="Product Requirements Document",
+                    status="todo",
+                    owner="PO",
+                    agent_role="po",
+                    notes="awaiting_completion",
+                )
+                db_session.add(new_task)
+                db_session.commit()
+                db_session.refresh(new_task)
+                logging.info(
+                    "[Orchestrator] Created PRD Task %s for purpose %s",
+                    new_task.id,
+                    purpose_id,
+                )
+            else:
+                logging.info(
+                    "[Orchestrator] Vision completed but not approved yet for purpose %s",
+                    purpose_id,
+                )
+            return
+
+        prd_ready_for_architecture = bool(
+            po_task
+            and po_task.status == TaskStatus.DONE
+            and prd_artifact
+            and (purpose_mode == "auto" or prd_artifact.released)
+        )
+        if not prd_ready_for_architecture and not blueprint_task:
+            logging.debug(
+                "[Orchestrator] Waiting for approved PRD before architecture for purpose %s",
+                purpose_id,
+            )
+            return
+
         if (
             blueprint_task
             and blueprint_task.status == TaskStatus.DONE
             and review_task is None
         ):
+            if purpose_mode == "manual" and not (
+                blueprint_artifact and blueprint_artifact.released
+            ):
+                logging.info(
+                    "[Orchestrator] Blueprint exists but not approved yet for purpose %s",
+                    purpose_id,
+                )
+                return
             review_phase = db_session.exec(
                 select(PipelinePhase).where(PipelinePhase.slug == "architecture_review")
             ).first()
@@ -284,48 +396,6 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             )
             return
 
-        vision_task = db_session.exec(
-            select(Task).where(
-                Task.purpose_id == purpose_id,
-                func.lower(Task.description) == "vision document",
-            )
-        ).first()
-
-        po_task = db_session.exec(
-            select(Task).where(
-                Task.purpose_id == purpose_id,
-                func.lower(Task.description) == "product requirements document",
-            )
-        ).first()
-
-        if (
-            vision_task
-            and vision_task.status == TaskStatus.DONE
-            and not po_task
-        ):
-            if purpose and (
-                purpose.mode == "auto"
-                or "approved" in (vision_task.notes or "").lower()
-            ):
-                new_task = Task(
-                    tenant_id=tenant_id,
-                    purpose_id=purpose_id,
-                    description="Product Requirements Document",
-                    status="todo",
-                    owner="PO",
-                    agent_role="po",
-                    notes="awaiting_completion",
-                )
-                db_session.add(new_task)
-                db_session.commit()
-                db_session.refresh(new_task)
-                logging.info(
-                    "[Orchestrator] Created PRD Task %s for purpose %s",
-                    new_task.id,
-                    purpose_id,
-                )
-            return
-
         # Decide whether to run Planner (nur wenn Review freigegeben ist)
         # Note: must stay inside the `with Session` block so blueprint_task/review_task
         # are still attached to the session.
@@ -335,6 +405,14 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             and review_task
             and review_task.status == TaskStatus.DONE
         ):
+            if purpose_mode == "manual" and not (
+                review_artifact and review_artifact.released
+            ):
+                logging.info(
+                    "[Orchestrator] Review exists but not approved yet for purpose %s",
+                    purpose_id,
+                )
+                return
             logging.info(
                 "[Orchestrator] Review approved for purpose %s – triggering Planner...",
                 purpose_id,
@@ -430,23 +508,6 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         except Exception as e:
             logging.error("Failed to set pause flag after architecture: %s", e)
 
-    # Mark PRD artifact as released (safety check)
-    with Session(engine) as db_session:
-        prd_task = db_session.exec(
-            select(Task).where(
-                Task.purpose_id == purpose_id,
-                func.lower(Task.description) == "product requirements document",
-            )
-        ).first()
-        if prd_task:
-            prd_artifact = db_session.exec(
-                select(Artifact).where(Artifact.task_id == prd_task.id)
-            ).first()
-            if prd_artifact:
-                prd_artifact.released = True
-                db_session.add(prd_artifact)
-                db_session.commit()
-
     try:
         ingest(tenant_id)
     except Exception as e:
@@ -508,7 +569,9 @@ async def orchestrator() -> None:
                     prd_art = None
                     if prd_task_done:
                         prd_art = session.exec(
-                            select(Artifact).where(Artifact.task_id == prd_task_done.id)
+                            select(Artifact)
+                            .where(Artifact.task_id == prd_task_done.id)
+                            .order_by(Artifact.created_at.desc())
                         ).first()
 
                     review_task = next(
@@ -550,8 +613,14 @@ async def orchestrator() -> None:
                         and vision_task.status == TaskStatus.DONE
                         and prd_task is None
                     ):
+                        vision_art = session.exec(
+                            select(Artifact)
+                            .where(Artifact.task_id == vision_task.id)
+                            .order_by(Artifact.created_at.desc())
+                        ).first()
+                        vision_released = bool(vision_art and vision_art.released)
                         notes = (vision_task.notes or "").lower()
-                        if p.mode == "auto" or "approved" in notes:
+                        if p.mode == "auto" or vision_released or "approved" in notes:
                             purpose_to_process = (p, "vision")
                             break
 
@@ -569,9 +638,9 @@ async def orchestrator() -> None:
                         # (approved by the user).
                         if p.mode == "manual":
                             bp_art = session.exec(
-                                select(Artifact).where(
-                                    Artifact.task_id == blueprint_task.id
-                                )
+                                select(Artifact)
+                                .where(Artifact.task_id == blueprint_task.id)
+                                .order_by(Artifact.created_at.desc())
                             ).first()
                             if not bp_art or not bp_art.released:
                                 continue
@@ -587,9 +656,9 @@ async def orchestrator() -> None:
                         # review artifact has been released (approved).
                         if p.mode == "manual":
                             rev_art = session.exec(
-                                select(Artifact).where(
-                                    Artifact.task_id == review_task.id
-                                )
+                                select(Artifact)
+                                .where(Artifact.task_id == review_task.id)
+                                .order_by(Artifact.created_at.desc())
                             ).first()
                             if not rev_art or not rev_art.released:
                                 continue

@@ -53,7 +53,10 @@ export default function ArtifactSection({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string>(artifact.id);
   const currentArtifact =
     artifactVersions.find((a) => a.id === selectedArtifactId) || (artifact as ArtifactFull);
-  const filename = currentArtifact?.url ? currentArtifact.url.split('/').pop() || null : null;
+  const filename =
+    currentArtifact?.repo_path?.split('/').pop() ||
+    (currentArtifact?.url ? currentArtifact.url.split('/').pop() : null) ||
+    null;
 
   const fetchAbortRef = useRef<AbortController | null>(null);
   async function fetchVersionContent(artifactId: string) {

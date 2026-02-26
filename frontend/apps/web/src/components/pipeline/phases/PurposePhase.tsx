@@ -53,6 +53,22 @@ type StoredPhaseDefaults = {
 };
 
 /**
+ * Extrahiert den lesbaren Prompt-Text aus einem Wert, der entweder
+ * bereits ein Plain-String oder ein JSON-Objekt `{"content":"…"}` ist.
+ */
+function extractPromptText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed.content === 'string') return parsed.content;
+  } catch {
+    // Kein gültiges JSON – Klartext, direkt verwenden
+  }
+  return raw;
+}
+
+/**
  * Rohtext-Datei (z. B. .j2) laden.
  * Fallback, wenn ein System-Prompt per default_path referenziert wird,
  * aber noch kein Inhalt in promptTemplates vorhanden ist.
@@ -74,11 +90,16 @@ async function fetchTemplateText(path: string): Promise<string> {
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Standard übernehmen' },
-  { value: 'gpt-4', label: 'GPT-4' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  // OpenAI
   { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
-  { value: 'claude-3-opus', label: 'Claude 3 Opus' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  { value: 'o3', label: 'o3 (Reasoning)' },
+  // Anthropic
+  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+  { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
 ];
 
 function loadUserPhaseDefaults(): StoredPhaseDefaults[] {
@@ -984,8 +1005,9 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
       if (!cfg) return;
       // System-Prompt ohne geladenen Inhalt? -> on-demand laden
       if (cfg.isSystemPrompt && !cfg.prompt && cfg.promptDefaultPath) {
-        const text = await fetchTemplateText(cfg.promptDefaultPath);
-        if (text) {
+        const rawText = await fetchTemplateText(cfg.promptDefaultPath);
+        if (rawText) {
+          const text = extractPromptText(rawText);
           // UI-Status aktualisieren (Anzeige) – bleibt trotzdem "System (read-only)"
           setPhaseConfigs((prev) =>
             prev.map((e) => (e.slug === slug ? { ...e, prompt: text } : e)),
@@ -995,7 +1017,10 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
           return;
         }
       }
-      setEditingPhase(cfg);
+      // Falls prompt bereits geladen, aber noch JSON-wrapped → normalisieren
+      const normalizedPrompt = extractPromptText(cfg.prompt);
+      setEditingPhase({ ...cfg, prompt: normalizedPrompt });
+      setEditingPrompt(normalizedPrompt);
     },
     [phaseConfigs],
   );
@@ -1063,10 +1088,10 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Phase</th>
-                  <th className="px-3 py-2 text-left font-semibold">Modell</th>
-                  <th className="px-3 py-2 text-left font-semibold">Token-Limit</th>
-                  <th className="px-3 py-2 text-left font-semibold">Agent-Rolle(n)</th>
+                  <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Phase</th>
+                  <th className="px-3 py-2 text-left font-semibold" style={{ minWidth: 180 }}>Modell</th>
+                  <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Token-Limit</th>
+                  <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Agent-Rolle(n)</th>
                   <th className="px-3 py-2 text-left font-semibold">Prompt</th>
                   {isDetails && (
                     <th className="px-3 py-2 text-left font-semibold">Aktionen</th>
@@ -1082,7 +1107,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                       <td className="px-3 py-2">{cfg.name}</td>
                       <td className="px-3 py-2">
                         <select
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full min-w-[170px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                           value={cfg.model}
                           disabled={rowDisabled}
                           onChange={(e) =>
@@ -1124,7 +1149,7 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                         <div className="flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
                             <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                              {cfg.prompt ? cfg.prompt : 'Kein Prompt hinterlegt.'}
+                              {cfg.prompt ? extractPromptText(cfg.prompt) : 'Kein Prompt hinterlegt.'}
                             </span>
                             <span
                               className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
@@ -1594,13 +1619,18 @@ export function PurposePhaseContent(ctx: PhaseViewContext) {
                 </button>
               </div>
             )}
-            <textarea
-              rows={12}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={editingPrompt}
-              onChange={(e) => setEditingPrompt(e.target.value)}
-              readOnly={editingPhase.isSystemPrompt}
-            />
+            {editingPhase.isSystemPrompt ? (
+              <div className="max-h-[60vh] overflow-auto rounded-md border border-slate-300 bg-white px-4 py-3 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                <MarkdownRenderer content={editingPrompt} />
+              </div>
+            ) : (
+              <textarea
+                rows={12}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={editingPrompt}
+                onChange={(e) => setEditingPrompt(e.target.value)}
+              />
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"

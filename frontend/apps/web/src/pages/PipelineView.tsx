@@ -148,11 +148,16 @@ const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Standard übernehmen' },
-  { value: 'gpt-4', label: 'GPT-4' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  // OpenAI
   { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
-  { value: 'claude-3-opus', label: 'Claude 3 Opus' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  { value: 'o3', label: 'o3 (Reasoning)' },
+  // Anthropic
+  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+  { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
 ];
 
 const SCOPE_OPTIONS: { value: 'purpose' | 'tenant_default' | 'template'; label: string }[] = [
@@ -450,22 +455,26 @@ export default function PipelineView() {
     ],
   );
 
-  const visionArtifacts = artifacts.filter((a) =>
-    a.repo_path?.toLowerCase().includes('vision/'),
-  );
-  const visionArtifact =
-    visionArtifacts.length > 0 ? visionArtifacts[visionArtifacts.length - 1] : undefined;
+  const getLatestArtifact = (
+    predicate: (artifact: ArtifactItem) => boolean,
+  ): ArtifactItem | undefined => {
+    const matches = artifacts.filter(predicate);
+    return matches.length > 0 ? matches[matches.length - 1] : undefined;
+  };
 
-  const prdArtifacts = artifacts.filter((a) =>
-    a.repo_path?.toLowerCase().includes('product_requirements'),
+  const visionArtifact = getLatestArtifact((a) =>
+    Boolean(a.repo_path?.toLowerCase().includes('vision/')),
   );
-  const prdArtifact = prdArtifacts.length > 0 ? prdArtifacts[prdArtifacts.length - 1] : undefined;
+
+  const prdArtifact = getLatestArtifact((a) =>
+    Boolean(a.repo_path?.toLowerCase().includes('product_requirements')),
+  );
   const visionAwaitingApproval = !!visionArtifact && !visionArtifact.released;
-  const archArtifact = artifacts.find((a) =>
-    a.repo_path?.toLowerCase().includes('architecture_blueprint'),
+  const archArtifact = getLatestArtifact((a) =>
+    Boolean(a.repo_path?.toLowerCase().includes('architecture_blueprint')),
   );
-  const architectureReviewArtifact = artifacts.find((a) =>
-    a.repo_path?.toLowerCase().includes('architecture_domain_review'),
+  const architectureReviewArtifact = getLatestArtifact((a) =>
+    Boolean(a.repo_path?.toLowerCase().includes('architecture_domain_review')),
   );
   const architectureArtifactId = archArtifact?.id ?? null;
   const architectureReviewArtifactId = architectureReviewArtifact?.id ?? null;

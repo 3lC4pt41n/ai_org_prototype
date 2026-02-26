@@ -32,7 +32,7 @@ export default function ArtifactContent() {
         <div key={fb.id} className="border rounded p-2 mb-2">
           <p>{fb.content}</p>
           <p className="text-xs text-gray-500">
-            von {fb.user} am {new Date(fb.timestamp).toLocaleString()}
+            von {fb.user} am {fb.timestamp ? new Date(fb.timestamp).toLocaleString() : '—'}
           </p>
         </div>
       ))}

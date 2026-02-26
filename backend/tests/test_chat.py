@@ -135,16 +135,21 @@ def test_chat_feedback_flow(monkeypatch):
     client.app.dependency_overrides[oauth2_scheme] = lambda: "token"
     import ai_org_backend.api.chat as chat_module
 
-    monkeypatch.setattr(chat_module, "pool", SimpleNamespace(get=lambda key: b"1"))  # type: ignore[attr-defined]
+    monkeypatch.setattr(chat_module, "pool", SimpleNamespace(get=lambda key: None))  # type: ignore[attr-defined]
     feedback_msg = "Fehlt Akzeptanzkriterium"
     r = client.post(
         "/api/chat/messages",
-        json={"purpose_id": purpose.id, "message": feedback_msg},
+        json={
+            "purpose_id": purpose.id,
+            "artifact_ids": [artifact.id],
+            "intent": "feedback",
+            "message": feedback_msg,
+        },
     )
     assert r.status_code == 200
     data = r.json()
     assert data["role"] == "assistant"
-    assert "Ich arbeite das ein" in data["content"]
+    assert "Ich arbeite das im Artefakt ein" in data["content"]
     with Session(engine) as session:
         from ai_org_backend.models import Artifact
 

@@ -88,9 +88,11 @@ const FeedbackSection: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
           </p>
           {contents[task.id] && (
             <div className="my-2 p-2 border rounded bg-white max-h-64 overflow-auto">
-              <ReactMarkdown className="prose prose-slate" remarkPlugins={[remarkGfm]}>
-                {contents[task.id]}
-              </ReactMarkdown>
+              <div className="prose prose-slate">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {contents[task.id]}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
           {(questions[task.id] || []).map((q, idx) => (

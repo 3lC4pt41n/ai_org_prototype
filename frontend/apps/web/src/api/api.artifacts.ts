@@ -4,6 +4,8 @@ export interface ArtifactSummary {
   id: string;
   name?: string | null;
   path?: string | null;
+  url?: string | null;
+  media_type?: string | null;
   created_at?: string | null;
   createdAt?: string | null;
   released?: boolean;

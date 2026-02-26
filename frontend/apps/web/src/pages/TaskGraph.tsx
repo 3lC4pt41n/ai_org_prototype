@@ -1,8 +1,24 @@
-// src/pages/TaskGraph.jsx
+// src/pages/TaskGraph.tsx
 import React, { useEffect, useState } from "react";
-import ReactFlow, { MiniMap, Controls, Background } from "reactflow";
+import ReactFlow, { MiniMap, Controls, Background, type Node, type Edge } from "reactflow";
 import { toast } from "react-hot-toast";
 import "reactflow/dist/style.css";
+
+interface TaskData {
+  id: string;
+  description: string;
+  status: string;
+  owner?: string;
+  business_value?: number;
+  tokens_plan?: number | null;
+  tokens_actual?: number | null;
+}
+
+interface DepData {
+  from_id: string;
+  to_id: string;
+}
+
 function statusColor(status: string) {
   switch (status) {
     case "done":
@@ -45,7 +61,7 @@ function getStatusTooltip(status: string, owner?: string): string {
 }
 
 // Dynamically scale bubble size (business value or planned tokens)
-function getNodeSize(task) {
+function getNodeSize(task: TaskData) {
   // Scale with log() so large values don't explode
   // Min=40px, Max=140px
   const base = 40;
@@ -56,15 +72,16 @@ function getNodeSize(task) {
 }
 
 export default function TaskGraph() {
-  const [elements, setElements] = useState([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
 
   useEffect(() => {
     fetch("/api/graph", {
       headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` }
     })
       .then(r => r.json())
-      .then(data => {
-        const nodes = data.tasks.map(task => ({
+      .then((data: { tasks: TaskData[]; dependencies: DepData[] }) => {
+        const flowNodes: Node[] = data.tasks.map((task) => ({
           id: task.id,
           data: {
             label: (
@@ -76,7 +93,7 @@ export default function TaskGraph() {
                   📊 Token Plan/Ist: <b>{task.tokens_plan ?? "-"}</b> / <b>{task.tokens_actual ?? "-"}</b>
                   <br />
                   <i>
-                    Status: {" "}
+                    Status:{" "}
                     <span title={getStatusTooltip(task.status, task.owner)}>
                       {task.status}
                     </span>
@@ -101,12 +118,13 @@ export default function TaskGraph() {
             fontWeight: 500
           }
         }));
-        const edges = data.dependencies.map(dep => ({
+        const flowEdges: Edge[] = data.dependencies.map((dep) => ({
           id: `${dep.from_id}->${dep.to_id}`,
           source: dep.from_id,
           target: dep.to_id
         }));
-        setElements([...nodes, ...edges]);
+        setNodes(flowNodes);
+        setEdges(flowEdges);
       })
       .catch(() => {
         toast.error("Failed to load task graph.");
@@ -118,13 +136,16 @@ export default function TaskGraph() {
       <h1 className="text-3xl font-bold mb-4">Graph</h1>
       <p className="mb-4">Visualisierung aller Aufgaben im Graph-Format.</p>
       <div style={{ width: "100%", height: 700, background: "#f5f5f5", borderRadius: 18, marginTop: 32, boxShadow: "0 8px 32px #000a" }}>
-        <ReactFlow elements={elements} fitView>
-          <MiniMap nodeStrokeColor={n => n.style?.border ?? "#94a3b8"} nodeColor={n => n.style?.background ?? "#cbd5e1"} />
+        <ReactFlow nodes={nodes} edges={edges} fitView>
+          <MiniMap
+            nodeStrokeColor={(n) => (n.style?.border as string) ?? "#94a3b8"}
+            nodeColor={(n) => (n.style?.background as string) ?? "#cbd5e1"}
+          />
           <Controls />
           <Background color="#cbd5e1" gap={18} />
         </ReactFlow>
       </div>
-      {elements.length === 0 && (
+      {nodes.length === 0 && (
         <div className="text-red-400 mt-4">Keine Aufgaben generiert.</div>
       )}
     </div>

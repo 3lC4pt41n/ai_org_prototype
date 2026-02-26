@@ -16,6 +16,14 @@ export function ArchitectureReviewPhaseContent(ctx: PhaseViewContext) {
       id: archArtifact.id,
       title: 'Architektur-Blueprint',
       phaseLabel: 'Phase: Architektur',
+      artifact: {
+        id: archArtifact.id,
+        path: archArtifact.repo_path,
+        media_type: archArtifact.media_type,
+        created_at: archArtifact.created_at,
+        released: archArtifact.released,
+        url: archArtifact.url,
+      },
     });
   }
   return (

@@ -450,7 +450,7 @@ def post_chat(
         except Exception as e:  # pragma: no cover - Redis failure
             logger.error("Redis get failed: %s", e)
             paused = False
-        if paused and user_msg.intent == ChatIntent.FEEDBACK:
+        if user_msg.intent == ChatIntent.FEEDBACK and artifact_ids:
             response_extras["status"] = "saved"
             trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
             if text.lower() in trivial_responses:
@@ -473,7 +473,14 @@ def post_chat(
                     )
                     if agent_msg is not None and agent_versions:
                         version_state = agent_versions
-                assistant_content = assistant_content or "Ich arbeite das ein."
+                assistant_content = assistant_content or "Ich arbeite das im Artefakt ein."
+        elif paused and user_msg.intent == ChatIntent.FEEDBACK:
+            response_extras["status"] = "saved"
+            trivial_responses = {"ok", "fine", "okay", "thanks", "passt", "danke"}
+            if text.lower() in trivial_responses:
+                assistant_content = "Understood, will apply."
+            else:
+                assistant_content = "Ich arbeite das ein."
         elif paused:
             response_extras.setdefault("status", "ok")
         if assistant_content is None:

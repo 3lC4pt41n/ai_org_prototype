@@ -72,7 +72,10 @@ export interface PromptTemplateListResponse {
 export interface PurposeSummary {
   id: string;
   name: string;
+  /** Legacy alias – backend may return `purpose` instead of `name` */
+  purpose?: string;
   mode?: 'manual' | 'auto';
+  created_at?: string | null;
 }
 
 export interface PipelineGraphNode {

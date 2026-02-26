@@ -29,6 +29,22 @@ try:  # pragma: no cover - best effort
 except Exception:  # pragma: no cover
     PRICING_MAP = {}
 
+# ── Built-in Anthropic pricing (USD per 1K tokens, blended input+output) ──
+# Users can override via OPENAI_PRICING_JSON; these are sensible defaults.
+_ANTHROPIC_DEFAULTS: Dict[str, float] = {
+    "claude-opus-4":      0.060,
+    "claude-sonnet-4":    0.012,
+    "claude-3.5-sonnet":  0.012,
+    "claude-3-5-sonnet":  0.012,
+    "claude-3.5-haiku":   0.003,
+    "claude-3-5-haiku":   0.003,
+    "claude-3-haiku":     0.001,
+    "claude-3-opus":      0.060,
+    "claude-3-sonnet":    0.012,
+}
+for _k, _v in _ANTHROPIC_DEFAULTS.items():
+    PRICING_MAP.setdefault(_k, _v)
+
 DEFAULT_BUDGET = float(os.getenv("BUDGET_DEFAULT_USD", "10.0"))
 
 

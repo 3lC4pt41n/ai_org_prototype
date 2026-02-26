@@ -16,6 +16,14 @@ export function ArchitecturePhaseContent({
       id: prdArtifact.id,
       title: 'Produktanforderung',
       phaseLabel: 'Phase: Produktanforderung',
+      artifact: {
+        id: prdArtifact.id,
+        path: prdArtifact.repo_path,
+        media_type: prdArtifact.media_type,
+        created_at: prdArtifact.created_at,
+        released: prdArtifact.released,
+        url: prdArtifact.url,
+      },
     });
   }
   if (visionArtifact?.id) {
@@ -23,6 +31,14 @@ export function ArchitecturePhaseContent({
       id: visionArtifact.id,
       title: 'Projektvision',
       phaseLabel: 'Phase: Vision',
+      artifact: {
+        id: visionArtifact.id,
+        path: visionArtifact.repo_path,
+        media_type: visionArtifact.media_type,
+        created_at: visionArtifact.created_at,
+        released: visionArtifact.released,
+        url: visionArtifact.url,
+      },
     });
   }
 

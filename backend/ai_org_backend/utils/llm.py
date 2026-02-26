@@ -1,3 +1,9 @@
+"""Convenience wrappers around the unified LLM client.
+
+Both ``chat()`` and ``chat_completion()`` automatically route to the correct
+provider (OpenAI or Anthropic) based on the model name.
+"""
+
 import logging
 
 try:
@@ -24,6 +30,7 @@ except Exception:  # pragma: no cover
 
     _backoff = _BackoffStub()
     logging.getLogger(__name__).warning("Package 'backoff' not installed; retry logic is disabled.")
+
 import openai
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services import budget, llm_client
@@ -57,8 +64,34 @@ def _extract_tokens(resp) -> int:
         return 0
 
 
-@backoff.on_exception(backoff.expo, openai.OpenAIError, max_tries=3)
+# ── Retry-capable exceptions for both providers ──
+_RETRYABLE: tuple = (openai.OpenAIError,)
+try:
+    import anthropic as _anthropic_mod
+
+    _RETRYABLE = (openai.OpenAIError, _anthropic_mod.APIError)
+except ImportError:
+    pass
+
+
+@backoff.on_exception(backoff.expo, _RETRYABLE, max_tries=3)
 def chat(model: str, messages: list[dict], tenant_id: str | None = None, **kw):
+    """Execute a chat completion.  Routes to OpenAI or Anthropic by model name."""
+
+    if llm_client.is_anthropic_model(model):
+        # Delegate fully to chat_with_tools which handles Anthropic routing,
+        # format translation, budget and metrics.
+        resp = llm_client.chat_with_tools(
+            messages=messages,
+            model=model,
+            tenant_id=tenant_id,
+            temperature=kw.pop("temperature", 0.2),
+            max_output_tokens=kw.pop("max_tokens", kw.pop("max_output_tokens", None)),
+            usage_label=kw.pop("usage_label", "chat"),
+        )
+        return resp  # already an OpenAI-shaped dict
+
+    # OpenAI path (original behaviour)
     client = llm_client.ensure_client()
     resp = client.chat.completions.create(model=model, messages=messages, **kw)
     total_tokens = _extract_tokens(resp)
@@ -70,7 +103,7 @@ def chat(model: str, messages: list[dict], tenant_id: str | None = None, **kw):
     return resp
 
 
-@backoff.on_exception(backoff.expo, openai.OpenAIError, max_tries=3)
+@backoff.on_exception(backoff.expo, _RETRYABLE, max_tries=3)
 def chat_completion(
     prompt: str,
     model: str = "gpt-3.5-turbo",

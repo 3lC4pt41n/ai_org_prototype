@@ -14,7 +14,9 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@api": ["../../packages/api-client/src/index.ts"],
+      "@ui/*": ["../../packages/ui/src/*"]
     },
     "types": ["vite/client"]
   },
