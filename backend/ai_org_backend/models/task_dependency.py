@@ -6,18 +6,36 @@ if TYPE_CHECKING:
 
 
 class TaskDependency(SQLModel, table=True):  # type: ignore[call-arg]
-    """Dependency relationships between tasks."""
+    """Dependency relationships between tasks.
+
+    Notes on CASCADE DELETE: Foreign key constraints include ON DELETE CASCADE
+    to automatically remove dependent records when a Task is deleted. This is
+    enforced at the database level via migration 20260329_s1_cascade_and_constraints.
+    """
 
     __tablename__ = "task_dependency"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    
-    # CORRECTED: Use the original field names from the existing database
-    from_id: str = Field(foreign_key="task.id", nullable=False)
-    to_id: str = Field(foreign_key="task.id", nullable=False)
-    
-    # ADD: The missing dependency_type field (this requires DB migration)
-    dependency_type: str = Field(max_length=50, nullable=False, default="blocks")
+
+    from_id: str = Field(
+        foreign_key="task.id",
+        nullable=False,
+        description="ID of the task this dependency originates from (CASCADE DELETE)"
+    )
+    to_id: str = Field(
+        foreign_key="task.id",
+        nullable=False,
+        description="ID of the task this dependency points to (CASCADE DELETE)"
+    )
+
+    # dependency_type field with server default 'blocks' and CHECK constraint
+    # Enforced at DB level via migration 20260329_s1_cascade_and_constraints
+    dependency_type: str = Field(
+        max_length=50,
+        nullable=False,
+        default="blocks",
+        description="Type of dependency: 'blocks', 'FINISH_START', or 'depends_on'"
+    )
     
     from_task: "Task" = Relationship(
         back_populates="outgoing_dependencies",

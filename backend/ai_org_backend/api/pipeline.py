@@ -885,6 +885,57 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
     }
 
 
+@router.get("/pipeline/phases", tags=["pipeline"])
+def list_pipeline_phases(
+    purpose_id: str,
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """S6-#10.1: Return phase configuration for a purpose.
+
+    Returns the ordered list of phases from the pipeline template
+    associated with the given purpose, so the frontend can load
+    phase config dynamically instead of hardcoding it.
+    """
+    from ai_org_backend.models.pipeline import PipelinePhase, PipelineTemplate
+
+    with Session(engine) as session:
+        purpose = session.exec(
+            select(Purpose).where(
+                Purpose.id == purpose_id,
+                Purpose.tenant_id == current_tenant.id,
+            )
+        ).first()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        template_id = purpose.pipeline_template_id
+        if not template_id:
+            # Return empty phases — no template assigned
+            return {"phases": [], "purpose_id": purpose_id}
+
+        phases = session.exec(
+            select(PipelinePhase)
+            .where(PipelinePhase.pipeline_template_id == template_id)
+            .order_by(asc(PipelinePhase.position))
+        ).all()
+
+        phase_list = [
+            {
+                "id": p.id,
+                "slug": p.slug,
+                "name": p.name,
+                "position": p.position,
+                "agent_role": p.agent_role,
+                "requires_approval": p.requires_approval,
+                "tokens_plan_default": p.tokens_plan_default,
+                "model_name": p.model_name,
+            }
+            for p in phases
+        ]
+
+    return {"phases": phase_list, "purpose_id": purpose_id}
+
+
 @router.put("/pipeline/phases/{phase_id}", tags=["pipeline"])
 def update_pipeline_phase_endpoint(
     phase_id: str, payload: dict, current_tenant: Tenant = Depends(get_current_tenant)

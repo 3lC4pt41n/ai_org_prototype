@@ -12,10 +12,26 @@ class FeedbackType(str, Enum):
 
 
 class Feedback(SQLModel, table=True):  # type: ignore[call-arg]
+    """Feedback on deliverables.
+
+    Notes on CASCADE DELETE: The tenant_id and purpose_id foreign keys include
+    ON DELETE CASCADE constraints, enforced at the database level via migration
+    20260329_s1_cascade_and_constraints. When a Tenant or Purpose is deleted,
+    all related Feedback records are automatically deleted.
+    """
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
-    tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
-    purpose_id: str = Field(foreign_key="purpose.id", nullable=False)
+    tenant_id: str = Field(
+        foreign_key="tenant.id",
+        nullable=False,
+        description="Tenant ID (CASCADE DELETE)"
+    )
+    purpose_id: str = Field(
+        foreign_key="purpose.id",
+        nullable=False,
+        description="Purpose ID (CASCADE DELETE)"
+    )
     type: FeedbackType = Field(nullable=False)
     version: int = Field(default=1, ge=1)
     text: str = Field(default="")

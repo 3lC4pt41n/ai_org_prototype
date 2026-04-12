@@ -1,0 +1,86 @@
+# Shared Contracts & Conventions (v1.0)
+# ======================================
+# This document is the single source of truth for all Dev-Agents.
+# Every agent MUST read and comply with these constraints before
+# generating any code. Violations will be flagged by Code Review.
+
+## 1. Tech Stack (locked)
+- Language: Python 3.11+
+- Web Framework: FastAPI (uvicorn)
+- ORM: SQLModel (built on SQLAlchemy 2.x + Pydantic v2)
+- Database: PostgreSQL 15+ (SQLite for tests)
+- Migrations: Alembic
+- Task Queue: Celery 5.x with Redis broker
+- Graph Database: Neo4j 5.x
+- Vector Store: Qdrant
+- LLM Providers: OpenAI (primary), Anthropic (fallback)
+- Frontend: React 18 + TypeScript + Zustand + Vite
+
+## 2. API Conventions
+- All REST endpoints under /api/ prefix
+- Use Pydantic BaseModel for request/response schemas
+- HTTP status codes: 200 OK, 201 Created, 204 No Content, 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 409 Conflict, 422 Validation Error, 500 Internal Error
+- Pagination: ?page=1&page_size=20 (max 100)
+- Sorting: ?sort_by=created_at&sort_order=desc
+- Error format: {"detail": "message", "code": "ERROR_CODE"}
+
+## 3. Naming Conventions
+- Python modules: snake_case (e.g., artifact_resolver.py)
+- Python classes: PascalCase (e.g., ArtifactResolver)
+- Python functions/variables: snake_case
+- Database tables: snake_case singular (e.g., task, artifact)
+- API routes: kebab-case (e.g., /api/artifact-bridge)
+- TypeScript components: PascalCase (e.g., PipelineView.tsx)
+- TypeScript hooks: camelCase with "use" prefix (e.g., usePipelineStore)
+- Constants: UPPER_SNAKE_CASE
+- Environment variables: UPPER_SNAKE_CASE with prefix (e.g., AI_ORG_*)
+
+## 4. Error Handling
+- Never use bare `except:` — always catch specific exceptions
+- Use custom exception classes (subclass ValueError or RuntimeError)
+- Log errors with structured context: logger.error("msg", exc_info=True)
+- Retry transient errors (network, rate-limit) with exponential backoff
+- Non-retryable errors: raise immediately with clear message
+
+## 5. Code Style
+- Line length: 100 characters max
+- Imports: stdlib → third-party → local (isort compatible)
+- Type hints: required on all public functions
+- Docstrings: Google style, required on public classes and functions
+- No print() in production code — use logging module
+- No hardcoded secrets — use settings or environment variables
+
+## 6. Database Rules
+- All models inherit from SQLModel with table=True
+- Primary keys: UUID (str, 8-char truncated)
+- Foreign keys: always include ON DELETE CASCADE or SET NULL
+- Timestamps: created_at (required), updated_at (optional)
+- Indexes: on all foreign keys and frequently filtered columns
+- Migrations: one migration per feature, reversible (upgrade + downgrade)
+
+## 7. Testing
+- Framework: pytest
+- Test files: tests/test_<module>.py
+- Use fixtures for DB sessions (in-memory SQLite)
+- Mock external services (Redis, Neo4j, LLM APIs)
+- Minimum: one test per public function
+
+## 8. Security
+- Input validation on all API endpoints (Pydantic)
+- SQL injection: use ORM queries, never raw SQL with user input
+- Path traversal: validate all file paths against workspace root
+- Authentication: JWT tokens via Authorization header
+- CORS: explicit origin allowlist in production
+
+## 9. Dependency Management
+- Pin major+minor versions in requirements.txt (e.g., fastapi>=0.100,<1.0)
+- No conflicting package versions across agents
+- Run pip-audit before merging new dependencies
+
+## 10. File Organization
+- Models: ai_org_backend/models/<entity>.py
+- Services: ai_org_backend/services/<service>.py
+- Agents: ai_org_backend/agents/<agent>.py
+- API routes: ai_org_backend/api/<resource>.py
+- Tasks: ai_org_backend/tasks/<task>.py
+- Orchestrator: ai_org_backend/orchestrator/<module>.py

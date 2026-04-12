@@ -6,6 +6,10 @@ bcrypt<4.0.0
 psycopg2-binary>=2.9
 # Web search via Google Custom Search API
 google-api-python-client
+# S1-13: Exponential backoff for resilience - required dependency
+backoff>=2.2
+# S2-11: Precise token counting for budget accuracy
+tiktoken>=0.7
 # ...
 
 # redis-py is already a dependency – ensure a version >=4 is installed

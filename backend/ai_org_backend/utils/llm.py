@@ -2,40 +2,17 @@
 
 Both ``chat()`` and ``chat_completion()`` automatically route to the correct
 provider (OpenAI or Anthropic) based on the model name.
+
+S2-09: Exponential backoff is configured with max 5 retries and a 5-minute
+cap via the ``@backoff.on_exception`` decorator.
 """
 
 import logging
-
-try:
-    import backoff as _backoff
-except Exception:  # pragma: no cover
-
-    class _BackoffStub:
-        """Minimaler Fallback, falls 'backoff' nicht installiert ist.
-        Dekoratoren sind No-ops, damit die App trotzdem startet."""
-
-        @staticmethod
-        def expo(*args, **kwargs):
-            def _passthrough(fn):
-                return fn
-
-            return _passthrough
-
-        @staticmethod
-        def on_exception(*args, **kwargs):
-            def _decorator(fn):
-                return fn
-
-            return _decorator
-
-    _backoff = _BackoffStub()
-    logging.getLogger(__name__).warning("Package 'backoff' not installed; retry logic is disabled.")
-
+import backoff  # S1-13: Required dependency - no fallback stub
 import openai
 from ai_org_backend.models.chat import ChatRole
 from ai_org_backend.services import budget, llm_client
-
-backoff = _backoff
+from ai_org_backend.services.llm_errors import MAX_BACKOFF_S
 
 
 def _extract_tokens(resp) -> int:
@@ -74,7 +51,9 @@ except ImportError:
     pass
 
 
-@backoff.on_exception(backoff.expo, _RETRYABLE, max_tries=3)
+@backoff.on_exception(
+    backoff.expo, _RETRYABLE, max_tries=5, max_time=MAX_BACKOFF_S, jitter=backoff.full_jitter
+)
 def chat(model: str, messages: list[dict], tenant_id: str | None = None, **kw):
     """Execute a chat completion.  Routes to OpenAI or Anthropic by model name."""
 
@@ -103,7 +82,9 @@ def chat(model: str, messages: list[dict], tenant_id: str | None = None, **kw):
     return resp
 
 
-@backoff.on_exception(backoff.expo, _RETRYABLE, max_tries=3)
+@backoff.on_exception(
+    backoff.expo, _RETRYABLE, max_tries=5, max_time=MAX_BACKOFF_S, jitter=backoff.full_jitter
+)
 def chat_completion(
     prompt: str,
     model: str = "gpt-3.5-turbo",

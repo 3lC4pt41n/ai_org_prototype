@@ -2,15 +2,57 @@
 Graph sync helpers for Neo4j.
 Keeps Task nodes and dependency edges in sync with the SQL source of truth.
 Idempotent MERGE/SET operations, safe to call often.
+
+S-Sprint3 Fix #6: All upsert functions wrapped with retry logic
+(3 attempts, exponential backoff 2s→2min with jitter).
 """
 from __future__ import annotations
 
+import functools
+import logging
+import random
+import time
 from datetime import datetime as dt
 from typing import Iterable, Optional
 
 from ai_org_backend.db import SessionLocal
 from ai_org_backend.models import Task
 from ai_org_backend.services.storage import driver  # existing Neo4j driver
+
+logger = logging.getLogger(__name__)
+
+# S-Sprint3 Fix #6: Retry configuration
+_MAX_RETRIES = 3
+_BASE_DELAY_S = 2.0
+_MAX_DELAY_S = 120.0
+
+
+def _retry_on_neo4j_failure(func):
+    """Decorator that retries Neo4j operations with exponential backoff + jitter."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        last_exc = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES - 1:
+                    delay = min(
+                        _BASE_DELAY_S * (2 ** attempt) + random.uniform(0, 1),
+                        _MAX_DELAY_S,
+                    )
+                    logger.warning(
+                        "[S3-#6] %s failed (attempt %d/%d): %s – retrying in %.1fs",
+                        func.__name__, attempt + 1, _MAX_RETRIES, exc, delay,
+                    )
+                    time.sleep(delay)
+        logger.error(
+            "[S3-#6] %s failed after %d attempts: %s",
+            func.__name__, _MAX_RETRIES, last_exc,
+        )
+        raise last_exc  # type: ignore[misc]
+    return wrapper
 
 
 def _coerce_kind(kind: Optional[str]) -> str:
@@ -21,6 +63,7 @@ def _coerce_kind(kind: Optional[str]) -> str:
     return k if k else "FINISH_START"
 
 
+@_retry_on_neo4j_failure
 def upsert_task(
     task_id: str,
     *,
@@ -76,6 +119,7 @@ def upsert_task(
         g.run(cypher, **params)
 
 
+@_retry_on_neo4j_failure
 def upsert_dependency(from_id: str, to_id: str, *, kind: Optional[str] = None) -> None:
     """
     MERGE edge (:Task {id:from})-[:DEPENDS_ON {kind:...}]->(:Task {id:to})
@@ -91,6 +135,7 @@ def upsert_dependency(from_id: str, to_id: str, *, kind: Optional[str] = None) -
         g.run(cypher, **{"from": from_id, "to": to_id, "kind": k})
 
 
+@_retry_on_neo4j_failure
 def remove_dependency(from_id: str, to_id: str) -> None:
     """Delete a DEPENDS_ON edge if present."""
     cypher = """
@@ -101,6 +146,7 @@ def remove_dependency(from_id: str, to_id: str) -> None:
         g.run(cypher, **{"from": from_id, "to": to_id})
 
 
+@_retry_on_neo4j_failure
 def upsert_artifact(
     task_id: str,
     sha256: str,
@@ -139,6 +185,7 @@ def upsert_artifact(
         g.run(cypher, **params)
 
 
+@_retry_on_neo4j_failure
 def remove_tasks(task_ids: Iterable[str]) -> None:
     """Detach delete all Task nodes for the provided identifiers."""
 
@@ -154,6 +201,7 @@ def remove_tasks(task_ids: Iterable[str]) -> None:
         g.run(cypher, ids=ids)
 
 
+@_retry_on_neo4j_failure
 def remove_purpose(purpose_id: str) -> None:
     """Detach-delete a Purpose node by id."""
 

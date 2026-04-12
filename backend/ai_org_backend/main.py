@@ -1,4 +1,4 @@
-# ai_org_prototype.py – Autonomous-Agent SaaS · core API  (v1.9)
+# ai_org_prototype.py – Autonomous-Agent SaaS · core API  (v2.0 – S6 hardened)
 # ---------------------------------------------------------------
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from ai_org_backend.api.auth import router as auth_router
 from ai_org_backend.api.chat import router as chat_router
 from ai_org_backend.api.chat import ws_router as chat_ws_router
 from ai_org_backend.api.dependencies import get_current_tenant
+from ai_org_backend.api.health import router as health_router  # S6-05
 from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.purposes import router as purposes_router
 from ai_org_backend.api.reviews import router as reviews_router
@@ -29,11 +30,25 @@ from ai_org_backend.api.settings import router as settings_router
 from ai_org_backend.api.templates import router as tmpl_router
 from ai_org_backend.db import engine
 from ai_org_backend.metrics import BUDGET_GA, TASK_CNT, TASK_LAT
+from ai_org_backend.middleware.exception_handler import install_exception_handlers  # S6-04
+from ai_org_backend.middleware.input_sanitizer import InputSanitizerMiddleware  # S6-09
+from ai_org_backend.middleware.metrics_middleware import MetricsMiddleware  # S6-07
+from ai_org_backend.middleware.rate_limit import RateLimitMiddleware  # S6-01
+from ai_org_backend.middleware.request_id import RequestIDMiddleware  # S6-03
+from ai_org_backend.middleware.security_headers import SecurityHeadersMiddleware  # S6-02
 from ai_org_backend.models import TaskOwner, Tenant
+from ai_org_backend.services.graceful_shutdown import on_shutdown, on_startup  # S6-08
 from ai_org_backend.services.repo import Repo, budget_left, debit  # noqa: F401
+from ai_org_backend.settings import settings as app_settings  # S6 config
 from ai_org_backend.tasks.celery_app import celery
 
 load_dotenv()
+
+# S6-06: Initialise structured logging before anything else runs
+from ai_org_backend.services.structured_logging import setup_logging  # noqa: E402
+
+setup_logging(level=app_settings.log_level, fmt=app_settings.log_format)
+
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASS = os.getenv("NEO4J_PASS")
@@ -86,15 +101,58 @@ AGENTS = {
 
 
 # ──────────────── FastAPI + startup ─────────────────────────
+import asyncio  # noqa: E402
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # S6-08: startup hook
+    on_startup()
+    SQLModel.metadata.create_all(engine)
+
+    # Start the orchestrator scheduler
+    from ai_org_backend.orchestrator.scheduler import orchestrator
+
+    asyncio.create_task(orchestrator())
     yield
+    # S6-08: shutdown hook
+    on_shutdown()
 
 
 app = FastAPI(lifespan=lifespan)
+
+# S6-04: Global exception handlers (must be installed before middleware)
+install_exception_handlers(app)
+
+# ── Middleware stack (order matters: outermost first) ──────────────────
+# 1. Request ID — runs first so all downstream middleware/handlers see it
+app.add_middleware(RequestIDMiddleware)
+# 2. Security headers — runs on every response
+app.add_middleware(SecurityHeadersMiddleware)
+# 3. HTTP metrics — captures timing for all requests
+app.add_middleware(MetricsMiddleware)
+# 4. Rate limiting — reject abusive clients before reaching business logic
 app.add_middleware(
-    CORSMiddleware, allow_origins=[FRONTEND_ORIGIN], allow_methods=["*"], allow_headers=["*"]
+    RateLimitMiddleware,
+    requests_per_minute=app_settings.rate_limit_per_minute,
+    burst=app_settings.rate_limit_burst,
 )
+# 5. Input sanitization — scan/reject dangerous payloads
+app.add_middleware(
+    InputSanitizerMiddleware,
+    max_body_bytes=app_settings.max_request_body_bytes,
+)
+# 6. CORS — must be after security middleware so preflight gets headers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    max_age=app_settings.cors_max_age,
+)
+
+# ── Routers ───────────────────────────────────────────────────────────
+app.include_router(health_router)  # S6-05: health probes (no auth)
 app.include_router(auth_router)
 app.include_router(tmpl_router)
 app.include_router(agent_router)
@@ -106,23 +164,6 @@ app.include_router(root_router)
 app.include_router(purposes_router)
 app.include_router(chat_router)
 app.include_router(chat_ws_router)
-
-
-# Ensure chat-related tables exist
-@app.on_event("startup")
-async def init_db():
-    SQLModel.metadata.create_all(engine)
-
-
-# ─────────────── Scheduler automatisch starten ─────────────────────────
-import asyncio  # noqa: E402
-
-
-@app.on_event("startup")
-async def start_scheduler():
-    from ai_org_backend.orchestrator.scheduler import orchestrator
-
-    asyncio.create_task(orchestrator())
 
 
 if os.getenv("DISABLE_METRICS") != "1":

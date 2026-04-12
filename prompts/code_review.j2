@@ -4,6 +4,15 @@ Your task is to review the overall codebase for:
 - Naming conventions and consistency
 - Documentation and comments sufficiency
 - Code smells or potential improvements
+- Security vulnerabilities
+- Error handling completeness
+
+{% if shared_contracts %}
+### Shared Contracts (check compliance!)
+The following contracts MUST be respected by all generated code.
+Flag any violations as [HIGH] findings:
+{{ shared_contracts }}
+{% endif %}
 
 {% if snippets %}
 Below are key code snippets from the codebase:
@@ -15,4 +24,18 @@ Below are key code snippets from the codebase:
 {% endfor %}
 {% endif %}
 
-Provide a concise review with bullet points for each issue or suggestion. Mark critical issues or violations, and also note any positive aspects or overall assessment.
+### Output Format — Severity-Tagged Findings
+
+For each issue, use one of these severity tags at the start of the line:
+- **[CRITICAL]** — Security vulnerability, data loss risk, or crash bug. Blocks merge.
+- **[HIGH]** — Missing validation, broken error handling, contract violation. Blocks merge.
+- **[MEDIUM]** — Code smell, naming issue, missing docs. Advisory.
+- **[LOW]** — Style nit, minor improvement. Informational.
+
+Example:
+[CRITICAL] SQL injection in `user_handler.py` line 42 — use parameterized queries
+[HIGH] Missing input validation in `api/routes.py`:15
+[MEDIUM] Variable naming inconsistency in `utils.py`
+[LOW] Missing docstring in `helper.py` line 5
+
+Also note any positive aspects or overall assessment at the end.

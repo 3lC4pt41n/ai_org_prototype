@@ -12,11 +12,20 @@ if TYPE_CHECKING:
 
 
 class Purpose(SQLModel, table=True):  # type: ignore[call-arg]
-    """High level project purpose."""
+    """High level project purpose.
+
+    Notes on CASCADE DELETE: The tenant_id foreign key includes ON DELETE CASCADE,
+    enforced at the database level via migration 20260329_s1_cascade_and_constraints.
+    When a Tenant is deleted, all related Purposes are automatically deleted.
+    """
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
 
-    tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
+    tenant_id: str = Field(
+        foreign_key="tenant.id",
+        nullable=False,
+        description="Tenant ID (CASCADE DELETE)"
+    )
     name: str = Field(nullable=False, min_length=1, max_length=255)
 
     description: Optional[str] = Field(default=None)

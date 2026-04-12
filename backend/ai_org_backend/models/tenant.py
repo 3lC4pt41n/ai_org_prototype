@@ -51,9 +51,17 @@ class Tenant(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
     # Relationship collections using SQLAlchemy 2.x style (Mapped).
-    tasks: ClassVar[Mapped[list["Task"]]] = relationship("Task", back_populates="tenant")
+    # Note: CASCADE DELETE is enforced at the DB level (migration 20260329_s1_cascade_and_constraints)
+    # but ORM-level cascades help keep the session consistent when using the ORM.
+    tasks: ClassVar[Mapped[list["Task"]]] = relationship(
+        "Task",
+        back_populates="tenant",
+        cascade="all, delete-orphan"
+    )
     purposes: ClassVar[Mapped[list["Purpose"]]] = relationship(
-        "Purpose", back_populates="tenant"
+        "Purpose",
+        back_populates="tenant",
+        cascade="all, delete-orphan"
     )
     assignments: ClassVar[Mapped[list["TenantPromptAssignment"]]] = relationship(
         "TenantPromptAssignment", back_populates="tenant", cascade="all, delete-orphan"

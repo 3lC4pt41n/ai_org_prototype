@@ -33,12 +33,27 @@ Please address this issue in the new attempt.
 {% endfor %}
 {% endif %}
 
+{% if shared_contracts %}
+### Shared Contracts (MANDATORY — all code MUST comply)
+{{ shared_contracts }}
+{% endif %}
+
+{% if peer_context %}
+{{ peer_context }}
+{% endif %}
+
+{% if conflict_warnings %}
+{{ conflict_warnings }}
+{% endif %}
+
 ### Guidelines ✅
 1. **Deliver only what the task needs** – no boilerplate beyond scope.
 2. Prefer idiomatic, well-documented code; reference modern best-practices.
 3. If implementation exceeds token budget, outline steps instead (max 10 bullet points).
 4. Use meaningful naming, DD-style commits (if relevant).
 5. Append **`// TODO:`** markers for follow-ups that should become separate tasks.
+6. **Respect Shared Contracts** — naming, API conventions, tech stack from the contracts section above.
+7. **Avoid file conflicts** — do NOT write to files listed in FORBIDDEN FILES or claimed by peer agents.
 
 ### Output Format 🎯
 Provide the result as a JSON object with keys:

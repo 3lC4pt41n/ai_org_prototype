@@ -17,6 +17,10 @@ from ai_org_backend.orchestrator.inspector import alert
 from ai_org_backend.orchestrator.role_rules import heuristic_role
 from ai_org_backend.redis_client import pool
 from ai_org_backend.scripts.seed_graph import ingest
+from ai_org_backend.services.artifact_resolver import load_by_phase
+from ai_org_backend.services.cumulative_context import load_cumulative_context
+from ai_org_backend.services.cycle_detector import validate_no_cycles, validate_refs, CyclicDependencyError
+from ai_org_backend.services.feedback_loop import load_feedback_context
 from ai_org_backend.services.storage import resolve_for_read
 from ai_org_backend.tasks.celery_app import celery
 from ai_org_backend.utils.llm import chat
@@ -24,6 +28,16 @@ from ai_org_backend.utils.llm import chat
 from .utils import load_template
 
 PLANNER_RUNS = prom_counter("ai_planner_runs_total", "Planner executions")
+
+
+def _fail_task(task_id: str, tenant_id: str, reason: str) -> None:
+    """S-Sprint1 Fix #9: Mark a task as failed with a descriptive reason."""
+    from ai_org_backend.services.repo import Repo
+
+    try:
+        Repo(tenant_id).update(task_id, status="failed", notes=reason)
+    except Exception as exc:
+        logging.error("[Planner] Failed to mark task %s as failed: %s", task_id, exc)
 PLANNER_LATENCY = prom_hist("ai_planner_latency_seconds", "Planner latency")
 PROMPT_TMPL = load_template("planner.j2")
 
@@ -63,18 +77,32 @@ def _looks_like_code_artifact(artifact: Artifact) -> bool:
     return any(repo_path.endswith(suffix) for suffix in CODE_FILE_SUFFIXES)
 
 
-# Expected schema for a task list
+# S3-05: Enhanced schema for a task list with bounds and refs
 TASKS_SCHEMA = {
     "type": "array",
+    "minItems": 1,
+    "maxItems": 200,
     "items": {
         "type": "object",
         "properties": {
-            "id": {"type": "string"},
-            "description": {"type": "string"},
-            "depends_on": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "business_value": {"type": "number"},
-            "tokens_plan": {"type": "integer"},
-            "purpose_relevance": {"type": "number"},
+            "id": {"type": "string", "minLength": 1, "maxLength": 50},
+            "description": {"type": "string", "minLength": 3, "maxLength": 2000},
+            "depends_on": {"anyOf": [
+                {"type": "string", "minLength": 1, "maxLength": 50},
+                {"type": "null"},
+            ]},
+            "business_value": {"type": "number", "minimum": 0.0, "maximum": 10.0},
+            "tokens_plan": {"type": "integer", "minimum": 0, "maximum": 1_000_000},
+            "purpose_relevance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            # S3-05: Optional extended fields for richer planning
+            "agent_role": {"anyOf": [
+                {"type": "string", "minLength": 1, "maxLength": 50},
+                {"type": "null"},
+            ]},
+            "model_name": {"anyOf": [
+                {"type": "string", "maxLength": 100},
+                {"type": "null"},
+            ]},
         },
         "required": [
             "id",
@@ -84,6 +112,8 @@ TASKS_SCHEMA = {
             "tokens_plan",
             "purpose_relevance",
         ],
+        # S-Sprint4 Fix #25: Reject unexpected fields from LLM output
+        "additionalProperties": False,
     },
 }
 
@@ -182,6 +212,22 @@ def run_planner(
                 tasks_data = None
 
         if tasks_data:
+            # S3-06: Validate dependency graph for cycles
+            try:
+                validate_no_cycles(tasks_data)
+            except CyclicDependencyError as exc:
+                logging.warning(
+                    "[Planner] Cycle detected in LLM output (attempt %d): %s",
+                    attempt + 1, exc,
+                )
+                tasks_data = None
+            # S3-05: Warn about dangling refs but don't reject
+            if tasks_data:
+                ref_warnings = validate_refs(tasks_data)
+                for w in ref_warnings:
+                    logging.warning("[Planner] Dangling ref: %s", w)
+
+        if tasks_data:
             tasks = tasks_data
             break
 
@@ -192,8 +238,15 @@ def run_planner(
                 if data is None
                 else "previous output did not follow the expected JSON format"
             )
-            ctx["error_note"] = note_msg
+            # S-Sprint4 Fix #25: Include full schema in error_note so LLM
+            # knows the exact expected format on retry
+            schema_hint = json.dumps(TASKS_SCHEMA, indent=2)
+            ctx["error_note"] = (
+                f"{note_msg}. You MUST return a JSON array matching this schema "
+                f"exactly (no extra fields allowed):\n{schema_hint}"
+            )
             prompt = PROMPT_TMPL.render(**ctx)
+            # S-Sprint4 Fix #25: Lower temperature on retry for deterministic output
             model = "o3-pro"
             logging.warning(
                 "[Planner] invalid LLM output (attempt %s/%s): %s",
@@ -237,22 +290,26 @@ def planner_task(
         blueprint_md = ""
         code_artifact_exists = False
 
-        # Fetch the latest architecture blueprint artifact content and detect existing code outputs
-        with Session(engine) as session:
-            blueprint_task = session.exec(
-                select(Task).where(
-                    Task.purpose_id == purpose_id,
-                    func.lower(Task.description) == "architecture blueprint",
-                )
-            ).first()
-            blueprint_artifact = None
-            if blueprint_task:
-                blueprint_artifact = session.exec(
-                    select(Artifact)
-                    .where(Artifact.task_id == blueprint_task.id)
-                    .order_by(desc(Artifact.created_at))
-                ).first()
+        # S3-04/S3-09: Use artifact resolver + cumulative context
+        # S-Sprint1 Fix #9: require_artifact=True → fail explicitly if missing
+        from ai_org_backend.services.artifact_resolver import ArtifactNotFoundError
+        try:
+            blueprint_md = load_by_phase(
+                purpose_id, "architecture blueprint", require_artifact=True
+            ) or ""
+        except ArtifactNotFoundError as exc:
+            logging.error("[Planner][S1-#9] %s", exc)
+            _fail_task(task_id, tenant_id, str(exc))
+            return
+        if not blueprint_md:
+            logging.warning("[Planner] No blueprint artifact found for purpose %s", purpose_id)
 
+        # S3-09: Load cumulative context (PRD + Architecture) for richer planning
+        cumctx = load_cumulative_context(
+            purpose_id, up_to="architecture & domain review"
+        )
+
+        with Session(engine) as session:
             code_artifact_exists = any(
                 _looks_like_code_artifact(artifact)
                 for artifact in session.exec(
@@ -262,23 +319,14 @@ def planner_task(
                 )
             )
 
-        if blueprint_artifact:
-            try:
-                blueprint_path = resolve_for_read(blueprint_artifact.repo_path)
-                blueprint_md = blueprint_path.read_text(encoding="utf-8", errors="ignore")
-            except Exception as e:  # pragma: no cover - best effort logging
-                alert(
-                    f"Planner: Failed to read blueprint artifact for purpose {purpose_id}: {e}",
-                    "warn",
-                )
-                logging.error(
-                    "[Planner] Failed to read blueprint artifact for purpose %s: %s",
-                    purpose_id,
-                    e,
-                )
-                blueprint_md = ""
-        else:
-            logging.warning("[Planner] No blueprint artifact found for purpose %s", purpose_id)
+        # S4-11: Load feedback context for planner
+        feedback_ctx = ""
+        try:
+            feedback_ctx = load_feedback_context("", purpose_id=purpose_id)
+        except Exception:
+            pass
+        if feedback_ctx:
+            blueprint_md = f"{blueprint_md}\n\n{feedback_ctx}"
 
         # Run LLM-based planner to generate task plan
         try:

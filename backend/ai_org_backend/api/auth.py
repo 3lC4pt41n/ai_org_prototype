@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -8,7 +9,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field, constr
+from pydantic import BaseModel, EmailStr, Field, constr, field_validator
 from sqlalchemy.sql import func
 from sqlmodel import select
 
@@ -28,11 +29,25 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
+# S6-09: Password complexity regex (≥8 chars, 1 upper, 1 lower, 1 digit)
+_PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
+
 
 class RegisterIn(BaseModel):
     email: EmailStr
     password: constr(min_length=8)
     name: Optional[str] = Field(default=None, min_length=2, description="Display or project name")
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        """S6-09: Enforce password complexity beyond just min-length."""
+        if not _PASSWORD_RE.match(v):
+            raise ValueError(
+                "Password must contain at least one uppercase letter, "
+                "one lowercase letter, and one digit."
+            )
+        return v
 
 
 def hash_password(p: str) -> str:

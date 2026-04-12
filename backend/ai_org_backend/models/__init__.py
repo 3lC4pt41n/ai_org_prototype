@@ -1,6 +1,9 @@
 from .artifact import Artifact
+from .audit_log import AuditAction, AuditLog
 from .chat import ChatMessage, ChatMessageArtifact, ChatThreadContext
+from .code_review_finding import CodeReviewFinding, FindingCategory, FindingSeverity
 from .feedback import Feedback, FeedbackType
+from .merge_conflict import MergeConflict, MergeConflictStatus
 from .pipeline import PipelinePhase, PipelineTemplate
 from .prompt_template import PromptTemplate, TenantPromptAssignment
 from .purpose import Purpose
@@ -26,4 +29,11 @@ __all__ = [
     "ChatMessage",
     "ChatThreadContext",
     "ChatMessageArtifact",
+    "CodeReviewFinding",
+    "FindingCategory",
+    "FindingSeverity",
+    "MergeConflict",
+    "MergeConflictStatus",
+    "AuditLog",
+    "AuditAction",
 ]

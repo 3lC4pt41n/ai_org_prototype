@@ -134,6 +134,45 @@ def integrate_prd_feedback(
     except Exception as exc:  # pragma: no cover - logging only
         logger.error("PRD update failed: %s", exc)
 
+    # S4-08: Invalidate downstream artifacts after feedback integration
+    try:
+        from ai_org_backend.services.feedback_loop import cascade_invalidation
+        inv_result = cascade_invalidation(
+            artifact.task_id,
+            purpose_id=purpose.id,
+        )
+        if inv_result.invalidated_task_ids:
+            logger.info(
+                "[S4-08] Feedback on task %s invalidated %d downstream tasks: %s",
+                artifact.task_id,
+                len(inv_result.invalidated_task_ids),
+                inv_result.invalidated_task_ids,
+            )
+
+            # S-Sprint2 Fix #4: Re-dispatch agents for invalidated tasks
+            from ai_org_backend.services.feedback_loop import redispatch_agent
+            for inv_task_id in inv_result.invalidated_task_ids:
+                try:
+                    dispatched = redispatch_agent(
+                        inv_task_id, tenant_id=tenant_id,
+                    )
+                    if dispatched:
+                        inv_result.redispatched_task_ids.append(inv_task_id)
+                except Exception as re_exc:
+                    logger.warning(
+                        "[S2-#4] redispatch_agent failed for task %s: %s",
+                        inv_task_id,
+                        re_exc,
+                    )
+            if inv_result.redispatched_task_ids:
+                logger.info(
+                    "[S2-#4] Re-dispatched %d agents after feedback on task %s",
+                    len(inv_result.redispatched_task_ids),
+                    artifact.task_id,
+                )
+    except Exception as exc:
+        logger.warning("[S4-08] Downstream invalidation failed (non-fatal): %s", exc)
+
     # Inform downstream artefact owners through an agent note
     consistency = consistency_check(artifact, session)
     if not consistency:

@@ -15,7 +15,9 @@ from ai_org_backend.main import Repo
 from ai_org_backend.metrics import prom_counter, prom_hist
 from ai_org_backend.models import Purpose, Task, TaskDependency, TaskOwner, TaskStatus, Tenant
 from ai_org_backend.models.chat import ChatRole
+from ai_org_backend.services.cumulative_context import load_cumulative_context
 from ai_org_backend.services.deep_research import run_deep_research
+from ai_org_backend.services.feedback_loop import load_feedback_context
 from ai_org_backend.services.storage import register_artefact
 from ai_org_backend.utils.llm import chat
 
@@ -52,7 +54,25 @@ def _build_architect_context(
     tenant: Tenant | None,
     task: str | None = None,
 ) -> dict[str, str]:
-    ctx = {"purpose": purpose.name, "task": task or "n/a", "external_references": ""}
+    # S3-08: Load cumulative context (Vision + PRD) for richer architecture
+    cumctx = load_cumulative_context(
+        purpose.id, up_to="product requirements document"
+    )
+    # S4-11: Load feedback context for architecture task
+    feedback_ctx = ""
+    try:
+        feedback_ctx = load_feedback_context("", purpose_id=purpose.id)
+    except Exception:
+        pass
+
+    ctx = {
+        "purpose": purpose.name,
+        "task": task or "n/a",
+        "external_references": "",
+        "vision_context": cumctx.get("vision", ""),
+        "prd_context": cumctx.get("prd", ""),
+        "feedback_context": feedback_ctx,
+    }
     if tenant and tenant.allow_web_research:
         query = (
             "Find best practices and recent high-quality references for building: "

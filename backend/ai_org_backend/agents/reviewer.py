@@ -25,6 +25,9 @@ from ai_org_backend.services.llm_client import MODEL_PRO, chat_with_tools  # noq
 from ai_org_backend.services.storage import register_artefact  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
 
+from ai_org_backend.services.cumulative_context import load_cumulative_context  # noqa: E402
+from ai_org_backend.services.feedback_loop import load_feedback_context  # noqa: E402
+
 from .utils import load_template  # noqa: E402
 
 REVIEW_RUNS = prom_counter("ai_review_runs_total", "Review agent executions")
@@ -60,10 +63,24 @@ def run_reviewer(
         purpose = s.get(Purpose, purpose_id)
         if not purpose:
             return "⚠️ Purpose not found; cannot review."
+        # S3-11: Load cumulative context for PRD-alignment checking
+        cumctx = load_cumulative_context(
+            purpose_id, up_to="architecture blueprint"
+        )
+        # S4-11: Load feedback context for review
+        feedback_ctx = ""
+        try:
+            feedback_ctx = load_feedback_context("", purpose_id=purpose_id)
+        except Exception:
+            pass
+
         ctx = {
             "purpose_name": purpose.name,
             "tenant_id": purpose.tenant_id,
             "blueprint": blueprint_md,
+            "prd_context": cumctx.get("prd", ""),
+            "vision_context": cumctx.get("vision", ""),
+            "feedback_context": feedback_ctx,
         }
         template = PROMPT_TMPL
         if prompt_override:
@@ -108,7 +125,7 @@ def reviewer_task(
     blueprint_text = ""
 
     with SessionLocal() as s:
-        # Fetch blueprint content from its artefact(s)
+        # Fetch blueprint content via artifact resolver (S3-04)
         try:
             review_task = s.get(Task, review_task_id)
             if not review_task:
@@ -129,36 +146,29 @@ def reviewer_task(
             if purpose and getattr(purpose, "mode", None) == "auto":
                 purpose_auto_mode = True
 
-            if resolved_blueprint_id is None:
-                blueprint_task = s.exec(
-                    select(Task)
-                    .where(
-                        Task.purpose_id == resolved_purpose_id,
-                        func.lower(Task.description) == "architecture blueprint",
-                    )
-                    .order_by(desc(Task.created_at))
-                ).first()
-                if blueprint_task:
-                    resolved_blueprint_id = blueprint_task.id
-
-            if resolved_blueprint_id is None:
-                logging.warning(
-                    "[Reviewer] No blueprint task found for purpose=%s", resolved_purpose_id
-                )
-            else:
-                art = s.exec(
-                    select(Artifact)
-                    .where(Artifact.task_id == resolved_blueprint_id)
-                    .order_by(desc(Artifact.created_at))
-                ).first()
-                if art:
-                    from ai_org_backend.services.storage import resolve_for_read
-
-                    file_path = resolve_for_read(art.repo_path)
-                    blueprint_text = file_path.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
             logging.error("[Reviewer] Failed to prepare review context: %s", e)
-            blueprint_text = ""
+
+    # S3-04: Use artifact resolver instead of manual queries
+    # S-Sprint1 Fix #9: require_artifact=True → fail explicitly if missing
+    from ai_org_backend.services.artifact_resolver import (
+        ArtifactNotFoundError,
+        load_by_phase,
+    )
+    try:
+        blueprint_text = load_by_phase(
+            resolved_purpose_id, "architecture blueprint", require_artifact=True
+        ) or ""
+    except ArtifactNotFoundError as exc:
+        logging.error("[Reviewer][S1-#9] %s", exc)
+        from ai_org_backend.services.repo import Repo
+        try:
+            Repo(tenant_id).update(
+                review_task_id, status="failed", notes=str(exc)
+            )
+        except Exception:
+            pass
+        return
 
     logging.info(
         "[Reviewer] Generating review for purpose=%s (tenant=%s)",

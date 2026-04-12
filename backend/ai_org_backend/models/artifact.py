@@ -32,6 +32,10 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)
     released: bool = Field(default=False)
 
+    # S3-12: Artifact versioning
+    version_number: int = Field(default=1, ge=1)
+    parent_id: Optional[str] = Field(default=None, foreign_key="artifact.id")
+
     @classmethod
     def create_from_file(
         cls,

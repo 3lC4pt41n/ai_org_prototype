@@ -106,6 +106,27 @@ def agent_repo(tenant_id: str, task_id: str) -> None:
                 target_dir.mkdir(parents=True, exist_ok=True)
             register_artefact(task_id, file_content.encode("utf-8"), filename=path)
             files_created += 1
+        # S-Sprint4 Fix #10: Post-assembly build validation
+        if files and not error_msg:
+            try:
+                from ai_org_backend.services.build_validator import validate_files_content
+                validation = validate_files_content(files)
+                if not validation.is_valid:
+                    error_msg = (
+                        f"Build validation failed: {'; '.join(validation.errors[:5])}"
+                    )
+                    logging.warning(
+                        "[S4-#10] repo_composer validation failed for task %s: %s",
+                        task_id, error_msg,
+                    )
+                elif validation.warnings:
+                    logging.info(
+                        "[S4-#10] repo_composer warnings for task %s: %s",
+                        task_id, "; ".join(validation.warnings[:5]),
+                    )
+            except Exception as exc:
+                logging.warning("[S4-#10] Build validation error (non-fatal): %s", exc)
+
         # Mark task as done and assign to Repo owner
         if error_msg:
             Repo(tenant_id).update(

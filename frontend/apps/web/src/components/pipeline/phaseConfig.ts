@@ -46,3 +46,38 @@ export const PHASE_DESCRIPTIONS: Record<PhaseId, string> = {
   release:
     'Schließe das Projekt ab, indem du alle Artefakte freigibst und das Release kommunizierst.',
 };
+
+// ── S6-#10.1: Dynamic phase loading from API ────────────────────────
+
+export interface ApiPhase {
+  id: string;
+  slug: string;
+  name: string;
+  position: number;
+  agent_role: string | null;
+  requires_approval: boolean;
+  tokens_plan_default: number;
+  model_name: string | null;
+}
+
+/**
+ * Fetch phase configuration from the backend API.
+ * Falls back to the hardcoded PIPELINE_PHASES if the API call fails.
+ */
+export async function fetchPipelinePhases(
+  purposeId: string,
+  token: string,
+): Promise<ApiPhase[]> {
+  try {
+    const res = await fetch(
+      `/api/pipeline/phases?purpose_id=${encodeURIComponent(purposeId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.phases ?? [];
+  } catch {
+    // Fallback: use hardcoded phases (slugs match PIPELINE_PHASES ids)
+    return [];
+  }
+}

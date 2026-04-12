@@ -25,6 +25,10 @@ class TaskStatus(str, Enum):
     SKIPPED = "skipped"
     # Mark task skipped due to insufficient budget
     BUDGET_EXCEEDED = "budget_exceeded"
+    # S2-05: Task moved to dead-letter queue after exhausting retries
+    DEAD_LETTER = "dead_letter"
+    # Task failed permanently
+    FAILED = "failed"
 
 
 class TaskOwner(str, Enum):
@@ -50,16 +54,30 @@ class TaskOwner(str, Enum):
 
 
 class Task(SQLModel, table=True):  # type: ignore[call-arg]
-    """Core work item tracked in SQL."""
+    """Core work item tracked in SQL.
+
+    Notes on CASCADE DELETE: The tenant_id and purpose_id foreign keys include
+    ON DELETE CASCADE constraints, enforced at the database level via migration
+    20260329_s1_cascade_and_constraints. When a Tenant or Purpose is deleted,
+    all related Tasks are automatically deleted.
+    """
 
     id: str = Field(
-        default_factory=lambda: str(uuid.uuid4())[:8], 
+        default_factory=lambda: str(uuid.uuid4())[:8],
         primary_key=True
     )
 
     # Foreign Keys
-    tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
-    purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
+    tenant_id: str = Field(
+        foreign_key="tenant.id",
+        nullable=False,
+        description="Tenant ID (CASCADE DELETE)"
+    )
+    purpose_id: Optional[str] = Field(
+        default=None,
+        foreign_key="purpose.id",
+        description="Purpose ID (CASCADE DELETE)"
+    )
     pipeline_phase_id: Optional[str] = Field(
         default=None, foreign_key="pipeline_phase.id"
     )
@@ -84,6 +102,24 @@ class Task(SQLModel, table=True):  # type: ignore[call-arg]
     retries: int = Field(default=0, ge=0)
 
     issues_found: int = Field(default=0, ge=0)
+
+    # S2-03: Optimistic locking version counter – incremented on every status
+    # change via ``cas_update_status()``.  Concurrent writers that read the
+    # same version will fail with ``StaleTaskError``.
+    version: int = Field(default=0, ge=0)
+
+    # S5-B1: Code review status tracking
+    code_review_status: Optional[str] = Field(
+        default=None, max_length=30,
+        description="reviewing | changes_requested | approved | requires_manual_review",
+    )
+    # S5-B3: Review round counter (prevents infinite re-review loops)
+    review_rounds: int = Field(default=0, ge=0)
+
+    # S2-04 / S2-06: Timestamp of last activity (heartbeat or status change)
+    # for stuck-task detection.  Updated whenever the task transitions or a
+    # worker sends a heartbeat.
+    last_heartbeat_at: Optional[dt] = Field(default=None)
     
     # Timestamps
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)

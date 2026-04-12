@@ -21,6 +21,15 @@ from ai_org_backend.utils.filetypes import infer_extension, strip_code_fences
 
 from .utils import load_template
 
+# S3-10: Import cumulative context for architecture awareness
+from ai_org_backend.services.cumulative_context import load_cumulative_context
+# S4-11: Import feedback context for prompt injection
+from ai_org_backend.services.feedback_loop import load_feedback_context
+# S5-A1/A2/A3: Multi-agent coordination imports
+from ai_org_backend.services.shared_contracts import load_shared_contracts
+from ai_org_backend.services.peer_context import get_peer_context
+from ai_org_backend.services.conflict_detector import detect_conflicts
+
 # Unified number of retry attempts for LLM errors
 MAX_AGENT_RETRIES = 2
 
@@ -50,12 +59,59 @@ def agent_dev(tenant_id: str, task_id: str) -> None:
             tenant = session.get(Tenant, tenant_id)
             allow_research = bool(tenant and tenant.allow_web_research)
 
+            # S3-10: Load cumulative context (up to blueprint) for architecture awareness
+            cumctx = load_cumulative_context(
+                task_obj.purpose_id, up_to="architecture blueprint"
+            ) if task_obj.purpose_id else {}
+
+            # S4-11: Load feedback context for the task
+            feedback_ctx = ""
+            try:
+                feedback_ctx = load_feedback_context(
+                    task_id, purpose_id=task_obj.purpose_id
+                )
+            except Exception as exc:
+                logging.warning("[S4-11] Failed to load feedback context: %s", exc)
+
+            # S5-A1: Load shared contracts
+            contracts_text = ""
+            try:
+                contracts_text = load_shared_contracts()
+            except Exception:
+                pass
+
+            # S5-A2: Load peer context for multi-agent awareness
+            peer_text = ""
+            try:
+                peer_ctx = get_peer_context(
+                    task_obj.purpose_id, exclude_task_id=task_id
+                ) if task_obj.purpose_id else None
+                if peer_ctx:
+                    peer_text = peer_ctx.to_prompt_text()
+            except Exception as exc:
+                logging.warning("[S5-A2] Failed to load peer context: %s", exc)
+
+            # S5-A3: Detect conflicts with peer tasks
+            conflict_text = ""
+            try:
+                if task_obj.purpose_id:
+                    conflict_report = detect_conflicts(task_obj.purpose_id, task_id)
+                    conflict_text = conflict_report.to_prompt_text()
+            except Exception as exc:
+                logging.warning("[S5-A3] Conflict detection failed: %s", exc)
+
             ctx = {
                 "purpose": purpose_name,
                 "task": task_obj.description,
                 "business_value": task_obj.business_value,
                 "tokens_plan": task_obj.tokens_plan,
                 "purpose_relevance": int((task_obj.purpose_relevance or 0) * 100),
+                "blueprint_context": cumctx.get("blueprint", ""),
+                "prd_context": cumctx.get("prd", ""),
+                "feedback_context": feedback_ctx,
+                "shared_contracts": contracts_text,
+                "peer_context": peer_text,
+                "conflict_warnings": conflict_text,
             }
             # Include error note for retry attempts
             if task_obj and task_obj.retries > 0 and task_obj.notes:

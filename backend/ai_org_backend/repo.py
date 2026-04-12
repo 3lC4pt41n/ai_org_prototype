@@ -45,24 +45,30 @@ class Repo:
             s.commit()
             s.refresh(obj)
 
-        # Mirror to graph (best-effort; never break request on graph failure)
+        # S-Sprint3 Fix #6: Deferred graph sync via Celery task (non-blocking).
+        # Falls back to synchronous call if Celery is unavailable.
         try:
-            graph_sync.upsert_task(
-                obj.id,
-                desc=obj.description,
-                status=str(obj.status),
-                business_value=obj.business_value,
-                tokens_plan=obj.tokens_plan,
-                tokens_actual=obj.tokens_actual,
-                purpose_relevance=obj.purpose_relevance,
-                agent_role=obj.agent_role,
-                model_name=obj.model_name,
-                prompt_template=obj.prompt_template,
-                requires_approval=obj.requires_approval,
-                pipeline_phase_id=obj.pipeline_phase_id,
-            )
-        except Exception as e:
-            logging.error("Graph upsert failed during Task update: %s", e)
+            from ai_org_backend.tasks.celery_app import celery as _celery
+            _celery.send_task("graph.sync", args=[self.tenant_id])
+        except Exception:
+            # Fallback: synchronous graph sync (with retry decorator)
+            try:
+                graph_sync.upsert_task(
+                    obj.id,
+                    desc=obj.description,
+                    status=str(obj.status),
+                    business_value=obj.business_value,
+                    tokens_plan=obj.tokens_plan,
+                    tokens_actual=obj.tokens_actual,
+                    purpose_relevance=obj.purpose_relevance,
+                    agent_role=obj.agent_role,
+                    model_name=obj.model_name,
+                    prompt_template=obj.prompt_template,
+                    requires_approval=obj.requires_approval,
+                    pipeline_phase_id=obj.pipeline_phase_id,
+                )
+            except Exception as e:
+                logging.error("Graph upsert failed during Task update: %s", e)
 
         return obj
 
@@ -140,12 +146,46 @@ class Repo:
         return t
 
     def link(self, from_id: str, to_id: str, *, kind: str = "FINISH_START") -> None:
+        """Add a dependency edge between two existing tasks (SQL + Graph).
+
+        S-Sprint3 Fix #7: Before persisting, validates that the new edge
+        does not introduce a cycle in the task dependency DAG.  Raises
+        ``CyclicDependencyError`` (HTTP 409) if a cycle is detected.
         """
-        Add a dependency edge between two existing tasks (SQL + Graph).
-        """
+        from sqlmodel import select as sql_select
+
         with SessionLocal() as s:
+            # S-Sprint3 Fix #7: Load all existing deps and check for cycles
+            # before inserting the new edge.
+            all_deps = s.exec(sql_select(TaskDependency)).all()
+            # Build adjacency: from_id -> [to_id, ...]
+            adj: dict[str, set[str]] = {}
+            for dep in all_deps:
+                adj.setdefault(dep.from_id, set()).add(dep.to_id)
+            # Add the proposed new edge
+            adj.setdefault(from_id, set()).add(to_id)
+
+            # DFS-based reachability check: can we reach from_id starting from to_id?
+            # If yes, adding from_id→to_id would create a cycle.
+            visited: set[str] = set()
+            stack = [to_id]
+            while stack:
+                node = stack.pop()
+                if node == from_id:
+                    from ai_org_backend.services.cycle_detector import CyclicDependencyError
+                    raise CyclicDependencyError(
+                        [[from_id, to_id, "...", from_id]]
+                    )
+                if node in visited:
+                    continue
+                visited.add(node)
+                for neighbor in adj.get(node, set()):
+                    if neighbor not in visited:
+                        stack.append(neighbor)
+
             s.add(TaskDependency(from_id=from_id, to_id=to_id, dependency_type=kind))
             s.commit()
+
         try:
             graph_sync.upsert_dependency(from_id, to_id, kind=kind)
         except Exception as e:

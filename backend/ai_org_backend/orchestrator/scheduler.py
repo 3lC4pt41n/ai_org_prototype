@@ -48,16 +48,24 @@ from ai_org_backend.orchestrator.inspector import (
     alert,
     todo_count,
 )
+from ai_org_backend.orchestrator.locks import phase_lock, task_dispatch_lock
 from ai_org_backend.orchestrator.router import classify_role
+from ai_org_backend.orchestrator.watchdog import run_watchdog
 
 MAX_RETRIES = 2
 RETRY_DELAY_S = 30
 
+# S2-04: Stuck-task detection threshold (seconds)
+STUCK_TASK_THRESHOLD_S = 900  # 15 minutes
+
 
 def _retry_failed_tasks() -> None:
-    """Requeue failed tasks that have remaining retries."""
+    """Requeue failed tasks that have remaining retries.
+
+    S2-02: Uses a fresh, short-lived session to prevent stale reads.
+    """
     now = time.time()
-    with Session(engine) as db:
+    with Session(engine, expire_on_commit=True) as db:
         q = select(Task).where(Task.status == "failed", Task.retries < MAX_RETRIES)
         for t in db.exec(q):
             age = now - t.created_at.timestamp()
@@ -81,7 +89,88 @@ def _ready_for_execution(task: Task, session: Session) -> bool:
         .join(Task, Task.id == TaskDependency.from_id)
         .where(Task.status != TaskStatus.DONE)
     ).first()
-    return unresolved is None
+    if unresolved is not None:
+        return False
+
+    # S-Sprint1 Fix #2: Check requires_approval – if THIS task requires approval,
+    # verify it has a released artifact before it can be considered "done" for
+    # downstream purposes.  This prevents the task from being re-dispatched
+    # while awaiting approval, and blocks any downstream tasks.
+    if task.requires_approval:
+        own_artifact = session.exec(
+            select(Artifact)
+            .where(Artifact.task_id == task.id)
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if not own_artifact or not own_artifact.released:
+            logging.info(
+                "[S1-#2] Task %s requires approval but artifact not released – "
+                "blocking execution of downstream dependents",
+                task.id,
+            )
+            return False
+
+    # S4-07: Transitive predecessor check – ensure all transitive predecessors
+    # (not just direct dependencies) are complete.
+    if not _all_transitive_predecessors_done(task, session):
+        return False
+
+    return True
+
+
+def _all_transitive_predecessors_done(task: Task, session: Session) -> bool:
+    """S4-07: Verify all transitive predecessors are done.
+
+    Walks the dependency graph backwards to ensure not just direct
+    predecessors but their predecessors too are all in DONE status.
+    """
+    visited: set[str] = set()
+    queue = [task.id]
+
+    while queue:
+        current_id = queue.pop(0)
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+
+        # Find all tasks that current_id depends on
+        deps = session.exec(
+            select(TaskDependency).where(TaskDependency.to_id == current_id)
+        ).all()
+
+        for dep in deps:
+            if dep.from_id in visited:
+                continue
+            pred_task = session.get(Task, dep.from_id)
+            if not pred_task:
+                continue
+            if pred_task.status != TaskStatus.DONE:
+                logging.debug(
+                    "[S4-07] Transitive predecessor %s not done (status=%s) for task %s",
+                    dep.from_id,
+                    pred_task.status,
+                    task.id,
+                )
+                return False
+
+            # S4-04: If predecessor requires_approval, verify its artifact is released
+            if pred_task.requires_approval:
+                pred_artifact = session.exec(
+                    select(Artifact)
+                    .where(Artifact.task_id == pred_task.id)
+                    .order_by(Artifact.created_at.desc())
+                ).first()
+                if not pred_artifact or not pred_artifact.released:
+                    logging.info(
+                        "[S4-04] Predecessor %s requires approval but artifact not released – blocking %s",
+                        dep.from_id,
+                        task.id,
+                    )
+                    return False
+
+            queue.append(dep.from_id)
+
+    return True
 
 
 def _resolve_agent_role(
@@ -252,6 +341,18 @@ def _dispatch_task(
     return True
 
 
+def _get_task_position(session: Session, task: Task) -> int:
+    """S4-06: Return the position value for dispatcher sorting.
+
+    Resolves the position from the PipelinePhase associated with the task.
+    Tasks without a phase get a high default so they are dispatched last.
+    """
+    phase = _resolve_pipeline_phase(session, task)
+    if phase:
+        return phase.position
+    return 9999
+
+
 def _generate_plan_for_purpose(purpose_id: str) -> None:
     from ai_org_backend.agents.architect import run_architect
     from ai_org_backend.scripts.seed_graph import ingest
@@ -304,9 +405,20 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
         review_artifact = _latest_artifact_for(review_task)
 
         if vision_task and vision_task.status == TaskStatus.DONE and not po_task:
+            # S-Sprint1 Fix #1: ALWAYS require artifact existence before
+            # advancing to the next phase – even in auto mode.
+            if not vision_artifact or vision_artifact.size == 0:
+                logging.warning(
+                    "[Orchestrator][S1-#1] Vision task %s is DONE but artifact is "
+                    "missing or empty (size=%s) – blocking PRD creation for purpose %s",
+                    vision_task.id,
+                    getattr(vision_artifact, "size", None),
+                    purpose_id,
+                )
+                return
             vision_approved = bool(
                 purpose_mode == "auto"
-                or (vision_artifact and vision_artifact.released)
+                or vision_artifact.released
                 or "approved" in (vision_task.notes or "").lower()
             )
             if vision_approved:
@@ -334,10 +446,12 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 )
             return
 
+        # S-Sprint1 Fix #1: PRD artifact must exist AND have content (size > 0)
         prd_ready_for_architecture = bool(
             po_task
             and po_task.status == TaskStatus.DONE
             and prd_artifact
+            and prd_artifact.size > 0
             and (purpose_mode == "auto" or prd_artifact.released)
         )
         if not prd_ready_for_architecture and not blueprint_task:
@@ -352,9 +466,17 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             and blueprint_task.status == TaskStatus.DONE
             and review_task is None
         ):
-            if purpose_mode == "manual" and not (
-                blueprint_artifact and blueprint_artifact.released
-            ):
+            # S-Sprint1 Fix #1: Always require blueprint artifact existence
+            if not blueprint_artifact or blueprint_artifact.size == 0:
+                logging.warning(
+                    "[Orchestrator][S1-#1] Blueprint task %s is DONE but artifact is "
+                    "missing or empty (size=%s) – blocking review for purpose %s",
+                    blueprint_task.id,
+                    getattr(blueprint_artifact, "size", None),
+                    purpose_id,
+                )
+                return
+            if purpose_mode == "manual" and not blueprint_artifact.released:
                 logging.info(
                     "[Orchestrator] Blueprint exists but not approved yet for purpose %s",
                     purpose_id,
@@ -377,6 +499,44 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
                 requires_approval=getattr(review_phase, "requires_approval", True),
             )
             repo.link(blueprint_task.id, review_task_obj.id)
+
+            # S4-05: Create a blocking dependency from the review task to all
+            # downstream implementation tasks.  This ensures no implementation
+            # task can start until the review is done (and approved in manual mode).
+            impl_tasks = db_session.exec(
+                select(Task).where(
+                    Task.purpose_id == purpose_id,
+                    Task.status == TaskStatus.TODO,
+                    Task.id != review_task_obj.id,
+                    ~Task.description.in_([
+                        "Vision Document",
+                        "Product Requirements Document",
+                        "Architecture Blueprint",
+                        "Architecture & Domain Review",
+                        "Implementation Plan",
+                    ]),
+                )
+            ).all()
+            for impl_task in impl_tasks:
+                # Check if dependency already exists
+                existing_dep = db_session.exec(
+                    select(TaskDependency).where(
+                        TaskDependency.from_id == review_task_obj.id,
+                        TaskDependency.to_id == impl_task.id,
+                    )
+                ).first()
+                if not existing_dep:
+                    db_session.add(TaskDependency(
+                        from_id=review_task_obj.id,
+                        to_id=impl_task.id,
+                        dependency_type="blocks",
+                    ))
+            try:
+                db_session.commit()
+            except Exception as exc:
+                logger_msg = f"[S4-05] Failed to create review blocker deps: {exc}"
+                logging.warning(logger_msg)
+
             repo.update(
                 review_task_obj.id,
                 status="doing",
@@ -405,9 +565,17 @@ def _generate_plan_for_purpose(purpose_id: str) -> None:
             and review_task
             and review_task.status == TaskStatus.DONE
         ):
-            if purpose_mode == "manual" and not (
-                review_artifact and review_artifact.released
-            ):
+            # S-Sprint1 Fix #1: Always require review artifact existence
+            if not review_artifact or review_artifact.size == 0:
+                logging.warning(
+                    "[Orchestrator][S1-#1] Review task %s is DONE but artifact is "
+                    "missing or empty (size=%s) – blocking planner for purpose %s",
+                    review_task.id,
+                    getattr(review_artifact, "size", None),
+                    purpose_id,
+                )
+                return
+            if purpose_mode == "manual" and not review_artifact.released:
                 logging.info(
                     "[Orchestrator] Review exists but not approved yet for purpose %s",
                     purpose_id,
@@ -525,10 +693,10 @@ async def orchestrator() -> None:
             await asyncio.sleep(2)
             continue
 
-        # 2️⃣ Check purposes
+        # 2️⃣ Check purposes — S2-02: Fresh session per cycle, expire on commit
         purpose_to_process: tuple[Purpose, str] | None = None
         try:
-            with Session(engine) as session:
+            with Session(engine, expire_on_commit=True) as session:
                 purposes = session.exec(
                     select(Purpose).where(Purpose.tenant_id == TENANT, Purpose.is_active)
                 ).all()
@@ -669,39 +837,77 @@ async def orchestrator() -> None:
 
         if purpose_to_process:
             p, action = purpose_to_process
-            if action == "vision":
-                logging.info(
-                    "[Orchestrator] Vision completed for purpose %s → erstelle PRD-Task",
-                    p.id,
-                )
-            elif action == "architect":
-                logging.info(
-                    "[Orchestrator] PRD freigegeben für Purpose %s → starte Architecture",
-                    p.id,
-                )
-            elif action == "review":
-                logging.info(
-                    "[Orchestrator] Blueprint abgeschlossen für Purpose %s → starte Review",
-                    p.id,
-                )
-            else:  # planner
-                logging.info(
-                    "[Orchestrator] Blueprint & Review abgeschlossen für Purpose %s → starte Planner",
-                    p.id,
-                )
-            try:
-                await asyncio.to_thread(_generate_plan_for_purpose, p.id)
-            except Exception as e:
-                alert(f"Orchestrator: planning failed for purpose {p.id}: {e}", "error")
+            # S2-01: Acquire a distributed lock before phase transitions
+            with phase_lock(TENANT, p.id, action) as acquired:
+                if not acquired:
+                    logging.info(
+                        "[Orchestrator] Phase lock for %s/%s not acquired – skipping",
+                        p.id, action,
+                    )
+                    await asyncio.sleep(2)
+                    continue
+                if action == "vision":
+                    logging.info(
+                        "[Orchestrator] Vision completed for purpose %s → erstelle PRD-Task",
+                        p.id,
+                    )
+                elif action == "architect":
+                    logging.info(
+                        "[Orchestrator] PRD freigegeben für Purpose %s → starte Architecture",
+                        p.id,
+                    )
+                elif action == "review":
+                    logging.info(
+                        "[Orchestrator] Blueprint abgeschlossen für Purpose %s → starte Review",
+                        p.id,
+                    )
+                else:  # planner
+                    logging.info(
+                        "[Orchestrator] Blueprint & Review abgeschlossen für Purpose %s → starte Planner",
+                        p.id,
+                    )
+                try:
+                    await asyncio.to_thread(_generate_plan_for_purpose, p.id)
+                except Exception as e:
+                    alert(f"Orchestrator: planning failed for purpose {p.id}: {e}", "error")
             continue
 
         # Execute ready tasks
         for rec in cypher(LEAF_Q):
-            with Session(engine) as session:
+            # S2-01: Prevent duplicate dispatches with a one-shot lock
+            dispatch_token = task_dispatch_lock(TENANT, rec["id"])
+            if dispatch_token is None:
+                continue
+
+            with Session(engine, expire_on_commit=True) as session:
                 task_obj = session.get(Task, rec["id"])
 
                 if not task_obj:
                     continue
+                # S-Sprint3 Fix #3: CAS-based dispatch – atomically claim the task
+                # by setting status to 'doing' only if still 'todo' AND version matches.
+                # This prevents double-dispatch even across multiple scheduler instances.
+                from sqlalchemy import update as sql_update
+                current_version = task_obj.version
+                cas_result = session.exec(  # type: ignore[call-overload]
+                    sql_update(Task)
+                    .where(
+                        Task.id == task_obj.id,
+                        Task.status == "todo",
+                        Task.version == current_version,
+                    )
+                    .values(status="doing", version=current_version + 1)
+                )
+                session.commit()
+                if cas_result.rowcount == 0:  # type: ignore[union-attr]
+                    # Another scheduler already claimed this task — skip
+                    logging.info(
+                        "[S3-#3] CAS failed for task %s (version=%d) – skipping",
+                        task_obj.id, current_version,
+                    )
+                    continue
+                # Refresh task_obj to reflect the CAS update
+                session.refresh(task_obj)
                 if task_obj.purpose_id and pool.get(
                     f"pause:{TENANT}:{task_obj.purpose_id}"
                 ):
@@ -777,6 +983,13 @@ async def orchestrator() -> None:
                     )
                 ).one()
             PROM_BUDGET_BLOCKED.labels(TENANT).set(budget_blocked)
+
+            # S2-04: Run stuck-task watchdog on every metrics cycle
+            try:
+                run_watchdog(TENANT)
+            except Exception as exc:
+                logging.error("[Orchestrator] Watchdog failed: %s", exc)
+
             print(
                 f"ℹ️ todo:{todo_count(TENANT):>3} "
                 f"blocked:{blocked:<2} "

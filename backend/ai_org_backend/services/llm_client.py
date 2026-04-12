@@ -15,7 +15,9 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from . import budget
+from .llm_errors import ErrorCategory, classify_error, get_fallback_model, should_retry
 from .metrics_llm import LLM_CALLS, LLM_COST_USD, LLM_TOKENS, TENANT_BUDGET_LEFT
+from .token_counter import count_messages_tokens, release_reservation, reserve_budget
 
 # ---------------------------------------------------------------------------
 # Anthropic SDK – optional import (graceful degradation)
@@ -319,6 +321,18 @@ def chat_with_tools(
         LLM_CALLS.labels(tenant_id, use_model, usage_label, "blocked").inc()
         raise budget.BudgetExceededError(f"Tenant {tenant_id} has no remaining budget.")
 
+    # S2-10: Pre-call budget reservation based on estimated token count
+    reserved_amount = 0.0
+    if tenant_id:
+        try:
+            est_tokens = count_messages_tokens(messages, use_model)
+            reserved_amount = reserve_budget(tenant_id, est_tokens, use_model)
+        except budget.BudgetExceededError:
+            LLM_CALLS.labels(tenant_id, use_model, usage_label, "blocked").inc()
+            raise
+        except Exception as exc:
+            logging.warning("Budget reservation failed (continuing): %s", exc)
+
     try:
         # ── Route to the correct provider ──
         if is_anthropic_model(use_model):
@@ -356,7 +370,9 @@ def chat_with_tools(
         else:
             try:
                 content = data["choices"][0]["message"].get("content") or ""
-                total_tokens = max(1, int(len(content) / 4))
+                # S2-11: Use tiktoken for precise counting when available
+                from .token_counter import count_tokens
+                total_tokens = count_tokens(content, use_model)
                 estimation = "yes"
             except Exception:
                 total_tokens = 0
@@ -366,9 +382,18 @@ def chat_with_tools(
             LLM_CALLS.labels(tenant_id, use_model, usage_label, "ok").inc()
             LLM_TOKENS.labels(tenant_id, use_model, usage_label, estimation).inc(total_tokens)
 
-        if tenant_id and total_tokens > 0:
+        # S2-10: Settle budget reservation (refund overpayment or charge extra)
+        if tenant_id and reserved_amount > 0:
+            try:
+                release_reservation(tenant_id, reserved_amount, total_tokens, use_model)
+            except Exception as exc:
+                logging.warning("Budget settlement failed: %s", exc)
+        elif tenant_id and total_tokens > 0:
+            # No reservation was made – charge directly (backward compat)
             cost = budget.charge_tokens(tenant_id, use_model, total_tokens)
             LLM_COST_USD.labels(tenant_id, use_model, usage_label).inc(cost)
+
+        if tenant_id:
             try:
                 TENANT_BUDGET_LEFT.labels(tenant_id).set(budget.get_left(tenant_id))
             except Exception as e:
@@ -377,8 +402,22 @@ def chat_with_tools(
                 )
 
         return data
-    except Exception as exc:  # pragma: no cover - defensive
-        logging.exception("LLM chat completion failed (%s): %s", use_model, exc)
+    except Exception as exc:
+        # S2-08: Differentiated error handling – classify and log accordingly
+        category = classify_error(exc)
+        logging.error(
+            "LLM chat completion failed (model=%s, category=%s): %s",
+            use_model, category.value, exc,
+        )
         if tenant_id:
-            LLM_CALLS.labels(tenant_id, use_model, usage_label, "error").inc()
+            LLM_CALLS.labels(tenant_id, use_model, usage_label, f"error_{category.value}").inc()
+
+        # S2-12: For server/rate-limit errors, suggest fallback in the exception
+        if should_retry(category):
+            fallback = get_fallback_model(use_model)
+            if fallback:
+                logging.info(
+                    "Fallback model available: %s → %s (category=%s)",
+                    use_model, fallback, category.value,
+                )
         raise

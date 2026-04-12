@@ -329,110 +329,88 @@ def post_chat(
     assistant_content: str | None = None
     response_extras: dict[str, Any] = {}
     if user_msg.intent == ChatIntent.APPROVAL:
+        # S4-01/S4-02: Delegate to central approve_artifact() service
+        from ai_org_backend.services.approval import (
+            AlreadyReleasedError,
+            ArtifactNotFoundError,
+            approve_artifact,
+        )
+
         artifact_redirect_id: str | None = None
         artifact_redirect_url: str | None = None
-        dispatched_followup = False  # Track whether an async follow-up task was dispatched
-        for aid in artifact_ids:
-            artifact = session.get(Artifact, aid)
-            if not artifact:
-                continue
-            if artifact.released:
-                raise HTTPException(status_code=409, detail="Artifact already released")
-            artifact.released = True
-            session.add(artifact)
-            task = session.get(Task, artifact.task_id)
-            if task:
-                if task.status != "done":
-                    task.status = "done"
-                if task.notes and "awaiting_approval" in task.notes:
-                    task.notes = task.notes.replace("awaiting_approval", "approved")
-                elif task.notes and "approved" not in task.notes.lower():
-                    task.notes = f"{task.notes} | approved via chat"
-                elif not task.notes:
-                    task.notes = "approved via chat"
-                session.add(task)
-            task_desc = (task.description or "").lower() if task else ""
-            repo_path = (artifact.repo_path or "").lower()
-            is_vision = "vision" in task_desc or "vision" in repo_path
-            is_prd = "product requirements" in task_desc or "requirements" in repo_path
-            is_architecture = (
-                "architecture blueprint" in task_desc
-                or "blueprints/" in repo_path
-            )
-            is_review = "architecture & domain review" in task_desc or "review" in repo_path
+        dispatched_followup = False
 
-            purpose_obj = session.get(Purpose, purpose_id) if purpose_id else None
+        # Extract idempotency token from request metadata (S4-03)
+        idempotency_token = None
+        if user_metadata and isinstance(user_metadata, dict):
+            idempotency_token = user_metadata.get("idempotency_token")
+
+        for aid in artifact_ids:
+            try:
+                result = approve_artifact(
+                    aid,
+                    tenant_id=tenant_id,
+                    purpose_id=purpose_id,
+                    idempotency_token=idempotency_token,
+                    clear_pause=False,  # We handle pause clearing below
+                    session=session,
+                )
+            except ArtifactNotFoundError:
+                continue
+            except AlreadyReleasedError:
+                raise HTTPException(status_code=409, detail="Artifact already released")
+
+            if result.idempotent_hit or result.previously_released:
+                continue
 
             # ── Vision approved → dispatch PRD generation asynchronously ──
-            if is_vision and purpose_obj:
-                existing_prd = session.exec(
-                    select(Task)
-                    .where(Task.purpose_id == purpose_id)
-                    .where(Task.description.ilike("%Product Requirements Document%"))
-                ).first()
-                if not existing_prd:
-                    try:
-                        prd_task = Task(
-                            tenant_id=tenant_id,
-                            purpose_id=purpose_id,
-                            description="Product Requirements Document",
-                            business_value=0.0,
-                            tokens_plan=0,
-                            purpose_relevance=1.0,
-                            status="doing",
-                            owner="PO",
-                            notes="PRD in progress",
-                        )
-                        session.add(prd_task)
-                        session.flush()
-                        session.refresh(prd_task)
-                        from ai_org_backend.tasks.celery_app import celery as _celery
-                        _celery.send_task(
-                            "agent.po",
-                            args=[tenant_id, prd_task.id, purpose_id],
-                            queue=f"{tenant_id}:po",
-                        )
-                        dispatched_followup = True
-                        logger.info(
-                            "Dispatched async PRD generation for task %s (purpose %s)",
-                            prd_task.id,
-                            purpose_id,
-                        )
-                    except Exception as exc:  # pragma: no cover - logging only
-                        logger.error("PRD task creation after vision approval failed: %s", exc)
+            if result.phase_hint == "vision":
+                purpose_obj = session.get(Purpose, purpose_id) if purpose_id else None
+                if purpose_obj:
+                    existing_prd = session.exec(
+                        select(Task)
+                        .where(Task.purpose_id == purpose_id)
+                        .where(Task.description.ilike("%Product Requirements Document%"))
+                    ).first()
+                    if not existing_prd:
+                        try:
+                            prd_task = Task(
+                                tenant_id=tenant_id,
+                                purpose_id=purpose_id,
+                                description="Product Requirements Document",
+                                business_value=0.0,
+                                tokens_plan=0,
+                                purpose_relevance=1.0,
+                                status="doing",
+                                owner="PO",
+                                notes="PRD in progress",
+                            )
+                            session.add(prd_task)
+                            session.flush()
+                            session.refresh(prd_task)
+                            from ai_org_backend.tasks.celery_app import celery as _celery
+                            _celery.send_task(
+                                "agent.po",
+                                args=[tenant_id, prd_task.id, purpose_id],
+                                queue=f"{tenant_id}:po",
+                            )
+                            dispatched_followup = True
+                            logger.info(
+                                "Dispatched async PRD generation for task %s (purpose %s)",
+                                prd_task.id,
+                                purpose_id,
+                            )
+                        except Exception as exc:
+                            logger.error("PRD task creation after vision approval failed: %s", exc)
 
-            # ── PRD approved → let scheduler pick up architecture ──
-            # (The scheduler will generate the architecture blueprint once the
-            # pause flag is cleared and it sees a released PRD artifact.)
-            if is_prd and purpose_obj:
+            elif result.phase_hint in ("prd", "architecture", "review"):
                 logger.info(
-                    "PRD approved for purpose %s – scheduler will generate architecture",
+                    "%s approved for purpose %s – scheduler will advance pipeline",
+                    result.phase_hint.upper(),
                     purpose_id,
                 )
 
-            # ── Architecture approved → let scheduler pick up review ──
-            if is_architecture and purpose_obj:
-                logger.info(
-                    "Architecture approved for purpose %s – scheduler will generate review",
-                    purpose_id,
-                )
-
-            # ── Review approved → let scheduler pick up planner ──
-            if is_review and purpose_obj:
-                logger.info(
-                    "Architecture Review approved for purpose %s – scheduler will run planner",
-                    purpose_id,
-                )
-
-        try:
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            logger.error("Failed to persist approval changes: %s", e)
-            raise HTTPException(status_code=500, detail="Could not approve artifact")
-        # Clear the pause flag so the scheduler can proceed with the next phase.
-        # If we dispatched an async follow-up task (e.g. Vision→PRD), keep the pause
-        # because the follow-up agent will set its own pause when it finishes.
+        # Clear pause flag (unless async follow-up was dispatched)
         if not dispatched_followup:
             try:
                 pool.delete(f"pause:{tenant_id}:{purpose_id}")
@@ -845,34 +823,32 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                     continue
 
                 if user_msg.intent == ChatIntent.APPROVAL:
+                    # S-Sprint2 Fix #5: Route through centralized approve_artifact()
+                    from ai_org_backend.services.approval import (
+                        approve_artifact as _ws_approve,
+                        ArtifactNotFoundError as _WSArtNotFound,
+                        AlreadyReleasedError as _WSAlreadyReleased,
+                    )
                     for aid in artifact_ids:
-                        artifact = session.get(Artifact, aid)
-                        if not artifact:
+                        try:
+                            _ws_approve(
+                                aid,
+                                tenant_id=tenant_id,
+                                purpose_id=purpose_id,
+                                session=session,
+                            )
+                        except (_WSArtNotFound, _WSAlreadyReleased):
                             continue
-                        if artifact.released:
+                        except Exception as exc:
+                            logger.error(
+                                "[S2-#5] approve_artifact failed for %s: %s", aid, exc
+                            )
                             continue
-                        artifact.released = True
-                        session.add(artifact)
-                        task = session.get(Task, artifact.task_id)
-                        if task:
-                            if task.status != "done":
-                                task.status = "done"
-                            if task.notes and "awaiting_approval" in task.notes:
-                                task.notes = task.notes.replace("awaiting_approval", "approved")
-                            elif task.notes and "approved" not in task.notes.lower():
-                                task.notes = f"{task.notes} | approved via chat"
-                            elif not task.notes:
-                                task.notes = "approved via chat"
-                            session.add(task)
                     try:
                         session.commit()
                     except Exception as e:
                         session.rollback()
-                        logger.error("Failed to approve tasks: %s", e)
-                    try:
-                        pool.delete(f"pause:{tenant_id}:{purpose_id}")
-                    except Exception as e:
-                        logger.error("Failed to clear pause flag: %s", e)
+                        logger.error("Failed to commit approval: %s", e)
                     assistant_msg = ChatMessage(
                         tenant_id=tenant_id,
                         purpose_id=purpose_id,
@@ -955,6 +931,24 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
                                     ),
                                     allow_overwrite=True,
                                 )
+                                # S-Sprint2 Fix #4: Invalidate & redispatch after WS feedback
+                                try:
+                                    from ai_org_backend.services.feedback_loop import (
+                                        cascade_invalidation,
+                                        redispatch_agent,
+                                    )
+                                    _inv = cascade_invalidation(
+                                        target_task_id, purpose_id=purpose_id,
+                                    )
+                                    for _inv_tid in _inv.invalidated_task_ids:
+                                        redispatch_agent(
+                                            _inv_tid, tenant_id=tenant_id,
+                                        )
+                                except Exception as _inv_exc:
+                                    logger.warning(
+                                        "[S2-#4] WS feedback invalidation/redispatch failed: %s",
+                                        _inv_exc,
+                                    )
                         except Exception as e:
                             logger.error("PRD update failed: %s", e)
                         assistant_content = "Ich arbeite das ein."
@@ -1159,3 +1153,106 @@ async def websocket_chat(websocket: WebSocket, purpose_id: str):
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected for purpose %s", purpose_id)
         return
+
+
+# ──────────────────────────────────────────────────────────────────────
+# S6-#10.2: WebSocket endpoint for real-time status updates
+# ──────────────────────────────────────────────────────────────────────
+
+@ws_router.websocket("/status/{purpose_id}")
+async def websocket_status(websocket: WebSocket, purpose_id: str):
+    """S6-#10.2: Real-time status push for a purpose.
+
+    Sends task/phase status updates every 2 seconds to the frontend,
+    replacing the 6-second HTTP polling pattern.
+
+    Protocol:
+    - Client connects with ?token=<jwt>
+    - Server pushes JSON status frames: {tasks: [...], paused, budget_left}
+    - Client can send {"action": "ping"} to keep alive
+    """
+    import asyncio
+
+    await websocket.accept()
+
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)
+        return
+
+    try:
+        from ai_org_backend.api.dependencies import decode_token
+        payload = decode_token(token)
+        tenant_id = payload.get("tenant_id") or payload.get("sub")
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    if not tenant_id:
+        await websocket.close(code=1008)
+        return
+
+    logger.info("[S6-#10.2] Status WS connected: purpose=%s tenant=%s", purpose_id, tenant_id)
+
+    try:
+        while True:
+            # Build status snapshot
+            try:
+                with Session(engine) as session:
+                    tasks = session.exec(
+                        select(Task).where(
+                            Task.purpose_id == purpose_id,
+                            Task.tenant_id == tenant_id,
+                        )
+                    ).all()
+                    tasks_data = [
+                        {
+                            "id": t.id,
+                            "status": t.status,
+                            "description": t.description[:100] if t.description else "",
+                            "owner": t.owner,
+                            "agent_role": t.agent_role,
+                            "pipeline_phase_id": t.pipeline_phase_id if hasattr(t, "pipeline_phase_id") else None,
+                        }
+                        for t in tasks
+                    ]
+
+                paused = False
+                budget_left = 500.0
+                try:
+                    from ai_org_backend.redis_client import DEFAULT_BUDGET, pool as redis_pool
+                    paused = bool(redis_pool.get(f"pause:{tenant_id}:{purpose_id}"))
+                    budget_left = float(redis_pool.get(f"budget:{tenant_id}:{purpose_id}") or DEFAULT_BUDGET)
+                except Exception:
+                    pass
+
+                await websocket.send_json({
+                    "type": "status_update",
+                    "purpose_id": purpose_id,
+                    "tasks": tasks_data,
+                    "paused": paused,
+                    "budget_left": budget_left,
+                })
+
+            except Exception as exc:
+                logger.warning("[S6-#10.2] Status push error: %s", exc)
+
+            # Wait 2 seconds or receive a client message
+            try:
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+                # Client can send ping to keep alive
+                if msg:
+                    import json as _json
+                    try:
+                        data = _json.loads(msg)
+                        if data.get("action") == "close":
+                            break
+                    except Exception:
+                        pass
+            except asyncio.TimeoutError:
+                pass  # normal — push next status frame
+
+    except WebSocketDisconnect:
+        logger.info("[S6-#10.2] Status WS disconnected: purpose=%s", purpose_id)
+    except Exception as exc:
+        logger.error("[S6-#10.2] Status WS error: %s", exc)

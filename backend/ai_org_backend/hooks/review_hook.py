@@ -162,7 +162,20 @@ def _maybe_trigger_review(task_id: str, filename: str) -> None:
             latest_blueprint_artifact and latest_blueprint_artifact.released
         )
 
-    # Manual mode must wait for explicit architecture approval.
+    # S-Sprint1 Fix #12: ALWAYS require the blueprint artifact to exist and
+    # have non-zero content — even in auto mode.  Previously, auto mode
+    # would skip this check entirely, allowing the review to trigger with
+    # a missing or empty blueprint artifact.
+    if not latest_blueprint_artifact or latest_blueprint_artifact.size == 0:
+        logging.warning(
+            "[ReviewHook][S1-#12] Blueprint artifact missing or empty for "
+            "purpose=%s (task=%s) – blocking review trigger",
+            purpose_id,
+            task_id,
+        )
+        return
+
+    # Manual mode must additionally wait for explicit architecture approval.
     if purpose_mode == "manual" and not blueprint_released:
         logging.info(
             "[ReviewHook] Skip auto-review for purpose=%s (manual mode, blueprint not released)",

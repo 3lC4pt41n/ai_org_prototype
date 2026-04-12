@@ -18,6 +18,9 @@ from ai_org_backend.services.storage import register_artefact  # noqa: E402
 from ai_org_backend.tasks.celery_app import celery  # noqa: E402
 from ai_org_backend.settings import settings  # noqa: E402
 
+from ai_org_backend.services.review_gate import enforce_review_gate  # noqa: E402
+from ai_org_backend.services.shared_contracts import load_shared_contracts  # noqa: E402
+
 from .utils import load_template  # noqa: E402
 
 CODE_REVIEW_RUNS = prom_counter("ai_code_review_runs_total", "Code review agent executions")
@@ -63,7 +66,18 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
         lang = Path(path).suffix.lstrip(".") or ""
         snippets.append({"filename": path, "content": snippet, "language": lang})
 
-    context = {"purpose_name": purpose_name, "snippets": snippets}
+    # S5-A1: Load shared contracts for reference during review
+    contracts_text = ""
+    try:
+        contracts_text = load_shared_contracts()
+    except Exception:
+        pass
+
+    context = {
+        "purpose_name": purpose_name,
+        "snippets": snippets,
+        "shared_contracts": contracts_text,
+    }
     prompt_template = PROMPT_TMPL
     if task and task.prompt_template:
         try:
@@ -105,17 +119,42 @@ def code_review_task(tenant_id: str, task_id: str) -> None:
     )
 
     issues_found = review_md.count("\n- ")
-    notes_msg = (
-        f"code review completed, {issues_found} issue(s) noted"
-        if issues_found
-        else "code review clean"
-    )
+
+    # S5-B1: Enforce review gate — parse findings and create fix tasks
+    gate_result: dict = {}
+    try:
+        gate_result = enforce_review_gate(
+            task_id,
+            review_md,
+            purpose_id=purpose.id if purpose else "",
+            tenant_id=tenant_id,
+        )
+    except Exception as exc:
+        logging.warning("[S5-B1] Review gate enforcement failed: %s", exc)
+
+    review_status = gate_result.get("status", "approved")
+    blocking = gate_result.get("blocking", 0)
+    fix_tasks = gate_result.get("fix_tasks", [])
+
+    if blocking > 0:
+        notes_msg = (
+            f"code review: {blocking} blocking findings, "
+            f"{len(fix_tasks)} fix tasks created"
+        )
+    else:
+        notes_msg = (
+            f"code review completed, {issues_found} issue(s) noted"
+            if issues_found
+            else "code review clean"
+        )
+
     Repo(tenant_id).update(
         task_id,
         status="done",
         owner=TaskOwner.QA_REVIEW,
         notes=notes_msg,
         issues_found=issues_found,
+        code_review_status=review_status,
         tokens_actual=resp.usage.total_tokens if resp and hasattr(resp, "usage") else 0,
     )
     tokens_used = resp.usage.total_tokens if resp and hasattr(resp, "usage") else 0

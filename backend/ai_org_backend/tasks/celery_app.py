@@ -1,7 +1,8 @@
 """Celery application instance for ai_org_backend tasks."""
 
 from celery import Celery
-from celery.signals import before_task_publish, task_failure, task_prerun
+from celery.signals import before_task_publish, task_failure, task_prerun, task_success
+from celery.exceptions import SoftTimeLimitExceeded
 from dotenv import load_dotenv
 
 from ai_org_backend import config
@@ -18,6 +19,25 @@ celery.conf.task_default_queue = "celery"
 # Route tasks dynamically based on tenant and task type
 celery.conf.task_routes = ("ai_org_backend.tasks.celery_app.dynamic_router",)
 celery.conf.task_create_missing_queues = True
+
+# ── S1-07: Global Task Timeouts ──
+from ai_org_backend.celeryconfig import TASK_SOFT_TIME_LIMIT, TASK_TIME_LIMIT
+celery.conf.task_soft_time_limit = TASK_SOFT_TIME_LIMIT
+celery.conf.task_time_limit = TASK_TIME_LIMIT
+
+# ── S1-11: Redis Broker Resilience ──
+celery.conf.broker_transport_options = {
+    "visibility_timeout": 3600,  # 1 hour - tasks redelivered if not acked
+    "retry_policy": {
+        "timeout": 5.0,          # connection timeout in seconds
+        "max_retries": 5,        # retry up to 5 times on connection failure
+        "interval_start": 0.2,   # initial retry delay
+        "interval_step": 0.5,    # increase delay by this much each retry
+        "interval_max": 5.0,     # max delay between retries
+    },
+    "socket_keepalive": True,
+}
+celery.conf.broker_connection_retry_on_startup = True
 # Alias the Celery app as `app` for Celery CLI autodiscovery
 app = celery
 
@@ -36,6 +56,7 @@ celery.conf.include = [
     "ai_org_backend.agents.agent_integration",
     "ai_org_backend.agents.repo_composer",
     "ai_org_backend.tasks.llm_tasks",
+    "ai_org_backend.tasks.watchdog_task",
 ]
 
 
@@ -82,10 +103,40 @@ def set_task_status_doing(sender=None, task_id=None, task=None, args=None, kwarg
     if args and len(args) >= 2:
         tenant_id, t_id = args[0], args[1]
         try:
-            from ai_org_backend.main import Repo
+            from ai_org_backend.db import SessionLocal
+            from ai_org_backend.models import Task as TaskModel
+            from sqlmodel import select
+            from datetime import datetime as dt
 
-            Repo(tenant_id).update(t_id, status="doing")
+            with SessionLocal() as session:
+                task_obj = session.get(TaskModel, t_id)
+                if not task_obj:
+                    return
+
+                # S1-09: Idempotency check - skip if task already completed or has artifacts
+                if task_obj.status in ("done", "cancelled", "skipped", "budget_exceeded", "dead_letter"):
+                    print(f"[idempotency] Task {t_id} already in terminal state '{task_obj.status}', revoking duplicate execution")
+                    # Revoke THIS specific execution to prevent double-processing
+                    if hasattr(sender, 'request') and sender.request:
+                        sender.request.callbacks = None
+                    raise Exception(f"Idempotency violation: task {t_id} already {task_obj.status}")
+
+                task_obj.status = "doing"
+                task_obj.version += 1  # S2-03: Increment version on status change
+                task_obj.last_heartbeat_at = dt.utcnow()  # S2-06: Initial heartbeat
+                session.add(task_obj)
+                session.commit()
+
+            # S2-06: Record initial heartbeat in Redis
+            try:
+                from ai_org_backend.orchestrator.watchdog import record_heartbeat
+                record_heartbeat(tenant_id, t_id)
+            except Exception:
+                pass  # Best effort – Redis might be temporarily unavailable
+
         except Exception as e:
+            if "Idempotency violation" in str(e):
+                raise  # Re-raise idempotency violations
             print(f"Failed to set status 'doing' for task {t_id}: {e}")
 
 
@@ -102,14 +153,93 @@ def set_task_status_failed(
     if args and len(args) >= 2:
         tenant_id, t_id = args[0], args[1]
         try:
+            from ai_org_backend.db import SessionLocal
             from ai_org_backend.main import Repo
+            from ai_org_backend.models import Task as TaskModel
 
-            Repo(tenant_id).update(t_id, status="failed", notes=str(exception))
+            if isinstance(exception, SoftTimeLimitExceeded):
+                notes = f"Task timed out after soft limit ({TASK_SOFT_TIME_LIMIT}s)"
+            else:
+                notes = str(exception)
+
+            # S2-05: Check if task should go to DLQ (max retries exhausted)
+            with SessionLocal() as session:
+                task_obj = session.get(TaskModel, t_id)
+                if task_obj and task_obj.retries >= 3:  # DLQ_MAX_RETRIES
+                    from ai_org_backend.orchestrator.watchdog import move_to_dlq
+                    move_to_dlq(t_id, f"Max retries exhausted: {notes}")
+                    from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
+                    PROM_TASK_FAILED.labels(tenant_id).inc()
+                    return
+
+            Repo(tenant_id).update(t_id, status="failed", notes=notes)
             from ai_org_backend.orchestrator.inspector import PROM_TASK_FAILED
-
             PROM_TASK_FAILED.labels(tenant_id).inc()
         except Exception as e:
             print(f"Failed to set status 'failed' for task {t_id}: {e}")
+
+
+@task_success.connect
+def check_fix_task_re_review(
+    sender=None, result=None, args=None, kwargs=None, **extra
+):
+    """S-Sprint2 Fix #13: After a task completes successfully, check if it was
+    a review fix task. If all fix tasks for the parent review are now done,
+    automatically dispatch a re-review via ``dispatch_re_review()``.
+    """
+    if not args or len(args) < 2:
+        return
+    tenant_id, t_id = args[0], args[1]
+    try:
+        from ai_org_backend.db import SessionLocal
+        from ai_org_backend.models import Task as TaskModel
+        from ai_org_backend.models import TaskDependency
+        from sqlmodel import select
+
+        with SessionLocal() as session:
+            task_obj = session.get(TaskModel, t_id)
+            if not task_obj:
+                return
+
+            # Only proceed if this looks like a review fix task
+            desc = (task_obj.description or "").strip()
+            if not desc.startswith("Review Fix:"):
+                return
+
+            # Find the review task(s) this fix task blocks
+            deps = session.exec(
+                select(TaskDependency).where(TaskDependency.from_id == t_id)
+            ).all()
+
+            for dep in deps:
+                review_task = session.get(TaskModel, dep.to_id)
+                if not review_task:
+                    continue
+                # Verify it's actually a review task
+                review_desc = (review_task.description or "").strip().lower()
+                if "review" not in review_desc:
+                    continue
+
+                # Check if ALL fix tasks for this review are now complete
+                from ai_org_backend.services.review_gate import (
+                    check_fix_tasks_complete,
+                    dispatch_re_review,
+                )
+
+                if check_fix_tasks_complete(review_task.id):
+                    dispatched = dispatch_re_review(review_task.id, tenant_id)
+                    if dispatched:
+                        print(
+                            f"[S2-#13] All fix tasks done for review {review_task.id}"
+                            f" – re-review dispatched"
+                        )
+                    else:
+                        print(
+                            f"[S2-#13] All fix tasks done for review {review_task.id}"
+                            f" – re-review NOT dispatched (escalated or error)"
+                        )
+    except Exception as exc:
+        print(f"[S2-#13] check_fix_task_re_review failed for task {t_id}: {exc}")
 
 
 def dynamic_router(task_name: str, args, kwargs, options, task=None, **unused):

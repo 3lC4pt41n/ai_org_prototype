@@ -51,15 +51,37 @@ class ChatMessageArtifact(SQLModel, table=True):  # type: ignore[call-arg]
 
 
 class ChatMessage(SQLModel, table=True):  # type: ignore[call-arg]
-    """Chat message in an interactive conversation."""
+    """Chat message in an interactive conversation.
+
+    Notes on CASCADE DELETE: The tenant_id, purpose_id, artifact_id, and task_id
+    foreign keys include ON DELETE CASCADE constraints, enforced at the database
+    level via migration 20260329_s1_cascade_and_constraints. When any of these
+    parent records are deleted, related ChatMessage records are automatically deleted.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8], primary_key=True)
-    tenant_id: str = Field(foreign_key="tenant.id", nullable=False)
-    purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id")
-    artifact_id: Optional[str] = Field(default=None, foreign_key="artifact.id")
-    task_id: Optional[str] = Field(default=None, foreign_key="task.id")
+    tenant_id: str = Field(
+        foreign_key="tenant.id",
+        nullable=False,
+        description="Tenant ID (CASCADE DELETE)"
+    )
+    purpose_id: Optional[str] = Field(
+        default=None,
+        foreign_key="purpose.id",
+        description="Purpose ID (CASCADE DELETE)"
+    )
+    artifact_id: Optional[str] = Field(
+        default=None,
+        foreign_key="artifact.id",
+        description="Artifact ID (CASCADE DELETE)"
+    )
+    task_id: Optional[str] = Field(
+        default=None,
+        foreign_key="task.id",
+        description="Task ID (CASCADE DELETE)"
+    )
     # Map to Postgres ENUMs using the lowercase values to match existing DB
     role: ChatRole = Field(
         sa_column=sa.Column(

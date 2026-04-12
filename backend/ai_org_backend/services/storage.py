@@ -26,6 +26,103 @@ log = logging.getLogger(__name__)
 # Workspace root from settings (unified)
 WORKSPACE: Path = settings.workspace_dir.resolve()
 
+
+# ──────────────────────────────────────────────────────────────────────
+# S3-01 / S3-02: Artifact content validation
+# ──────────────────────────────────────────────────────────────────────
+
+class ArtifactValidationError(ValueError):
+    """Raised when artifact content fails validation checks."""
+
+
+# Minimum byte sizes per media-type prefix (S3-02)
+_MIN_SIZE_BY_TYPE: dict[str, int] = {
+    "text/markdown": 50,         # ~10 words minimum
+    "text/x-markdown": 50,
+    "text/x-source": 20,         # at least a function stub
+    "text/plain": 20,
+    "application/json": 2,       # at least "{}" or "[]"
+    "image/": 100,               # trivially small images are invalid
+}
+
+# Error-indicator patterns that should never be stored as artifacts
+_ERROR_PATTERNS = (
+    "⚠️ Purpose not found",
+    "ERROR:",
+    "⚠️ Budget exhausted",
+    "Internal Server Error",
+)
+
+
+def _validate_artifact_content(
+    data: bytes | str,
+    media_type: str | None,
+    filename: str | None,
+) -> None:
+    """S3-01/S3-02: Validate artifact content before persisting.
+
+    Raises ``ArtifactValidationError`` on failure.
+    """
+    # Determine raw bytes
+    if isinstance(data, str):
+        raw = data.encode("utf-8")
+    elif isinstance(data, bytes):
+        raw = data
+    else:
+        return  # Path-based source – validated after copy
+
+    # S3-01: Reject empty content
+    if not raw or len(raw.strip()) == 0:
+        raise ArtifactValidationError(
+            f"Artifact content is empty (filename={filename})"
+        )
+
+    # S3-01: Detect error messages stored as artifacts
+    text_preview = raw[:500].decode("utf-8", errors="ignore")
+    for pattern in _ERROR_PATTERNS:
+        if text_preview.startswith(pattern):
+            raise ArtifactValidationError(
+                f"Artifact content starts with error indicator: {pattern!r}"
+            )
+
+    # S3-02: Minimum size by media type
+    resolved_type = (media_type or "").lower()
+    if not resolved_type and filename:
+        import mimetypes as _mt
+        resolved_type = (_mt.guess_type(filename)[0] or "").lower()
+
+    for type_prefix, min_size in _MIN_SIZE_BY_TYPE.items():
+        if resolved_type.startswith(type_prefix):
+            if len(raw) < min_size:
+                raise ArtifactValidationError(
+                    f"Artifact too small: {len(raw)} bytes < {min_size} minimum "
+                    f"for type {resolved_type} (filename={filename})"
+                )
+            break
+
+    # S3-02: Type-specific checks for text content
+    if resolved_type.startswith("text/") or resolved_type.startswith("application/json"):
+        text = raw.decode("utf-8", errors="ignore").strip()
+
+        # JSON artifacts must be valid JSON
+        if resolved_type == "application/json":
+            import json as _json
+            try:
+                _json.loads(text)
+            except _json.JSONDecodeError as exc:
+                raise ArtifactValidationError(
+                    f"JSON artifact is not valid JSON: {exc}"
+                ) from exc
+
+        # Markdown artifacts should have at least some real content
+        if resolved_type in ("text/markdown", "text/x-markdown"):
+            word_count = len(text.split())
+            if word_count < 5:
+                raise ArtifactValidationError(
+                    f"Markdown artifact has only {word_count} words "
+                    f"(minimum 5, filename={filename})"
+                )
+
 # Git identity (author + committer), configurable via env
 GIT_NAME = os.getenv("GIT_AUTHOR_NAME", os.getenv("GIT_COMMITTER_NAME", "ai-org-bot"))
 GIT_EMAIL = os.getenv("GIT_AUTHOR_EMAIL", os.getenv("GIT_COMMITTER_EMAIL", "noreply@ai.org"))
@@ -239,6 +336,14 @@ def register_artefact(
     tenant workspace, the existing file is replaced instead of creating a suffixed copy.
     Automatically stores the artefact under the tenant's workspace directory and records metadata.
     """
+    # S3-01/S3-02: Validate content before persisting
+    if isinstance(src, (bytes, str)):
+        try:
+            _validate_artifact_content(src, media_type, filename)
+        except ArtifactValidationError as exc:
+            log.warning("Artifact validation failed for task %s: %s", task_id, exc)
+            raise
+
     # Determine tenant workspace directory, optionally including purpose
     with Session(engine) as session:
         task_obj = session.get(Task, task_id)
@@ -293,12 +398,45 @@ def register_artefact(
     except Exception as exc:  # pragma: no cover - defensive
         logging.error("Failed to compute SHA256 for %s: %s", tgt, exc)
         raise
+
+    # ── S1-10: Idempotency - check for duplicate artifact ──
+    with Session(engine) as session:
+        from sqlmodel import select
+        existing = session.exec(
+            select(Artifact).where(
+                Artifact.task_id == task_id,
+                Artifact.sha256 == sha,
+            )
+        ).first()
+        if existing:
+            log.warning(
+                "Duplicate artifact detected for task %s (sha=%s). Returning existing artifact %s.",
+                task_id, sha[:8], existing.id,
+            )
+            return existing
+
+    # S3-12: Determine version number (auto-increment when task already has artifacts)
+    version_number = 1
+    parent_artifact_id = None
+    with Session(engine) as session:
+        from sqlmodel import select as _sel
+        prev = session.exec(
+            _sel(Artifact)
+            .where(Artifact.task_id == task_id)
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if prev:
+            version_number = (prev.version_number or 1) + 1
+            parent_artifact_id = prev.id
+
     artefact = Artifact(
         task_id=task_id,
         repo_path=str(tgt.relative_to(WORKSPACE)),
         media_type=media_type or _mime(tgt),
         size=tgt.stat().st_size,
         sha256=sha,
+        version_number=version_number,
+        parent_id=parent_artifact_id,
     )
     text_content: Optional[str] = None
     tokens = 0
