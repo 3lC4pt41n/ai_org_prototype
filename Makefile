@@ -2,7 +2,7 @@
 # Tip: 'make help' shows all targets.
 
 .RECIPEPREFIX := >
-.PHONY: help install-dev fmt lint typecheck test ci
+.PHONY: help install-dev fmt lint typecheck test audit ci
 
 help:
 > @echo "Targets:"
@@ -11,6 +11,7 @@ help:
 > @echo "  lint         - Ruff lint with auto-fix"
 > @echo "  typecheck    - mypy type check"
 > @echo "  test         - Tests including coverage"
+> @echo "  audit        - Generate architecture audit reports"
 > @echo "  ci           - Lint + type check + tests (like CI)"
 
 install-dev:
@@ -31,5 +32,8 @@ typecheck:
 
 test:
 > PYTHONPATH=backend pytest -q --cov=ai_org_backend --cov-report=term-missing
+
+audit:
+> PYTHONPATH=backend python3 scripts/generate_architecture_audit.py
 
 ci: lint typecheck test
