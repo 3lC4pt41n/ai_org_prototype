@@ -22,6 +22,7 @@ from ai_org_backend.api.chat import router as chat_router
 from ai_org_backend.api.chat import ws_router as chat_ws_router
 from ai_org_backend.api.dependencies import get_current_tenant
 from ai_org_backend.api.health import router as health_router  # S6-05
+from ai_org_backend.api.intent import router as intent_router
 from ai_org_backend.api.pipeline import router as pipeline_router
 from ai_org_backend.api.purposes import router as purposes_router
 from ai_org_backend.api.reviews import router as reviews_router
@@ -157,6 +158,7 @@ app.include_router(auth_router)
 app.include_router(tmpl_router)
 app.include_router(agent_router)
 app.include_router(artifact_bridge_router)
+app.include_router(intent_router)
 app.include_router(pipeline_router)
 app.include_router(settings_router)
 app.include_router(reviews_router)

@@ -4,12 +4,12 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 
 ## Kurzbefund
 
-- FastAPI-Routen: 57
+- FastAPI-Routen: 59
 - Celery-Tasks: 26
 - Service-Module: 34
 - Repository-Adapter: 3
 - Datenmodell-Dateien: 13
-- Python-Module insgesamt: 135
+- Python-Module insgesamt: 143
 
 ## FastAPI-Routen
 
@@ -33,6 +33,8 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | PATCH | `/api/chat/messages/{message_id}/tags` | `backend.ai_org_backend.api.chat.update_message_tags` | Update artifact tags for a chat message. |
 | GET | `/api/context` | `backend.ai_org_backend.api.pipeline.get_context` | Get semantically relevant snippets for a given task. |
 | GET | `/api/graph` | `backend.ai_org_backend.api.pipeline.get_graph` | Get all tasks and dependencies as graph data. |
+| POST | `/api/intent/compile` | `backend.ai_org_backend.api.intent.compile_intent_endpoint` | Compile a raw user request into a structured multi-axis intent. |
+| POST | `/api/intent/validate` | `backend.ai_org_backend.api.intent.validate_intent_endpoint` | Validate a user-edited intent before graph or legacy routing. |
 | POST | `/api/login` | `backend.ai_org_backend.api.auth.login` | login endpoint. |
 | GET | `/api/pause` | `backend.ai_org_backend.api.pipeline.get_pause_status` | get pause status endpoint. |
 | POST | `/api/pause` | `backend.ai_org_backend.api.pipeline.pause_pipeline` | pause pipeline endpoint. |
@@ -210,6 +212,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/api/chat.py` | Chat module. |
 | `backend/ai_org_backend/api/dependencies.py` | Dependencies module. |
 | `backend/ai_org_backend/api/health.py` | S6-05: Health / Readiness / Liveness probe endpoints. |
+| `backend/ai_org_backend/api/intent.py` | Intent compiler endpoints for UI review and correction. |
 | `backend/ai_org_backend/api/pipeline.py` | Pipeline module. |
 | `backend/ai_org_backend/api/purposes.py` | Purposes module. |
 | `backend/ai_org_backend/api/reviews.py` | Reviews module. |
@@ -226,6 +229,13 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/hooks/__init__.py` | Init module. |
 | `backend/ai_org_backend/hooks/review_hook.py` | Review Hook (monkey-patch register_artefact) ------------------------------------------- We hook into `register_artefact` so that **whenever** the architecture blueprint Markdown is saved, we: 1) create (or reuse) a gating task "Architecture & Domain Review" 2) wire dependencies: blueprint -> review -> all other tasks 3) enqueue a Celery job to generate the review Markdown artefact This avoids invasive edits to pipeline/orchestrator and stays tenant-safe. |
 | `backend/ai_org_backend/hooks/tests_hook.py` | Testing Hook ------------ Monkey-patch Repo.update to automatically schedule test stages: - After all non-test tasks are done -> create Integration Tests task and run it - After Integration done -> run E2E - After E2E done -> run Performance + Security This keeps orchestration simple & tenant-safe without heavy router edits. |
+| `backend/ai_org_backend/intent/__init__.py` | Intent compiler package for multi-axis request semantics. |
+| `backend/ai_org_backend/intent/classifier.py` | Classifier module. |
+| `backend/ai_org_backend/intent/compiler.py` | Compiler module. |
+| `backend/ai_org_backend/intent/extractor.py` | Extractor module. |
+| `backend/ai_org_backend/intent/resolver.py` | Resolver module. |
+| `backend/ai_org_backend/intent/schema.py` | Schema module. |
+| `backend/ai_org_backend/intent/validator.py` | Validator module. |
 | `backend/ai_org_backend/main.py` | Main module. |
 | `backend/ai_org_backend/metrics.py` | Prometheus metrics helpers and shared collectors. |
 | `backend/ai_org_backend/middleware/__init__.py` | S6: Security & observability middleware stack. |
