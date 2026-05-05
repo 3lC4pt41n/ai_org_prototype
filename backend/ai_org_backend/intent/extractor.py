@@ -26,9 +26,27 @@ SignalKind = Literal["domain", "action", "deliverable", "scale", "interaction", 
 
 
 _DOMAIN_KEYWORDS: list[tuple[Domain, tuple[str, ...]]] = [
-    ("book", ("buch", "manuskript", "kapitel", "outline", "expose", "exposé", "leser")),
+    (
+        "book",
+        ("buch", "manuskript", "manuscript", "kapitel", "chapter", "outline", "expose", "exposé", "leser"),
+    ),
     ("research", ("research", "recherche", "quellen", "briefing", "studie", "paper")),
-    ("ops", ("deploy", "deployment", "incident", "monitoring", "grafana", "slo", "runbook")),
+    (
+        "ops",
+        (
+            "deploy",
+            "deployment",
+            "incident",
+            "monitoring",
+            "grafana",
+            "slo",
+            "runbook",
+            "performance",
+            "latency",
+            "p95",
+            "p99",
+        ),
+    ),
     (
         "software",
         (
@@ -42,6 +60,8 @@ _DOMAIN_KEYWORDS: list[tuple[Domain, tuple[str, ...]]] = [
             "architektur",
             "architecture",
             "prd",
+            "requirements",
+            "implementierungsplan",
             "test",
             "pipeline",
         ),
@@ -49,10 +69,10 @@ _DOMAIN_KEYWORDS: list[tuple[Domain, tuple[str, ...]]] = [
 ]
 
 _ACTION_KEYWORDS: list[tuple[Action, tuple[str, ...]]] = [
-    ("rework", ("überarbeit", "ueberarbeit", "nachbesser", "rework", "fix", "korrigier")),
+    ("rework", ("überarbeit", "ueberarbeit", "nachbesser", "rework", "korrigier")),
     ("review", ("review", "prüf", "pruef", "bewerte", "audit", "check")),
     ("continue", ("weiter", "fortsetzen", "continue", "resume")),
-    ("summarize", ("zusammenfass", "summarize", "summary", "kurzfassen")),
+    ("summarize", ("fasse", "zusammenfass", "summarize", "summary", "kurzfassen")),
     ("translate", ("übersetz", "uebersetz", "translate")),
     ("create", ("erstelle", "schreib", "entwerf", "baue", "implementier", "create", "new", "neu")),
 ]
@@ -67,8 +87,9 @@ _DELIVERABLE_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("manuscript", ("manuskript", "buch", "kapitel")),
     ("research_brief", ("research brief", "briefing", "recherchebericht")),
     ("analysis_report", ("analysebericht", "analysis report", "report")),
+    ("test_report", ("testbericht", "qa report", "testergebnis", "pytest", "tests", "testing")),
     ("code_change", ("code", "implementier", "bugfix", "feature")),
-    ("test_report", ("testbericht", "qa report", "testergebnis")),
+    ("security_report", ("security", "owasp", "bandit", "pip-audit")),
     ("runbook", ("runbook", "incident", "deployment")),
 ]
 
@@ -98,17 +119,27 @@ _HIGH_RISK_KEYWORDS = (
     "datenbank",
     "auth",
 )
-_LOW_RISK_KEYWORDS = ("zusammenfassung", "summary", "doku", "documentation", "lesen")
+_LOW_RISK_KEYWORDS = (
+    "zusammenfassung",
+    "zusammenfass",
+    "zusammen",
+    "summary",
+    "doku",
+    "documentation",
+    "lesen",
+)
 
 _ARTIFACT_PATTERNS = [
     re.compile(r"\b(?:artifact|artefakt)[:\s#-]+([a-zA-Z0-9_.:-]{3,})", re.IGNORECASE),
     re.compile(r"\b(?:target|ziel)[:\s#-]+([a-zA-Z0-9_.:-]{3,})", re.IGNORECASE),
-    re.compile(r"\b([a-zA-Z]+-[a-zA-Z0-9_.:-]{2,})\b"),
 ]
 
 
 def _contains(text: str, keyword: str) -> bool:
-    return keyword.lower() in text
+    normalized = keyword.lower()
+    if len(normalized) <= 3 and normalized.replace("-", "").isalnum():
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", text))
+    return normalized in text
 
 
 def _first_match(text: str, candidates: list[tuple[str, tuple[str, ...]]]) -> tuple[str | None, list[str]]:

@@ -21,18 +21,26 @@ class CompiledIntent(BaseModel):
 
 
 def legacy_role_for_intent(intent: UserIntent) -> str:
+    if intent.deliverable_type in {"prd", "requirements"}:
+        return "po"
+    if intent.deliverable_type == "test_report":
+        return "qa"
+    if intent.deliverable_type == "security_report":
+        return "telemetry"
+    if intent.domain == "ops":
+        return "telemetry"
+    if intent.action == "review":
+        if (
+            intent.target_artifact_type == "architecture_blueprint"
+            or intent.deliverable_type == "architecture_blueprint"
+        ):
+            return "reviewer"
+        return "qa_review"
+    if intent.deliverable_type in {"architecture_blueprint", "implementation_plan"}:
+        return "architect"
     heuristic = heuristic_role(intent.raw_request)
     if heuristic:
         return heuristic
-
-    if intent.action == "review":
-        if intent.target_artifact_type == "architecture_blueprint":
-            return "reviewer"
-        return "qa_review"
-    if intent.deliverable_type in {"prd", "requirements"}:
-        return "po"
-    if intent.deliverable_type in {"architecture_blueprint", "implementation_plan"}:
-        return "architect"
     if intent.domain == "research":
         return "insight"
     if intent.domain == "ops":

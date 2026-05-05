@@ -29,6 +29,8 @@ def _confidence(signals: IntentSignals, resolved: ResolvedContext) -> float:
         score += 0.15
     if signals.deliverable_type or signals.target_artifact_type:
         score += 0.12
+    elif signals.domain in {"book", "research", "ops"}:
+        score += 0.12
     if signals.target_artifact_id:
         score += 0.08
     if resolved.target_artifact_exists is True:
