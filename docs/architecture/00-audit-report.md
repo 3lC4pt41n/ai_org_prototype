@@ -6,10 +6,10 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 
 - FastAPI-Routen: 62
 - Celery-Tasks: 26
-- Service-Module: 34
+- Service-Module: 35
 - Repository-Adapter: 3
 - Datenmodell-Dateien: 14
-- Python-Module insgesamt: 145
+- Python-Module insgesamt: 168
 
 ## FastAPI-Routen
 
@@ -147,6 +147,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/services/repo.py` | Exportiert den tenantbezogenen Repo-Adapter und Budgetfunktionen. |
 | `backend/ai_org_backend/services/repo_snapshot.py` | Erstellt Dateisystem-Snapshots für Analyse und Review. |
 | `backend/ai_org_backend/services/review_gate.py` | Entscheidet Review-Fix-Abschluss und Re-Review-Eskalation. |
+| `backend/ai_org_backend/services/rework.py` | Rework service. |
 | `backend/ai_org_backend/services/shared_contracts.py` | Definiert geteilte JSON-Schema- und Validierungsverträge. |
 | `backend/ai_org_backend/services/storage.py` | Persistiert Artefakte im Workspace und in der Datenbank. |
 | `backend/ai_org_backend/services/structured_logging.py` | Konfiguriert strukturierte Logs für API und Worker. |
@@ -189,6 +190,8 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/agents/agent_ux_ui.py` | Agent ux ui module. |
 | `backend/ai_org_backend/agents/architect.py` | Architect agent utilities and Celery tasks. |
 | `backend/ai_org_backend/agents/architect_feedback.py` | Celery task handling architecture blueprint revisions. |
+| `backend/ai_org_backend/agents/book/__init__.py` | Book-writing domain capabilities for the Phase 7 graph. |
+| `backend/ai_org_backend/agents/book/workflow.py` | Workflow module. |
 | `backend/ai_org_backend/agents/code_review.py` | Code review module. |
 | `backend/ai_org_backend/agents/e2e.py` | E2E / UAT Test Agent -------------------- Derives pytest-based E2E tests from PRD acceptance criteria, optionally using Playwright. |
 | `backend/ai_org_backend/agents/integration.py` | Integration Test Agent ---------------------- Generates pytest-based integration tests (black-box over HTTP and optional UI), executes them, stores results, and raises fix tasks on failure. |
@@ -210,6 +213,8 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/alembic/versions/20260330_s5_review_merge_tables.py` | S5: Add code_review_finding, merge_conflict tables + task review fields. |
 | `backend/ai_org_backend/alembic/versions/20260330_s6_audit_log.py` | S6: Add audit_log table for security event tracking. |
 | `backend/ai_org_backend/alembic/versions/20260506_phase1_intent_review.py` | Phase 1: add persisted intent review drafts. |
+| `backend/ai_org_backend/alembic/versions/20260506_phase2_pipeline_graph.py` | Phase 2: add PipelineGraph v2 persistence tables. |
+| `backend/ai_org_backend/alembic/versions/20260506_phase4_artifact_status.py` | Phase 4: add artifact freshness status. |
 | `backend/ai_org_backend/api/__init__.py` | TODO. |
 | `backend/ai_org_backend/api/agents.py` | Agents module. |
 | `backend/ai_org_backend/api/artifact_bridge.py` | Bridge API for exposing artifact details and feedback messages. |
@@ -231,6 +236,15 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/compat/redis_compat.py` | Backfill for 'decrbyfloat' in redis-py: Redis has no DECRBYFLOAT; the correct command is INCRBYFLOAT with a negative value. |
 | `backend/ai_org_backend/config.py` | Configuration utilities for ai_org_backend. |
 | `backend/ai_org_backend/db.py` | Db module. |
+| `backend/ai_org_backend/graph/__init__.py` | PipelineGraph v2 contracts and adapters. |
+| `backend/ai_org_backend/graph/adapters/__init__.py` | Adapters from legacy runtime shapes into PipelineGraph v2. |
+| `backend/ai_org_backend/graph/adapters/legacy_phases.py` | Legacy phases module. |
+| `backend/ai_org_backend/graph/engine.py` | Engine module. |
+| `backend/ai_org_backend/graph/schema.py` | Schema module. |
+| `backend/ai_org_backend/graph/synthesizer.py` | Synthesizer module. |
+| `backend/ai_org_backend/graph/template_matcher.py` | Template matcher module. |
+| `backend/ai_org_backend/graph/validator.py` | Validator module. |
+| `backend/ai_org_backend/graph/workflow_search.py` | Workflow search module. |
 | `backend/ai_org_backend/hooks/__init__.py` | Init module. |
 | `backend/ai_org_backend/hooks/review_hook.py` | Review Hook (monkey-patch register_artefact) ------------------------------------------- We hook into `register_artefact` so that **whenever** the architecture blueprint Markdown is saved, we: 1) create (or reuse) a gating task "Architecture & Domain Review" 2) wire dependencies: blueprint -> review -> all other tasks 3) enqueue a Celery job to generate the review Markdown artefact This avoids invasive edits to pipeline/orchestrator and stays tenant-safe. |
 | `backend/ai_org_backend/hooks/tests_hook.py` | Testing Hook ------------ Monkey-patch Repo.update to automatically schedule test stages: - After all non-test tasks are done -> create Integration Tests task and run it - After Integration done -> run E2E - After E2E done -> run Performance + Security This keeps orchestration simple & tenant-safe without heavy router edits. |
@@ -265,6 +279,10 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/models/task.py` | Task module. |
 | `backend/ai_org_backend/models/task_dependency.py` | Task dependency module. |
 | `backend/ai_org_backend/models/tenant.py` | Tenant module. |
+| `backend/ai_org_backend/observability/__init__.py` | Trace, lineage, and cost contracts for graph runs. |
+| `backend/ai_org_backend/observability/cost.py` | Cost module. |
+| `backend/ai_org_backend/observability/lineage.py` | Lineage module. |
+| `backend/ai_org_backend/observability/run_tracer.py` | Run tracer module. |
 | `backend/ai_org_backend/orchestrator/__init__.py` | TODO. |
 | `backend/ai_org_backend/orchestrator/cas.py` | S2-03: Compare-And-Swap helpers for optimistic locking on Task status. |
 | `backend/ai_org_backend/orchestrator/core.py` | TODO. |
@@ -307,6 +325,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/services/repo.py` | Exportiert den tenantbezogenen Repo-Adapter und Budgetfunktionen. |
 | `backend/ai_org_backend/services/repo_snapshot.py` | Erstellt Dateisystem-Snapshots für Analyse und Review. |
 | `backend/ai_org_backend/services/review_gate.py` | Entscheidet Review-Fix-Abschluss und Re-Review-Eskalation. |
+| `backend/ai_org_backend/services/rework.py` | Rework module. |
 | `backend/ai_org_backend/services/shared_contracts.py` | Definiert geteilte JSON-Schema- und Validierungsverträge. |
 | `backend/ai_org_backend/services/storage.py` | Persistiert Artefakte im Workspace und in der Datenbank. |
 | `backend/ai_org_backend/services/structured_logging.py` | Konfiguriert strukturierte Logs für API und Worker. |
@@ -322,5 +341,10 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/tasks/graph_sync_task.py` | S3-13 / S3-14: Graph sync as Celery task with retry + periodic reconciliation. |
 | `backend/ai_org_backend/tasks/llm_tasks.py` | LLM powered agent tasks. |
 | `backend/ai_org_backend/tasks/watchdog_task.py` | S-Sprint3 Fix #11: Stuck-task watchdog as Celery Beat task. |
+| `backend/ai_org_backend/testing_harness/__init__.py` | Five-layer testing harness contracts. |
+| `backend/ai_org_backend/testing_harness/chaos.py` | Chaos module. |
+| `backend/ai_org_backend/testing_harness/contracts.py` | Contracts module. |
+| `backend/ai_org_backend/testing_harness/eval.py` | Eval module. |
+| `backend/ai_org_backend/testing_harness/replay.py` | Replay module. |
 | `backend/ai_org_backend/utils/filetypes.py` | Filetypes module. |
 | `backend/ai_org_backend/utils/llm.py` | Convenience wrappers around the unified LLM client. |
