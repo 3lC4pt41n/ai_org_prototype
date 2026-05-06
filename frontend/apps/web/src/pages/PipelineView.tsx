@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Clock3,
+  GitBranch,
   History,
   Package,
   PauseCircle,
@@ -136,7 +137,54 @@ interface PhaseMeta {
   isUpcoming: boolean;
 }
 
+interface GraphV2IntentPreview {
+  domain?: string | null;
+  action?: string | null;
+  deliverable_type?: string | null;
+  confidence?: number | null;
+}
+
+interface GraphV2Status {
+  status?: 'compiled' | 'needs_clarification' | 'failed' | string;
+  graph_id?: string | null;
+  origin?: string | null;
+  node_count?: number | null;
+  edge_count?: number | null;
+  reason?: string | null;
+  intent?: GraphV2IntentPreview | null;
+}
+
+interface CreatePurposeResponse {
+  purpose_id?: string | null;
+  graph_v2?: GraphV2Status | null;
+}
+
 const PHASE_ORDER: PhaseId[] = PIPELINE_PHASES.map((phase) => phase.id);
+
+const GRAPH_V2_STATUS_LABELS: Record<string, string> = {
+  compiled: 'Kompiliert',
+  needs_clarification: 'Klärung',
+  failed: 'Fehler',
+};
+
+const GRAPH_V2_STATUS_STYLES: Record<string, string> = {
+  compiled: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+  needs_clarification: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  failed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+};
+
+function formatGraphV2Intent(intent?: GraphV2IntentPreview | null): string | null {
+  if (!intent) return null;
+  const parts = [intent.domain, intent.action, intent.deliverable_type]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.replace(/_/g, ' '));
+  const confidence =
+    typeof intent.confidence === 'number'
+      ? `${Math.round(intent.confidence * 100)}%`
+      : null;
+  if (!parts.length && !confidence) return null;
+  return confidence ? `${parts.join(' / ')} · ${confidence}` : parts.join(' / ');
+}
 
 const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
   vision: 'vision',
@@ -230,9 +278,15 @@ export default function PipelineView() {
   const [promptAssignments, setPromptAssignments] = useState<PromptAssignmentSummary[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
   const [autoPipeline, setAutoPipeline] = useState(false);
+  const [graphV2Enabled, setGraphV2Enabled] = useState(false);
+  const [lastGraphV2, setLastGraphV2] = useState<GraphV2Status | null>(null);
 
   const toggleAutoPipeline = useCallback(() => {
     setAutoPipeline((prev) => !prev);
+  }, []);
+
+  const toggleGraphV2 = useCallback(() => {
+    setGraphV2Enabled((prev) => !prev);
   }, []);
 
   const defaultTemplateId = useMemo(() => {
@@ -242,6 +296,36 @@ export default function PipelineView() {
     const globalDefault = templates.find((tpl) => tpl.is_default);
     return (globalDefault ?? templates[0]).id;
   }, [templates]);
+
+  const graphV2Status = lastGraphV2?.status ?? null;
+  const graphV2StatusLabel = graphV2Status
+    ? GRAPH_V2_STATUS_LABELS[graphV2Status] ?? graphV2Status
+    : graphV2Enabled
+      ? 'Bereit'
+      : 'Aus';
+  const graphV2StatusClass = graphV2Status
+    ? GRAPH_V2_STATUS_STYLES[graphV2Status] ??
+      'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+    : graphV2Enabled
+      ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300'
+      : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+  const graphV2ReviewText = useMemo(() => {
+    if (!lastGraphV2) {
+      return graphV2Enabled ? 'nächstes Projektziel' : 'deaktiviert';
+    }
+    if (lastGraphV2.status === 'compiled') {
+      const intent = formatGraphV2Intent(lastGraphV2.intent);
+      const counts = `${lastGraphV2.node_count ?? 0} Knoten · ${lastGraphV2.edge_count ?? 0} Kanten`;
+      return intent ? `${intent} · ${counts}` : counts;
+    }
+    if (lastGraphV2.status === 'needs_clarification') {
+      return lastGraphV2.reason || formatGraphV2Intent(lastGraphV2.intent) || 'Intent unklar';
+    }
+    if (lastGraphV2.status === 'failed') {
+      return lastGraphV2.reason || 'Compile fehlgeschlagen';
+    }
+    return formatGraphV2Intent(lastGraphV2.intent) || lastGraphV2.graph_id || 'Status unbekannt';
+  }, [graphV2Enabled, lastGraphV2]);
 
   useEffect(() => {
     fetchPurposes();
@@ -411,14 +495,21 @@ export default function PipelineView() {
       const trimmed = purposeName.trim();
       if (!trimmed) return false;
       setCreatingPurpose(true);
+      setLastGraphV2(null);
       const toastId = toast.loading('Projektziel wird angelegt …');
       try {
         const payload: Record<string, unknown> = { purpose: trimmed };
         if (templateId) {
           payload.pipeline_template_id = templateId;
         }
-        const res = await postJson<{ purpose_id: string }>('/purposes', payload);
+        if (graphV2Enabled) {
+          payload.feature_graph_v2 = true;
+          payload.raw_request = trimmed;
+        }
+        const res = await postJson<CreatePurposeResponse>('/purposes', payload);
         const newPurposeId = res?.purpose_id;
+        const graphResult = res?.graph_v2 ?? null;
+        setLastGraphV2(graphResult);
         if (newPurposeId) {
           setSelectedPurpose(newPurposeId);
         }
@@ -436,7 +527,15 @@ export default function PipelineView() {
             })
             .catch(() => setTemplates([]));
         }
-        toast.success('Projektziel erstellt.', { id: toastId });
+        if (graphResult?.status === 'compiled') {
+          toast.success('Projektziel erstellt, Graph v2 kompiliert.', { id: toastId });
+        } else if (graphResult?.status === 'needs_clarification') {
+          toast('Projektziel erstellt. Graph v2 braucht Klärung.', { id: toastId });
+        } else if (graphResult?.status === 'failed') {
+          toast.error('Projektziel erstellt. Graph v2 fehlgeschlagen.', { id: toastId });
+        } else {
+          toast.success('Projektziel erstellt.', { id: toastId });
+        }
         return true;
       } catch {
         toast.error('Projektziel konnte nicht erstellt werden.', { id: toastId });
@@ -450,6 +549,7 @@ export default function PipelineView() {
       fetchBacklog,
       fetchGraphAndStatus,
       fetchPurposes,
+      graphV2Enabled,
       setSelectedPurpose,
       templatesLoading,
     ],
@@ -1152,8 +1252,35 @@ export default function PipelineView() {
               )}
               {autoPipeline ? 'Auto aus' : 'Auto an'}
             </button>
+            <button
+              type="button"
+              onClick={toggleGraphV2}
+              aria-pressed={graphV2Enabled}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                graphV2Enabled
+                  ? 'bg-cyan-600 hover:bg-cyan-700 text-white dark:bg-cyan-600 dark:hover:bg-cyan-700'
+                  : 'bg-slate-200 hover:bg-slate-300 text-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100'
+              }`}
+            >
+              <GitBranch className="h-4 w-4" aria-hidden />
+              {graphV2Enabled ? 'Graph v2 aus' : 'Graph v2 an'}
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Graph v2
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${graphV2StatusClass}`}
+              >
+                <GitBranch className="h-4 w-4" aria-hidden />
+                {graphV2StatusLabel}
+              </span>
+              <span className="max-w-[18rem] truncate text-xs text-slate-500 dark:text-slate-400">
+                {graphV2ReviewText}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Status
