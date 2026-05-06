@@ -31,6 +31,7 @@ class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
     sha256: str = Field(nullable=False, min_length=64, max_length=64)
     created_at: dt = Field(default_factory=dt.utcnow, nullable=False)
     released: bool = Field(default=False)
+    status: str = Field(default="fresh", max_length=30)
 
     # S3-12: Artifact versioning
     version_number: int = Field(default=1, ge=1)
