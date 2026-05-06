@@ -1,7 +1,7 @@
 """S5: Add code_review_finding, merge_conflict tables + task review fields.
 
 Revision ID: s5_review_merge
-Revises: s3_artifact_versioning
+Revises: s3_12_artifact_versioning
 Create Date: 2026-03-30
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "s5_review_merge"
-down_revision = "s3_artifact_versioning"
+down_revision = "s3_12_artifact_versioning"
 branch_labels = None
 depends_on = None
 
