@@ -9,9 +9,10 @@ from sqlmodel import Session
 from ai_org_backend.api.dependencies import get_current_tenant, get_session
 from ai_org_backend.intent import IntentCompiler
 from ai_org_backend.intent.schema import UserIntent
-from ai_org_backend.models import IntentReview, Tenant
+from ai_org_backend.models import IntentReview, Purpose, Tenant
 from ai_org_backend.services.graph_compiler import (
     compile_pipeline_graph,
+    load_latest_pipeline_graph_for_purpose,
     load_pipeline_graph,
     save_pipeline_graph,
 )
@@ -30,6 +31,10 @@ class GraphCompileRequest(BaseModel):
 class GraphCompileResponse(BaseModel):
     graph: dict[str, Any]
     persisted: bool
+
+
+class PurposeGraphResponse(BaseModel):
+    graph: dict[str, Any] | None = None
 
 
 def _intent_from_request(
@@ -68,6 +73,27 @@ def compile_graph_endpoint(
     if request.persist:
         save_pipeline_graph(session, graph, tenant_id=current_tenant.id)
     return GraphCompileResponse(graph=graph.model_dump(mode="json"), persisted=request.persist)
+
+
+@router.get("/purpose/{purpose_id}", response_model=PurposeGraphResponse)
+def get_latest_graph_for_purpose_endpoint(
+    purpose_id: str,
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+) -> PurposeGraphResponse:
+    """Read the latest persisted PipelineGraph for a purpose."""
+
+    purpose = session.get(Purpose, purpose_id)
+    if purpose is None or purpose.tenant_id != current_tenant.id:
+        raise HTTPException(status_code=404, detail="Purpose not found")
+    graph = load_latest_pipeline_graph_for_purpose(
+        session,
+        purpose_id,
+        tenant_id=current_tenant.id,
+    )
+    return PurposeGraphResponse(
+        graph=graph.model_dump(mode="json") if graph is not None else None,
+    )
 
 
 @router.get("/{graph_id}")

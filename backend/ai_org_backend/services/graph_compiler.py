@@ -70,3 +70,23 @@ def load_pipeline_graph(
         [node.model_dump(mode="json") for node in nodes],
         [edge.model_dump(mode="json") for edge in edges],
     )
+
+
+def load_latest_pipeline_graph_for_purpose(
+    session: Session,
+    purpose_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> PipelineGraph | None:
+    statement = select(PipelineGraphRecord).where(PipelineGraphRecord.purpose_id == purpose_id)
+    if tenant_id is not None:
+        statement = statement.where(PipelineGraphRecord.tenant_id == tenant_id)
+    graph_record = session.exec(
+        statement.order_by(
+            PipelineGraphRecord.created_at.desc(),
+            PipelineGraphRecord.id.desc(),
+        )
+    ).first()
+    if graph_record is None:
+        return None
+    return load_pipeline_graph(session, graph_record.id, tenant_id=tenant_id)
