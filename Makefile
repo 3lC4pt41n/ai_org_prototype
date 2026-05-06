@@ -1,7 +1,7 @@
 # Simple commands for developer workflows.
 # Tip: 'make help' shows all targets.
 
-.PHONY: help install-dev fmt lint typecheck test test-all audit graph-validate ci
+.PHONY: help install-dev fmt lint typecheck test test-all audit graph-validate graph-v2-smoke ci
 
 help:
 	@echo "Targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  test-all     - Run Phase 6 five-layer unittest harness"
 	@echo "  audit        - Generate architecture audit reports"
 	@echo "  graph-validate - Validate PipelineGraph contracts/templates"
+	@echo "  graph-v2-smoke - Runtime DB smoke for persisted Graph v2 (pass ARGS=...)"
 	@echo "  ci           - Lint + type check + tests (like CI)"
 
 install-dev:
@@ -42,5 +43,8 @@ audit:
 
 graph-validate:
 	PYTHONPATH=backend python3 scripts/validate_graphs.py
+
+graph-v2-smoke:
+	PYTHONPATH=backend python3 scripts/smoke_graph_v2.py $(ARGS)
 
 ci: lint typecheck test
