@@ -377,6 +377,32 @@ class IntentCompilerGoldenTests(unittest.TestCase):
         self.assertEqual(compiled.intent.deliverable_type, "prd")
         self.assertEqual(compiled.legacy_role, "po")
 
+    def test_llm_fallback_can_recover_low_confidence_intent(self):
+        def fake_llm(_raw_request: str):
+            return {
+                "domain": "book",
+                "action": "create",
+                "deliverable_type": "manuscript",
+                "scale": "large",
+                "interaction_mode": "hybrid",
+                "risk": "medium",
+                "confidence": 0.91,
+                "rationale": "LLM recognized a long-form book request.",
+                "raw_request": "ignored because compiler preserves original",
+            }
+
+        compiled = compile_intent(
+            "großes langes Werk ohne klare Schlüsselwörter",
+            llm_classifier=fake_llm,
+        )
+
+        self.assertEqual(compiled.intent.domain, "book")
+        self.assertEqual(compiled.intent.action, "create")
+        self.assertEqual(compiled.intent.deliverable_type, "manuscript")
+        self.assertEqual(compiled.intent.raw_request, "großes langes Werk ohne klare Schlüsselwörter")
+        self.assertEqual(compiled.intent.constraints["classification_source"], "llm")
+        self.assertFalse(compiled.requires_clarification)
+
 
 if __name__ == "__main__":
     unittest.main()

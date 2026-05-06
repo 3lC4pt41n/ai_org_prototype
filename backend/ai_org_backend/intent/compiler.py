@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from ai_org_backend.orchestrator.role_rules import heuristic_role
 
-from .classifier import classify_structured
+from .classifier import LLMClassifier, classify_with_llm_fallback, default_llm_classifier
 from .extractor import extract_signals
 from .resolver import ArtifactLookup, resolve_context
 from .schema import UserIntent
@@ -54,13 +54,35 @@ def legacy_role_for_intent(intent: UserIntent) -> str:
 
 
 class IntentCompiler:
-    def __init__(self, artifact_lookup: ArtifactLookup | None = None):
+    def __init__(
+        self,
+        artifact_lookup: ArtifactLookup | None = None,
+        llm_classifier: LLMClassifier | None = None,
+        use_llm_fallback: bool = False,
+        llm_model: str = "gpt-4o-mini",
+        tenant_id: str | None = None,
+    ):
         self.artifact_lookup = artifact_lookup
+        self.llm_classifier = llm_classifier
+        self.use_llm_fallback = use_llm_fallback
+        self.llm_model = llm_model
+        self.tenant_id = tenant_id
 
     def compile(self, raw_request: str) -> CompiledIntent:
         signals = extract_signals(raw_request)
         resolved = resolve_context(signals, self.artifact_lookup)
-        intent = classify_structured(signals, resolved)
+        llm_classifier = self.llm_classifier
+        if llm_classifier is None and self.use_llm_fallback:
+            llm_classifier = lambda request: default_llm_classifier(
+                request,
+                model=self.llm_model,
+                tenant_id=self.tenant_id,
+            )
+        try:
+            intent = classify_with_llm_fallback(signals, resolved, llm_classifier)
+        except Exception as exc:
+            intent = classify_with_llm_fallback(signals, resolved, None)
+            intent.constraints["llm_fallback_error"] = str(exc)
         validation = validate_intent(intent)
 
         clarification_reason = None
@@ -94,5 +116,11 @@ class IntentCompiler:
 def compile_intent(
     raw_request: str,
     artifact_lookup: ArtifactLookup | None = None,
+    llm_classifier: LLMClassifier | None = None,
+    use_llm_fallback: bool = False,
 ) -> CompiledIntent:
-    return IntentCompiler(artifact_lookup=artifact_lookup).compile(raw_request)
+    return IntentCompiler(
+        artifact_lookup=artifact_lookup,
+        llm_classifier=llm_classifier,
+        use_llm_fallback=use_llm_fallback,
+    ).compile(raw_request)

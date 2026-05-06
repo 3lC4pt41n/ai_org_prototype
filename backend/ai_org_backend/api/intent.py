@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/intent", tags=["intent"])
 
 class IntentCompileRequest(BaseModel):
     raw_request: str = Field(min_length=1)
+    use_llm_fallback: bool = False
 
 
 class IntentValidateRequest(BaseModel):
@@ -47,7 +48,12 @@ def _artifact_type(artifact: Artifact) -> str:
     return "artifact"
 
 
-def _compiler_for_tenant(session: Session, tenant_id: str) -> IntentCompiler:
+def _compiler_for_tenant(
+    session: Session,
+    tenant_id: str,
+    *,
+    use_llm_fallback: bool = False,
+) -> IntentCompiler:
     def lookup(artifact_id: str) -> dict[str, Any] | None:
         artifact = session.get(Artifact, artifact_id)
         if artifact is None:
@@ -60,7 +66,11 @@ def _compiler_for_tenant(session: Session, tenant_id: str) -> IntentCompiler:
             "version_id": f"{artifact.id}:v{artifact.version_number}",
         }
 
-    return IntentCompiler(artifact_lookup=lookup)
+    return IntentCompiler(
+        artifact_lookup=lookup,
+        use_llm_fallback=use_llm_fallback,
+        tenant_id=tenant_id,
+    )
 
 
 @router.post("/compile", response_model=CompiledIntent)
@@ -71,7 +81,11 @@ def compile_intent_endpoint(
 ) -> CompiledIntent:
     """Compile a raw user request into a structured multi-axis intent."""
 
-    compiler = _compiler_for_tenant(session, current_tenant.id)
+    compiler = _compiler_for_tenant(
+        session,
+        current_tenant.id,
+        use_llm_fallback=request.use_llm_fallback,
+    )
     return compiler.compile(request.raw_request)
 
 

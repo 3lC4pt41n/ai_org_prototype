@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Callable, Mapping
+from typing import Any
+
 from .extractor import IntentSignals
 from .resolver import ResolvedContext
 from .schema import UserIntent
+
+
+LLMClassifier = Callable[[str], Mapping[str, Any] | str | None]
 
 
 def _default_deliverable(signals: IntentSignals) -> str:
@@ -42,18 +49,24 @@ def _confidence(signals: IntentSignals, resolved: ResolvedContext) -> float:
     return max(0.0, min(0.98, round(score, 2)))
 
 
+def _constraints(signals: IntentSignals, resolved: ResolvedContext) -> dict[str, Any]:
+    constraints: dict[str, Any] = {
+        "signal_keywords": sorted(set(signals.matched_keywords)),
+        "ambiguity_markers": signals.ambiguity_markers,
+        "resolver_notes": resolved.notes,
+        "classification_source": "deterministic",
+    }
+    if resolved.latest_version_id:
+        constraints["latest_version_id"] = resolved.latest_version_id
+    return constraints
+
+
 def classify_structured(signals: IntentSignals, resolved: ResolvedContext) -> UserIntent:
     domain = signals.domain or "general"
     action = signals.action or "create"
     deliverable_type = signals.deliverable_type or _default_deliverable(signals)
     target_artifact_type = resolved.target_artifact_type or signals.target_artifact_type
-    constraints = {
-        "signal_keywords": sorted(set(signals.matched_keywords)),
-        "ambiguity_markers": signals.ambiguity_markers,
-        "resolver_notes": resolved.notes,
-    }
-    if resolved.latest_version_id:
-        constraints["latest_version_id"] = resolved.latest_version_id
+    constraints = _constraints(signals, resolved)
 
     rationale_parts = [
         f"domain={domain}",
@@ -79,3 +92,77 @@ def classify_structured(signals: IntentSignals, resolved: ResolvedContext) -> Us
         rationale="; ".join(rationale_parts),
         raw_request=signals.raw_request,
     )
+
+
+def _coerce_llm_payload(payload: Mapping[str, Any] | str | None) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    if isinstance(payload, str):
+        text = payload.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return dict(payload)
+
+
+def classify_with_llm_fallback(
+    signals: IntentSignals,
+    resolved: ResolvedContext,
+    llm_classifier: LLMClassifier | None = None,
+) -> UserIntent:
+    deterministic = classify_structured(signals, resolved)
+    if llm_classifier is None or deterministic.confidence >= 0.75:
+        return deterministic
+
+    payload = _coerce_llm_payload(llm_classifier(signals.raw_request))
+    if not payload:
+        deterministic.constraints["llm_fallback"] = "empty_or_unparseable"
+        return deterministic
+
+    merged = deterministic.model_dump()
+    for key in (
+        "domain",
+        "action",
+        "deliverable_type",
+        "target_artifact_id",
+        "target_artifact_type",
+        "scale",
+        "interaction_mode",
+        "risk",
+        "confidence",
+        "rationale",
+    ):
+        if payload.get(key) is not None:
+            merged[key] = payload[key]
+
+    merged["raw_request"] = signals.raw_request
+    merged["target_artifact_id"] = resolved.target_artifact_id or merged.get("target_artifact_id")
+    merged["target_artifact_type"] = resolved.target_artifact_type or merged.get("target_artifact_type")
+    constraints = dict(deterministic.constraints)
+    constraints["classification_source"] = "llm"
+    constraints["llm_rationale"] = payload.get("rationale")
+    if resolved.latest_version_id:
+        constraints["latest_version_id"] = resolved.latest_version_id
+    merged["constraints"] = constraints
+    return UserIntent(**merged)
+
+
+def default_llm_classifier(raw_request: str, model: str = "gpt-4o-mini", tenant_id: str | None = None) -> str:
+    from ai_org_backend.utils.llm import chat_completion
+
+    prompt = (
+        "Classify the user request as JSON matching this schema exactly. "
+        "Use only these enum values: domain=software|book|research|ops|general; "
+        "action=create|rework|review|continue|summarize|translate; "
+        "scale=small|medium|large; interaction_mode=auto|manual|hybrid; "
+        "risk=low|medium|high. Include confidence between 0 and 1, rationale, "
+        "and raw_request unchanged. Return JSON only.\n\n"
+        f"raw_request: {raw_request}"
+    )
+    return chat_completion(prompt, model=model, tenant_id=tenant_id, max_tokens=500, temperature=0.0)
