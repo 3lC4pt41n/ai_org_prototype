@@ -142,6 +142,7 @@ interface GraphV2IntentPreview {
   action?: string | null;
   deliverable_type?: string | null;
   confidence?: number | null;
+  constraints?: Record<string, unknown> | null;
 }
 
 interface GraphV2Status {
@@ -157,6 +158,17 @@ interface GraphV2Status {
 interface CreatePurposeResponse {
   purpose_id?: string | null;
   graph_v2?: GraphV2Status | null;
+}
+
+interface PersistedGraphV2 {
+  id?: string | null;
+  intent?: GraphV2IntentPreview | null;
+  nodes?: unknown[] | null;
+  edges?: unknown[] | null;
+}
+
+interface PurposeGraphResponse {
+  graph?: PersistedGraphV2 | null;
 }
 
 const PHASE_ORDER: PhaseId[] = PIPELINE_PHASES.map((phase) => phase.id);
@@ -184,6 +196,22 @@ function formatGraphV2Intent(intent?: GraphV2IntentPreview | null): string | nul
       : null;
   if (!parts.length && !confidence) return null;
   return confidence ? `${parts.join(' / ')} · ${confidence}` : parts.join(' / ');
+}
+
+function graphV2StatusFromPersistedGraph(graph: PersistedGraphV2): GraphV2Status {
+  const constraints = graph.intent?.constraints ?? {};
+  const origin =
+    typeof constraints['graph.origin'] === 'string'
+      ? constraints['graph.origin']
+      : null;
+  return {
+    status: 'compiled',
+    graph_id: graph.id ?? null,
+    origin,
+    node_count: Array.isArray(graph.nodes) ? graph.nodes.length : 0,
+    edge_count: Array.isArray(graph.edges) ? graph.edges.length : 0,
+    intent: graph.intent ?? null,
+  };
 }
 
 const PHASE_TO_TEMPLATE_SLUG: Partial<Record<PhaseId, string>> = {
@@ -280,6 +308,7 @@ export default function PipelineView() {
   const [autoPipeline, setAutoPipeline] = useState(false);
   const [graphV2Enabled, setGraphV2Enabled] = useState(false);
   const [lastGraphV2, setLastGraphV2] = useState<GraphV2Status | null>(null);
+  const [graphV2Loading, setGraphV2Loading] = useState(false);
 
   const toggleAutoPipeline = useCallback(() => {
     setAutoPipeline((prev) => !prev);
@@ -300,16 +329,23 @@ export default function PipelineView() {
   const graphV2Status = lastGraphV2?.status ?? null;
   const graphV2StatusLabel = graphV2Status
     ? GRAPH_V2_STATUS_LABELS[graphV2Status] ?? graphV2Status
-    : graphV2Enabled
-      ? 'Bereit'
-      : 'Aus';
+    : graphV2Loading
+      ? 'Lädt'
+      : graphV2Enabled
+        ? 'Bereit'
+        : 'Aus';
   const graphV2StatusClass = graphV2Status
     ? GRAPH_V2_STATUS_STYLES[graphV2Status] ??
       'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
-    : graphV2Enabled
-      ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300'
-      : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+    : graphV2Loading
+      ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
+      : graphV2Enabled
+        ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300'
+        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
   const graphV2ReviewText = useMemo(() => {
+    if (graphV2Loading) {
+      return 'prüfe Persistenz';
+    }
     if (!lastGraphV2) {
       return graphV2Enabled ? 'nächstes Projektziel' : 'deaktiviert';
     }
@@ -325,7 +361,7 @@ export default function PipelineView() {
       return lastGraphV2.reason || 'Compile fehlgeschlagen';
     }
     return formatGraphV2Intent(lastGraphV2.intent) || lastGraphV2.graph_id || 'Status unbekannt';
-  }, [graphV2Enabled, lastGraphV2]);
+  }, [graphV2Enabled, graphV2Loading, lastGraphV2]);
 
   useEffect(() => {
     fetchPurposes();
@@ -419,6 +455,35 @@ export default function PipelineView() {
     fetchGraphAndStatus(selectedPurposeId, signal);
     return () => controller.abort();
   }, [selectedPurposeId, fetchArtifacts, fetchBacklog, fetchGraphAndStatus]);
+
+  useEffect(() => {
+    if (!selectedPurposeId) {
+      setLastGraphV2(null);
+      setGraphV2Loading(false);
+      return;
+    }
+
+    let active = true;
+    setGraphV2Loading(true);
+    getJson<PurposeGraphResponse>(`/graphs/purpose/${encodeURIComponent(selectedPurposeId)}`)
+      .then((data) => {
+        if (!active) return;
+        const graph = data?.graph ?? null;
+        setLastGraphV2(graph ? graphV2StatusFromPersistedGraph(graph) : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLastGraphV2(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setGraphV2Loading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedPurposeId]);
 
   useEffect(() => {
     if (!selectedPurposeId) {
