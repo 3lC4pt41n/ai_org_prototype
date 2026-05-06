@@ -6,6 +6,7 @@ from .feedback import Feedback, FeedbackType
 from .intent_review import IntentReview
 from .merge_conflict import MergeConflict, MergeConflictStatus
 from .pipeline import PipelinePhase, PipelineTemplate
+from .pipeline_graph import PipelineEdgeRecord, PipelineGraphRecord, PipelineNodeRecord, RunRecord
 from .prompt_template import PromptTemplate, TenantPromptAssignment
 from .purpose import Purpose
 from .task import Task, TaskOwner, TaskStatus
@@ -18,6 +19,10 @@ __all__ = [
     "Purpose",
     "PipelineTemplate",
     "PipelinePhase",
+    "PipelineGraphRecord",
+    "PipelineNodeRecord",
+    "PipelineEdgeRecord",
+    "RunRecord",
     "PromptTemplate",
     "TenantPromptAssignment",
     "Task",
