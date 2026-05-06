@@ -3,7 +3,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "20260329_s1_cascade_and_constraints"
+revision = "s1_cascade_constraints"
 down_revision = "20251207_init_schema"
 branch_labels = None
 depends_on = None

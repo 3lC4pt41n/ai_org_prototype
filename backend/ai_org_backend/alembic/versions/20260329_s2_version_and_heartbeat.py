@@ -1,7 +1,7 @@
 """S2-03/S2-06: Add version counter and last_heartbeat_at to Task table.
 
 Revision ID: s2_03_version_heartbeat
-Revises: 20260329_s1_cascade_and_constraints
+Revises: s1_cascade_constraints
 Create Date: 2026-03-29
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "s2_03_version_heartbeat"
-down_revision = "20260329_s1_cascade_and_constraints"
+down_revision = "s1_cascade_constraints"
 branch_labels = None
 depends_on = None
 
