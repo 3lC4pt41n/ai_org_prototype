@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,8 @@ from ai_org_backend.redis_client import DEFAULT_BUDGET, pool
 from ai_org_backend.repo import Repo
 from ai_org_backend.services import budget as budget_svc
 from ai_org_backend.services.artifact_workflow import generate_prd_artifact
+from ai_org_backend.intent import IntentCompiler
+from ai_org_backend.services.graph_compiler import compile_pipeline_graph, save_pipeline_graph
 from ai_org_backend.services.pipeline_templates import (
     ensure_template_for_purpose,
     instantiate_pipeline_for_purpose,
@@ -47,6 +50,49 @@ from ai_org_backend.services.storage import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+
+
+def _graph_v2_enabled(payload: dict[str, Any]) -> bool:
+    value = payload.get("feature_graph_v2")
+    if value is not None:
+        return bool(value)
+    return os.getenv("FEATURE_GRAPH_V2", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compile_graph_v2_for_purpose(
+    *,
+    payload: dict[str, Any],
+    purpose: Purpose,
+    tenant_id: str,
+) -> dict[str, Any]:
+    raw_request = (
+        payload.get("raw_request")
+        or payload.get("goal")
+        or payload.get("purpose")
+        or purpose.name
+    )
+    compiled = IntentCompiler(tenant_id=tenant_id).compile(str(raw_request))
+    if compiled.requires_clarification:
+        return {
+            "status": "needs_clarification",
+            "reason": compiled.clarification_reason,
+            "intent": compiled.intent.model_dump(mode="json"),
+        }
+
+    graph = compile_pipeline_graph(
+        compiled.intent,
+        use_workflow_search=bool(payload.get("use_workflow_search")),
+    )
+    graph = graph.model_copy(update={"id": f"purpose.{purpose.id}.{graph.id}"}).with_checksum()
+    with Session(engine) as session:
+        save_pipeline_graph(session, graph, tenant_id=tenant_id, purpose_id=purpose.id)
+    return {
+        "status": "compiled",
+        "graph_id": graph.id,
+        "origin": graph.intent.constraints.get("graph.origin"),
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
+    }
 
 
 _SYSTEM_PROMPT_LABELS = {
@@ -877,12 +923,27 @@ def create_purpose(payload: dict, current_tenant: Tenant = Depends(get_current_t
                     status_code=500, detail=f"Requirements gathering failed: {exc}"
                 )
 
-    return {
+    graph_v2 = None
+    if _graph_v2_enabled(payload):
+        try:
+            graph_v2 = _compile_graph_v2_for_purpose(
+                payload=payload,
+                purpose=purpose,
+                tenant_id=tenant_id,
+            )
+        except Exception as exc:  # pragma: no cover - feature-flagged compatibility path
+            logger.exception("Graph v2 compile failed for purpose %s", purpose.id)
+            graph_v2 = {"status": "failed", "reason": str(exc)}
+
+    response = {
         "purpose_id": purpose.id,
         "vision": vision_content,
         "requirements": prd_content,
         "vision_generating": False,
     }
+    if graph_v2 is not None:
+        response["graph_v2"] = graph_v2
+    return response
 
 
 @router.get("/pipeline/phases", tags=["pipeline"])

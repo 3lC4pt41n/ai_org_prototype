@@ -66,7 +66,7 @@ def compile_graph_endpoint(
     intent = _intent_from_request(request, session=session, tenant_id=current_tenant.id)
     graph = compile_pipeline_graph(intent, use_workflow_search=request.use_workflow_search)
     if request.persist:
-        save_pipeline_graph(session, graph)
+        save_pipeline_graph(session, graph, tenant_id=current_tenant.id)
     return GraphCompileResponse(graph=graph.model_dump(mode="json"), persisted=request.persist)
 
 
@@ -78,7 +78,7 @@ def get_graph_endpoint(
 ) -> dict[str, Any]:
     """Read a persisted PipelineGraph."""
 
-    graph = load_pipeline_graph(session, graph_id)
+    graph = load_pipeline_graph(session, graph_id, tenant_id=current_tenant.id)
     if graph is None:
         raise HTTPException(status_code=404, detail="Graph not found")
     return graph.model_dump(mode="json")

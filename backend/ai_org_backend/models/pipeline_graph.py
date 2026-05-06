@@ -13,6 +13,8 @@ class PipelineGraphRecord(SQLModel, table=True):  # type: ignore[call-arg]
     __tablename__ = "pipeline_graphs"
 
     id: str = Field(primary_key=True, max_length=100)
+    tenant_id: Optional[str] = Field(default=None, foreign_key="tenant.id", index=True)
+    purpose_id: Optional[str] = Field(default=None, foreign_key="purpose.id", index=True)
     template_family: Optional[str] = Field(default=None, max_length=100)
     intent_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     version: int = Field(default=1)

@@ -23,9 +23,17 @@ def compile_pipeline_graph(
     return compile_graph(intent)
 
 
-def save_pipeline_graph(session: Session, graph: PipelineGraph) -> PipelineGraphRecord:
+def save_pipeline_graph(
+    session: Session,
+    graph: PipelineGraph,
+    *,
+    tenant_id: str | None = None,
+    purpose_id: str | None = None,
+) -> PipelineGraphRecord:
     payloads = graph_to_record_payloads(graph)
     graph_payload = payloads["graph"]
+    graph_payload["tenant_id"] = tenant_id
+    graph_payload["purpose_id"] = purpose_id
     session.exec(delete(PipelineEdgeRecord).where(PipelineEdgeRecord.graph_id == graph.id))
     session.exec(delete(PipelineNodeRecord).where(PipelineNodeRecord.graph_id == graph.id))
     existing = session.get(PipelineGraphRecord, graph.id)
@@ -44,9 +52,16 @@ def save_pipeline_graph(session: Session, graph: PipelineGraph) -> PipelineGraph
     return graph_record
 
 
-def load_pipeline_graph(session: Session, graph_id: str) -> PipelineGraph | None:
+def load_pipeline_graph(
+    session: Session,
+    graph_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> PipelineGraph | None:
     graph_record = session.get(PipelineGraphRecord, graph_id)
     if graph_record is None:
+        return None
+    if tenant_id is not None and graph_record.tenant_id != tenant_id:
         return None
     nodes = session.exec(select(PipelineNodeRecord).where(PipelineNodeRecord.graph_id == graph_id)).all()
     edges = session.exec(select(PipelineEdgeRecord).where(PipelineEdgeRecord.graph_id == graph_id)).all()
