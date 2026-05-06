@@ -92,6 +92,7 @@ def _compile_graph_v2_for_purpose(
         "origin": graph.intent.constraints.get("graph.origin"),
         "node_count": len(graph.nodes),
         "edge_count": len(graph.edges),
+        "intent": compiled.intent.model_dump(mode="json"),
     }
 
 
