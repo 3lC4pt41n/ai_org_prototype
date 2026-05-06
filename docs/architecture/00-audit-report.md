@@ -4,12 +4,12 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 
 ## Kurzbefund
 
-- FastAPI-Routen: 59
+- FastAPI-Routen: 62
 - Celery-Tasks: 26
 - Service-Module: 34
 - Repository-Adapter: 3
-- Datenmodell-Dateien: 13
-- Python-Module insgesamt: 143
+- Datenmodell-Dateien: 14
+- Python-Module insgesamt: 145
 
 ## FastAPI-Routen
 
@@ -34,6 +34,9 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | GET | `/api/context` | `backend.ai_org_backend.api.pipeline.get_context` | Get semantically relevant snippets for a given task. |
 | GET | `/api/graph` | `backend.ai_org_backend.api.pipeline.get_graph` | Get all tasks and dependencies as graph data. |
 | POST | `/api/intent/compile` | `backend.ai_org_backend.api.intent.compile_intent_endpoint` | Compile a raw user request into a structured multi-axis intent. |
+| POST | `/api/intent/reviews` | `backend.ai_org_backend.api.intent.create_intent_review_endpoint` | Compile and persist an intent draft for UI review before execution. |
+| GET | `/api/intent/reviews/{review_id}` | `backend.ai_org_backend.api.intent.get_intent_review_endpoint` | Read a persisted intent draft for UI display. |
+| PATCH | `/api/intent/reviews/{review_id}` | `backend.ai_org_backend.api.intent.update_intent_review_endpoint` | Edit and revalidate a persisted intent draft before execution. |
 | POST | `/api/intent/validate` | `backend.ai_org_backend.api.intent.validate_intent_endpoint` | Validate a user-edited intent before graph or legacy routing. |
 | POST | `/api/login` | `backend.ai_org_backend.api.auth.login` | login endpoint. |
 | GET | `/api/pause` | `backend.ai_org_backend.api.pipeline.get_pause_status` | get pause status endpoint. |
@@ -163,6 +166,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/models/code_review_finding.py` | Definiert persistierte Datenstruktur(en): FindingSeverity, FindingCategory, CodeReviewFinding. |
 | `backend/ai_org_backend/models/feedback.py` | Definiert persistierte Datenstruktur(en): FeedbackType, Feedback. |
 | `backend/ai_org_backend/models/file_reservation.py` | Definiert persistierte Datenstruktur(en): FileReservation. |
+| `backend/ai_org_backend/models/intent_review.py` | Definiert persistierte Datenstruktur(en): IntentReview. |
 | `backend/ai_org_backend/models/merge_conflict.py` | Definiert persistierte Datenstruktur(en): MergeConflictStatus, MergeConflict. |
 | `backend/ai_org_backend/models/pipeline.py` | Definiert persistierte Datenstruktur(en): PipelineTemplate, PipelinePhase. |
 | `backend/ai_org_backend/models/prompt_template.py` | Definiert persistierte Datenstruktur(en): PromptTemplate, TenantPromptAssignment. |
@@ -205,6 +209,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/alembic/versions/20260329_s3_artifact_versioning.py` | S3-12: Add version_number and parent_id to Artifact table. |
 | `backend/ai_org_backend/alembic/versions/20260330_s5_review_merge_tables.py` | S5: Add code_review_finding, merge_conflict tables + task review fields. |
 | `backend/ai_org_backend/alembic/versions/20260330_s6_audit_log.py` | S6: Add audit_log table for security event tracking. |
+| `backend/ai_org_backend/alembic/versions/20260506_phase1_intent_review.py` | Phase 1: add persisted intent review drafts. |
 | `backend/ai_org_backend/api/__init__.py` | TODO. |
 | `backend/ai_org_backend/api/agents.py` | Agents module. |
 | `backend/ai_org_backend/api/artifact_bridge.py` | Bridge API for exposing artifact details and feedback messages. |
@@ -252,6 +257,7 @@ Quelle: `scripts/generate_architecture_audit.py`. Der Report wird aus Dateisyste
 | `backend/ai_org_backend/models/code_review_finding.py` | S5-B4: Code Review Finding model. |
 | `backend/ai_org_backend/models/feedback.py` | Feedback module. |
 | `backend/ai_org_backend/models/file_reservation.py` | Reserviert Dateien zur Kollisionsvermeidung paralleler Agenten. |
+| `backend/ai_org_backend/models/intent_review.py` | Persisted intent review drafts for UI correction before execution. |
 | `backend/ai_org_backend/models/merge_conflict.py` | S5-B2: Merge Conflict model. |
 | `backend/ai_org_backend/models/pipeline.py` | Pipeline template models defining configurable phase blueprints. |
 | `backend/ai_org_backend/models/prompt_template.py` | Models for storing prompt templates and tenant assignments. |
