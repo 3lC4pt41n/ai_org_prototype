@@ -1,0 +1,20 @@
+{
+  "id": "knowledge_base_update.v1",
+  "family": "knowledge_base_update",
+  "matches": {"domain": ["general", "ops", "research"], "action": ["create", "rework"], "deliverable_type": "knowledge_base_update"},
+  "nodes": [
+    {"id": "source", "kind": "tool", "capability": "kb.source_loader", "timeout_s": 300},
+    {"id": "diff", "kind": "evaluator", "capability": "kb.diff", "timeout_s": 300},
+    {"id": "consolidation", "kind": "repair", "capability": "kb.consolidator", "max_revisions": 2, "cost_budget": {"cost_eur": 2.0}, "metadata": {"convergence_predicate": "conflicts == 0"}, "timeout_s": 600},
+    {"id": "reviewer", "kind": "reviewer", "capability": "kb.reviewer", "requires_human_approval": true, "timeout_s": 300},
+    {"id": "publish", "kind": "publish", "capability": "kb.publish", "requires_human_approval": true, "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "source", "target": "diff"},
+    {"source": "diff", "target": "consolidation"},
+    {"source": "consolidation", "target": "diff", "edge_type": "feedback", "condition": "conflicts > 0"},
+    {"source": "diff", "target": "reviewer", "condition": "conflicts == 0"},
+    {"source": "reviewer", "target": "publish"}
+  ],
+  "budgets": {"cost_eur": 8.0, "wallclock_h": 3}
+}

@@ -1,0 +1,27 @@
+{
+  "id": "book_writing.v1",
+  "family": "book_writing",
+  "matches": {"domain": "book", "action": "create", "deliverable_type": "manuscript"},
+  "nodes": [
+    {"id": "outline", "kind": "planner", "capability": "book.outline_planner", "input_schema": {"ref": "schemas/book/goal.json"}, "output_schema": {"ref": "schemas/book/outline.json"}, "retry_policy": {"max_attempts": 3, "backoff": "exponential"}, "timeout_s": 600},
+    {"id": "styleguide", "kind": "planner", "capability": "book.styleguide", "output_schema": {"ref": "schemas/book/styleguide.json"}, "timeout_s": 600},
+    {"id": "research", "kind": "tool", "capability": "book.research", "output_schema": {"ref": "schemas/book/research.json"}, "timeout_s": 900},
+    {"id": "chapters", "kind": "generator", "capability": "book.chapter_writer", "fan_out": {"from": "outline.chapters", "max_parallel": 5}, "timeout_s": 1800},
+    {"id": "continuity", "kind": "evaluator", "capability": "book.continuity_check", "timeout_s": 600},
+    {"id": "style_pass", "kind": "repair", "capability": "book.style_harmonizer", "max_revisions": 2, "cost_budget": {"cost_eur": 5.0}, "metadata": {"convergence_predicate": "score >= 0.8"}, "timeout_s": 900},
+    {"id": "review", "kind": "reviewer", "capability": "book.editorial_review", "requires_human_approval": true, "timeout_s": 600},
+    {"id": "release", "kind": "publish", "capability": "book.release", "requires_human_approval": true, "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "outline", "target": "styleguide"},
+    {"source": "outline", "target": "research"},
+    {"source": "styleguide", "target": "chapters"},
+    {"source": "research", "target": "chapters"},
+    {"source": "chapters", "target": "continuity", "activation": "all"},
+    {"source": "continuity", "target": "style_pass", "condition": "score < 0.8"},
+    {"source": "style_pass", "target": "continuity", "edge_type": "feedback"},
+    {"source": "continuity", "target": "review", "condition": "score >= 0.8"},
+    {"source": "review", "target": "release"}
+  ],
+  "budgets": {"cost_eur": 25.0, "wallclock_h": 12}
+}

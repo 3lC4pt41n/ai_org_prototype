@@ -1,0 +1,23 @@
+{
+  "id": "research_brief.v1",
+  "family": "research_brief",
+  "matches": {"domain": "research", "action": ["create", "summarize"], "deliverable_type": "research_brief"},
+  "nodes": [
+    {"id": "question", "kind": "planner", "capability": "research.question_scope", "timeout_s": 300},
+    {"id": "source_strategy", "kind": "planner", "capability": "research.source_strategy", "timeout_s": 300},
+    {"id": "source_fanout", "kind": "tool", "capability": "research.source_reader", "fan_out": {"from": "source_strategy.sources", "max_parallel": 8}, "timeout_s": 1200},
+    {"id": "synthesis", "kind": "generator", "capability": "research.synthesis", "timeout_s": 900},
+    {"id": "bias_check", "kind": "evaluator", "capability": "research.bias_check", "timeout_s": 300},
+    {"id": "review", "kind": "reviewer", "capability": "research.reviewer", "requires_human_approval": true, "timeout_s": 300},
+    {"id": "brief", "kind": "publish", "capability": "research.brief_publish", "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "question", "target": "source_strategy"},
+    {"source": "source_strategy", "target": "source_fanout"},
+    {"source": "source_fanout", "target": "synthesis", "activation": "all"},
+    {"source": "synthesis", "target": "bias_check"},
+    {"source": "bias_check", "target": "review"},
+    {"source": "review", "target": "brief"}
+  ],
+  "budgets": {"cost_eur": 10.0, "wallclock_h": 4}
+}

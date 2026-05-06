@@ -1,0 +1,21 @@
+{
+  "id": "analysis_report.v1",
+  "family": "analysis_report",
+  "matches": {"domain": ["general", "research"], "action": "create", "deliverable_type": "analysis_report"},
+  "nodes": [
+    {"id": "question", "kind": "planner", "capability": "analysis.question_scope", "timeout_s": 300},
+    {"id": "data_scope", "kind": "planner", "capability": "analysis.data_scope", "timeout_s": 300},
+    {"id": "extract", "kind": "tool", "capability": "analysis.data_extraction", "timeout_s": 900},
+    {"id": "analysis", "kind": "generator", "capability": "analysis.analyzer", "timeout_s": 900},
+    {"id": "cross_check", "kind": "evaluator", "capability": "analysis.cross_check", "timeout_s": 300},
+    {"id": "report", "kind": "publish", "capability": "analysis.report", "requires_human_approval": true, "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "question", "target": "data_scope"},
+    {"source": "data_scope", "target": "extract"},
+    {"source": "extract", "target": "analysis"},
+    {"source": "analysis", "target": "cross_check"},
+    {"source": "cross_check", "target": "report"}
+  ],
+  "budgets": {"cost_eur": 12.0, "wallclock_h": 5}
+}

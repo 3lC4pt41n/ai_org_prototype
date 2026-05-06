@@ -1,0 +1,22 @@
+{
+  "id": "architecture_rework.v1",
+  "family": "architecture_rework",
+  "matches": {"domain": "software", "action": "rework", "deliverable_type": "architecture_blueprint"},
+  "nodes": [
+    {"id": "load_current", "kind": "tool", "capability": "architecture.load_current", "timeout_s": 300},
+    {"id": "impact_analysis", "kind": "evaluator", "capability": "architecture.impact_analysis", "timeout_s": 600},
+    {"id": "revise_architecture", "kind": "repair", "capability": "architecture.revise_blueprint", "max_revisions": 3, "cost_budget": {"cost_eur": 8.0}, "metadata": {"convergence_predicate": "review_score >= 0.85"}, "timeout_s": 900},
+    {"id": "review", "kind": "reviewer", "capability": "architecture.domain_review", "requires_human_approval": true, "timeout_s": 600},
+    {"id": "invalidate_downstream", "kind": "tool", "capability": "artifact.invalidate_downstream", "timeout_s": 300},
+    {"id": "publish", "kind": "publish", "capability": "architecture.publish_revision", "requires_human_approval": true, "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "load_current", "target": "impact_analysis"},
+    {"source": "impact_analysis", "target": "revise_architecture"},
+    {"source": "revise_architecture", "target": "review"},
+    {"source": "review", "target": "revise_architecture", "edge_type": "feedback", "condition": "review_score < 0.85"},
+    {"source": "review", "target": "invalidate_downstream", "condition": "review_score >= 0.85"},
+    {"source": "invalidate_downstream", "target": "publish"}
+  ],
+  "budgets": {"cost_eur": 15.0, "wallclock_h": 6}
+}

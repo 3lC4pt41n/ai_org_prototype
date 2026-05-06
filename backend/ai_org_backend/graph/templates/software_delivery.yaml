@@ -1,0 +1,25 @@
+{
+  "id": "software_delivery.v1",
+  "family": "software_delivery",
+  "matches": {"domain": "software", "action": "create", "deliverable_type": ["code_change", "prd", "implementation_plan"]},
+  "nodes": [
+    {"id": "vision", "kind": "planner", "capability": "software.vision", "output_schema": {"ref": "schemas/software/vision.json"}, "retry_policy": {"max_attempts": 3, "backoff": "exponential"}, "timeout_s": 300},
+    {"id": "prd", "kind": "planner", "capability": "software.prd", "input_schema": {"ref": "schemas/software/vision.json"}, "output_schema": {"ref": "schemas/software/prd.json"}, "timeout_s": 600},
+    {"id": "architecture", "kind": "planner", "capability": "software.architecture", "input_schema": {"ref": "schemas/software/prd.json"}, "output_schema": {"ref": "schemas/software/architecture.json"}, "timeout_s": 600},
+    {"id": "architecture_review", "kind": "reviewer", "capability": "software.architecture_review", "requires_human_approval": true, "timeout_s": 300},
+    {"id": "implementation_plan", "kind": "planner", "capability": "software.implementation_plan", "output_schema": {"ref": "schemas/software/implementation_plan.json"}, "timeout_s": 600},
+    {"id": "implementation", "kind": "generator", "capability": "software.implementation", "timeout_s": 1200},
+    {"id": "qa", "kind": "evaluator", "capability": "software.qa", "timeout_s": 600},
+    {"id": "release", "kind": "publish", "capability": "software.release", "requires_human_approval": true, "timeout_s": 300}
+  ],
+  "edges": [
+    {"source": "vision", "target": "prd"},
+    {"source": "prd", "target": "architecture"},
+    {"source": "architecture", "target": "architecture_review"},
+    {"source": "architecture_review", "target": "implementation_plan"},
+    {"source": "implementation_plan", "target": "implementation"},
+    {"source": "implementation", "target": "qa"},
+    {"source": "qa", "target": "release", "condition": "score >= 0.85"}
+  ],
+  "budgets": {"cost_eur": 20.0, "wallclock_h": 8}
+}
