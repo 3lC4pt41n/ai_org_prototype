@@ -1,0 +1,1 @@
+{"id":"research.synthesis","domain":"research","actions":["create","summarize"],"deliverable_types":["research_brief","unknown_deliverable"],"node_kind":"generator","cost_eur":1.0,"risk":"medium"}

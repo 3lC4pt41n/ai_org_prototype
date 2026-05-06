@@ -84,6 +84,7 @@ def instantiate_template(intent: UserIntent, candidate: TemplateCandidate) -> Pi
     constraints = dict(intent.constraints)
     constraints["template_id"] = candidate.template_id
     constraints["template_budgets"] = template.get("budgets", {})
+    constraints["graph.origin"] = "template"
     graph_intent = intent.model_copy(update={"constraints": constraints})
 
     nodes = []

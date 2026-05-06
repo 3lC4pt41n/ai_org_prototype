@@ -1,0 +1,1 @@
+{"id":"software.implementation","domain":"software","actions":["create","rework"],"deliverable_types":["code_change","unknown_deliverable"],"node_kind":"generator","cost_eur":1.5,"risk":"medium"}

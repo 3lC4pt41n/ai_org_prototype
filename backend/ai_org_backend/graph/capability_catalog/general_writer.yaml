@@ -1,0 +1,1 @@
+{"id":"general.writer","domain":"general","actions":["create","rework","continue","summarize","translate"],"deliverable_types":["*"],"node_kind":"generator","cost_eur":0.8,"risk":"medium"}
