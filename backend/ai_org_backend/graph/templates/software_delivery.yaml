@@ -8,7 +8,7 @@
     {"id": "architecture", "kind": "planner", "capability": "software.architecture", "input_schema": {"ref": "schemas/software/prd.json"}, "output_schema": {"ref": "schemas/software/architecture.json"}, "timeout_s": 600},
     {"id": "architecture_review", "kind": "reviewer", "capability": "software.architecture_review", "requires_human_approval": true, "timeout_s": 300},
     {"id": "implementation_plan", "kind": "planner", "capability": "software.implementation_plan", "output_schema": {"ref": "schemas/software/implementation_plan.json"}, "timeout_s": 600},
-    {"id": "implementation", "kind": "generator", "capability": "software.implementation", "timeout_s": 1200},
+    {"id": "implementation", "kind": "generator", "capability": "software.implementation", "requires_human_approval": true, "timeout_s": 1200},
     {"id": "qa", "kind": "evaluator", "capability": "software.qa", "timeout_s": 600},
     {"id": "release", "kind": "publish", "capability": "software.release", "requires_human_approval": true, "timeout_s": 300}
   ],
