@@ -126,7 +126,7 @@ def run_smoke(args: argparse.Namespace) -> int:
 
     suffix = uuid.uuid4().hex[:10]
     tenant_id = args.tenant_id or f"graph-v2-smoke-{suffix}"
-    purpose_id = args.purpose_id or f"graph-v2-smoke-{suffix}"
+    purpose_id = args.purpose_id or f"g2{suffix[:6]}"
     graph_id: str | None = None
 
     with Session(engine) as session:
@@ -184,6 +184,7 @@ def run_smoke(args: argparse.Namespace) -> int:
             return 0
         finally:
             if not args.keep_data:
+                session.rollback()
                 _cleanup(session, tenant_id=tenant_id, purpose_id=purpose_id, graph_id=graph_id)
 
 
