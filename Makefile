@@ -1,7 +1,7 @@
 # Simple commands for developer workflows.
 # Tip: 'make help' shows all targets.
 
-.PHONY: help install-dev fmt lint typecheck test audit ci
+.PHONY: help install-dev fmt lint typecheck test audit graph-validate ci
 
 help:
 	@echo "Targets:"
@@ -11,6 +11,7 @@ help:
 	@echo "  typecheck    - mypy type check"
 	@echo "  test         - Tests including coverage"
 	@echo "  audit        - Generate architecture audit reports"
+	@echo "  graph-validate - Validate PipelineGraph contracts/templates"
 	@echo "  ci           - Lint + type check + tests (like CI)"
 
 install-dev:
@@ -34,5 +35,8 @@ test:
 
 audit:
 	PYTHONPATH=backend python3 scripts/generate_architecture_audit.py
+
+graph-validate:
+	PYTHONPATH=backend python3 scripts/validate_graphs.py
 
 ci: lint typecheck test
