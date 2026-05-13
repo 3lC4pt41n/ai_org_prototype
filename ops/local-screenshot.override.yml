@@ -1,0 +1,20 @@
+services:
+  postgres:
+    ports: !override
+      - "15434:5432"
+
+  redis:
+    ports: !override
+      - "16380:6379"
+
+  ai-app:
+    ports: !override
+      - "8100:8000"
+
+  grafana:
+    ports: !override
+      - "13000:3000"
+
+  qdrant:
+    healthcheck: !override
+      disable: true

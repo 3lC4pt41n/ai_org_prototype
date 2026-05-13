@@ -13,17 +13,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+          run_install: false
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Enable pnpm (corepack)
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.4.0 --activate
-          pnpm --version
+      - name: Show toolchain
+        run: node -v && pnpm -v
 
       - name: Install frontend deps
         working-directory: frontend

@@ -18,7 +18,7 @@ export default defineConfig({
     strictPort: true,    // bricht ab, wenn Port belegt
     proxy: {
       "/api": {
-        target: "http://localhost:8000", // FastAPI Backend
+        target: process.env.VITE_API_PROXY_TARGET || "http://localhost:8000", // FastAPI Backend
         changeOrigin: true,
       },
     },
