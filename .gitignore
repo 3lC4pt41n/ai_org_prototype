@@ -5,6 +5,9 @@ node_modules/
 .venv/
 backend/ai_org_backend.egg-info/
 
+# Local-only workspace (gitignored, only for true secrets and private notes)
+_local/
+
 # Python cache
 __pycache__/
 *.pyc
