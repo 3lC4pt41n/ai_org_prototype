@@ -1,8 +1,18 @@
 # AI‑Org Prototype **2.0**
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware • Prometheus‑Instrumented
 
 > End‑to‑End Skeleton, das ganze Software‑Projekte mittels LLM‑Agenten plant, baut, testet und ausliefert.
 > **Stack:** Python 3.11 · FastAPI · Celery · SQLModel/Alembic · Neo4j 5 · Redis 7 · Prometheus/Grafana · React 18 / Vite / Tailwind · Node 20
+
+---
+
+## Status
+
+Active side-project showcase. Multi-agent delivery pipeline experiment.
+Bandwidth limited — response when time allows. No support SLA.
+PRs welcome but reviewed in 2-4 week windows.
 
 ---
 

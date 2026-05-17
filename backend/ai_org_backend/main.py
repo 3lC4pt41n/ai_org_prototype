@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tim Mergenthaler
 # ai_org_prototype.py – Autonomous-Agent SaaS · core API  (v2.0 – S6 hardened)
 # ---------------------------------------------------------------
 from __future__ import annotations
