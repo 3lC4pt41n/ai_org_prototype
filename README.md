@@ -2,7 +2,19 @@
 Autonomous‑Agent SaaS • Neo4j‑driven • Multi‑Tenant • Token‑Aware • Prometheus‑Instrumented
 
 > End‑to‑End Skeleton, das ganze Software‑Projekte mittels LLM‑Agenten plant, baut, testet und ausliefert.
-> **Stack:** Python 3.11 · FastAPI · Celery · SQLModel/Alembic · Neo4j 5 · Redis 7 · Prometheus/Grafana · React 18 / Vite / Tailwind · Node 20
+> **Stack:** Python 3.11 · FastAPI · Celery · SQLModel/Alembic · Neo4j 5 · Redis 7 · Prometheus/Grafana · React 18 / Vite / Tailwind · Node 20
+
+---
+
+## Documentation
+
+- [Vision](VISION.md) — product direction, principles, operating modes, and roadmap.
+- [Architecture](ARCHITECTURE.md) — canonical root architecture overview.
+- [Architecture overview](docs/architecture/overview.md) — service-level architecture notes.
+- [Pipeline documentation](docs/architecture/pipeline.md) — end-to-end agent pipeline flow.
+- [Local development setup](docs/setup/local-development.md) — Docker Compose and local runbook.
+- [E2E pipeline audit](docs/audits/e2e-pipeline-audit-v2.md) — public audit summary converted from the v2 report.
+- [Implementation planning](docs/planning/) — public planning notes derived from audit remediation docs.
 
 ---
 
